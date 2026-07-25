@@ -335,13 +335,17 @@ candidate clusters per hit** so buurt+time alone is not unique — a **place-led
 (τ=0.60; count + finer BAG place disambiguate) carries the `AuditLink`. Two corrections fell out:
 kap permits **do** carry a structured point geometry + controlled activiteit + zaaknummer (so
 place/activity are structured, not NER'd; see §4 and `DATA_SOURCES.md` §1), and Phase-1 load must
-**dedup by zaaknummer** (aanvraag+besluit duplicates) and audit the besluit; **(C)**
-count/species/project
-extraction feasibility from permit prose — **including how to interpret the activity terms**
-(kappen / vellen / rooien / *verplanten*) against the registry's `boommaatregelBesluit`, and
-whether *verplanten* (transplant, the tree survives) vs *vellen* (removal) changes whether/how
-herplantplicht applies; read the actual corpus before fixing the mapping (the thread's
-"18 verplant = 18 vellen" match is provisional until this settles); **(D) — DONE
+**dedup by zaaknummer** (aanvraag+besluit duplicates) and audit the besluit; **(C) — DONE
+(`spikes/spike-c/`):** count extraction is feasible with a **deterministic abstract parser (no NER)** —
+per-activity count yield rises from the naive largest-int baseline **35% → 70%** (citywide besluiten,
+reading spelled-out numbers + the `houtopstand` noun) and, crucially, **splits vellen from verplant**
+instead of summing them. Species (<10% in prose) / project (~1%) are the fuzzy residue the registry
+lacks entirely (0% city-wide) → the **additive spaCy NER lane**, off the audit critical path. The
+abstract *is* the document's Omschrijving line (body adds nothing → no per-doc fetch). And **verplanten ≡
+vellen**: Bomenverordening art. 1k *defines* vellen to include verplanten, the registry has **no
+Verplanten value** (all 35,202 rows: only `Vellen (boom verwijderen)`) and logs transplants as Vellen +
+replants them → the "18 verplant = 18 vellen" match **holds** (carry a `transplantOrigin` caveat).
+Corrections folded into `DATA_SOURCES.md` §1/§2a/§10/§11 and §"Fulfilment"/Phase 2 below; **(D) — DONE
 (`spikes/spike-d/`):** the geo bulk backbone loads & resolves locally — BAG *LV 2.0 Extract* via
 GDAL `lvbag` into PostGIS (national ~3.6 GB, filtered to `0363`, **all voorkomens**) + `gebieden`
 (Datapunt GeoJSON) / CBS (PDOK WFS) polygons, with **100% point-in-polygon** accuracy vs
@@ -355,9 +359,13 @@ by publication id) + `load` (resolve location, assemble to graph, values to Post
 `load bomen` + `derive` (coverage: permit→registry entry?; fulfilment: progress vs termijn,
 with fund-indeterminate). A working audit from structure alone, with confidences.
 
-**Phase 2 — extraction.** Python extractor: counts / species / project / any stated termijn
-from permit prose → into the graph with per-span provenance; feeds Spike B's matcher and
-sharpens links.
+**Phase 2 — extraction.** Two tools, split by shape (Spike C): a **deterministic abstract parser** does
+the audit-core work — **per-activity counts** (kappen/vellen/rooien/**verplanten** split, not summed;
+spelled-out-number aware; herplant kept on the replant side) → into the graph with per-span provenance;
+feeds Spike B's matcher and sharpens links. The **spaCy NER lane** is additive and off the critical path:
+**species / project / boomnummer** — the fuzzy residue the registry carries at 0% — with room to widen
+scope (relation extraction, project clustering) as a place to build and experiment with NER. The
+§5 "Python only for spaCy" boundary stands: the core parser is Go, spaCy owns only the NER lane.
 
 **Phase 3 — webapp.** Map of interventions coloured by claim status (fulfilled / partial /
 open / overdue / **indeterminate**) with an evidence + confidence panel; grounded chat;
