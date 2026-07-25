@@ -215,7 +215,7 @@ finest level we can establish, with confidence:
 | Source side | What it gives | Resolves to |
 |---|---|---|
 | Kap permit | a **structured point geometry (RD+WGS84)** ~99% of the time (Spike B — the metadata is *not* thin), plus a free-text / reference address ("t.h.v. …") and sometimes a project area | the **smallest area we can confidently place it in** — point-in-polygon from the permit's own geometry first, the free-text address only as a fallback: BAG object (point/footprint) ideally, else whichever of {project polygon, postcode-6, buurt} is *smallest by actual area* and clears a confidence threshold — a project polygon may be smaller than a postcode-6, so compare areas, don't assume a fixed order |
-| `kapenherplant` | `dichtstbijzijndeBagAdres` + postcode, `gbdBuurtId`, and (via `boomId`→`stamgegevens`) a point | already pinned; point + buurt + nearest address |
+| `kapenherplant` | `dichtstbijzijndeBagAdres` + postcode, `gbdBuurtId`, and (via `boomId`→`stamgegevens`, with the `boomNieuwId` fallback for replanted rows — `DATA_SOURCES.md` §2a) a point | already pinned; point + buurt + nearest address |
 
 The join is then finest-common-granularity + count + time-window (+ project when
 extracted), and the resulting `AuditLink` stores the granularity used and a confidence.
@@ -226,14 +226,14 @@ written as if they were exact. No half-broken data enters the graph.
 **Preloading is feasible and preferred (verified):**
 - `kapenherplant` = **35,202 rows** total; `stamgegevens` = **323,728**. Both page/CSV-export
   cleanly → load the whole city once, refresh on a schedule.
-- **BAG has a real bulk + incremental source (verified).** The Kadaster *LV BAG 2.0 Extract*
-  is a free national dump refreshed monthly (the 8th, ~1.5 GB) **plus daily mutation files**
-  (national-only, applied in order, empty on weekends) — via the Kadaster BAG-Extract product
-  / PDOK atom feed; GDAL's `lvbag` driver loads it straight into PostGIS. Filter to gemeente
-  `0363` for Amsterdam. So: monthly full load + daily mutaties keeps BAG current
-  incrementally. `gebieden` polygons + CBS buurt/wijk geometries load **separately via
-  WFS/GeoPackage** — the `lvbag` driver is BAG-specific. Raw downloads are retained in the
-  landing store like any source (§5). Catalog detail: `DATA_SOURCES.md` §8.
+- **BAG has a real bulk source (verified, Spike D).** The Kadaster *LV BAG 2.0 Extract* is a free
+  national dump (~**3.6 GB**), loaded via GDAL's `lvbag` driver straight into PostGIS, filtered to
+  gemeente `0363`. Refresh is an **idempotent monthly full reload** — the driver reads only the ST
+  snapshot, **not** the daily Mutatie-Levering files, so there is no incremental-via-`lvbag`. Load
+  BAG **as-is** (it is the location master data): full tables, all columns, all voorkomens,
+  municipality filter only. `gebieden` polygons (Datapunt GeoJSON) + CBS buurt/wijk geometries (PDOK
+  WFS) load **separately** — the `lvbag` driver is BAG-specific. Raw downloads are retained in the
+  landing store like any source (§5). **Full recipe + all corrections: `DATA_SOURCES.md` §8.**
 - Location resolution runs **entirely against the local PostGIS — no PDOK Locatieserver call,
   not even as a fallback.** Everything Locatieserver offered (free-text → BAG, postcode/buurt
   lookup) is derivable from the bulk-loaded BAG + gebieden + CBS, and the fuzzy permit-address
@@ -307,7 +307,7 @@ Widening scope later = widening the query.
 extractor image. **Dev:** `docker compose` brings up triplestore + PostGIS + server; stages
 run as `pipeline <subcommand>`. **Prod (Phase 4):** a CronJob per source
 (ingest→extract→load), a `derive` CronJob, server as a Deployment; cron-polling since sources
-don't push (KOOP ~daily, bomen ~weekly, BAG monthly + daily mutaties).
+don't push (KOOP ~daily, bomen ~weekly, BAG monthly full reload — `lvbag` has no daily-mutatie path, §8).
 
 **Dumps.** A `dump` subcommand snapshots the graph, the PostGIS data, and — critically — the
 **NER cache**, so expensive extraction is never lost and environments are reproducible.
