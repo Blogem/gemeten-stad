@@ -95,6 +95,10 @@ func gebiedenHTTPGet(ctx context.Context, url string, headers map[string]string)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", url, err)
 	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("get %s: unexpected status %s", url, resp.Status)
+	}
 	return resp.Body, nil
 }
 

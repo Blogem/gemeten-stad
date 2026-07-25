@@ -37,6 +37,22 @@ func SidecarCommand(prefix []string, args []string) []string {
 	return cmd
 }
 
+// redactArgs returns a copy of args with any element containing "password="
+// masked from that point to the end of the token, preserving the prefix
+// before "password=". It never mutates the input slice. Used for error/log
+// output only — the real, unredacted args must still be passed to exec.
+func redactArgs(args []string) []string {
+	redacted := make([]string, len(args))
+	for i, arg := range args {
+		if idx := strings.Index(arg, "password="); idx != -1 {
+			redacted[i] = arg[:idx] + "password=***REDACTED***"
+			continue
+		}
+		redacted[i] = arg
+	}
+	return redacted
+}
+
 // OGR2OGR executes SidecarCommand(s.Prefix, args) via os/exec and returns combined output.
 func (s *Sidecar) OGR2OGR(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := SidecarCommand(s.Prefix, args)
@@ -48,7 +64,7 @@ func (s *Sidecar) OGR2OGR(ctx context.Context, args ...string) ([]byte, error) {
 		if len(tail) > maxTail {
 			tail = tail[len(tail)-maxTail:]
 		}
-		return out, fmt.Errorf("shared: ogr2ogr %v failed: %w (output: %s)", args, err, tail)
+		return out, fmt.Errorf("shared: ogr2ogr %v failed: %w (output: %s)", redactArgs(args), err, tail)
 	}
 
 	return out, nil
