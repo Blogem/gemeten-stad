@@ -67,3 +67,17 @@ task compose:up                                       # PostGIS + Fuseki + serve
 
 Data lives on named volumes and survives `task compose:down`. To also drop the volumes:
 `task compose:down -- -v`. The `gdal` sidecar is idle until the P6 BAG/geo load drives it.
+
+## Running integration tests
+
+Integration tests (`-tags=integration`) never touch the dev stack's own database/dataset — they
+create an isolated, randomly-named Postgres schema and Fuseki dataset via `internal/testdb`, and a
+guard aborts if a resolved name ever matches a production/dev name (`gemeten_stad`, `public`, `ds`).
+
+```sh
+task compose:up
+GS_TEST_DATABASE_URL=postgres://gs:gs@localhost:5433/gemeten_stad \
+GS_TEST_FUSEKI_URL=http://localhost:3030 \
+FUSEKI_ADMIN_PASSWORD=admin \
+  task test:integration
+```
