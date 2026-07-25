@@ -1,0 +1,11 @@
+# Keep the server build context small — only Go sources are needed.
+.git
+bin/
+webapp/node_modules
+webapp/.svelte-kit
+webapp/build
+spikes/*/data
+.claude
+*.md
+docs/
+deploy/

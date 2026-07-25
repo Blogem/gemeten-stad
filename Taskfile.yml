@@ -69,3 +69,13 @@ tasks:
     cmds:
       - ruff check .
       - ruff format --check .
+
+  compose:up:
+    desc: Bring up the dev stack (PostGIS + Fuseki + server + gdal sidecar)
+    cmds:
+      - docker compose -f deploy/compose/compose.yaml up -d --wait
+
+  compose:down:
+    desc: Stop the dev stack (add -- -v to also drop the data volumes)
+    cmds:
+      - docker compose -f deploy/compose/compose.yaml down {{.CLI_ARGS}}

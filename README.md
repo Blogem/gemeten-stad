@@ -49,3 +49,21 @@ The pipeline subcommands are currently no-ops; behaviour lands in later Phase-0/
 ```sh
 go run ./cmd/pipeline --help
 ```
+
+## Dev environment
+
+A `docker compose` stack under `deploy/compose/` brings up the two stores plus the server:
+
+```sh
+cp deploy/compose/.env.example deploy/compose/.env   # optional — defaults work as-is
+task compose:up                                       # PostGIS + Fuseki + server + gdal sidecar
+```
+
+| Service | URL / port | Notes |
+|---------|-----------|-------|
+| PostGIS | `localhost:5433` | db `gemeten_stad`, user/pass `gs`/`gs` (value + geometry store) |
+| Fuseki  | <http://localhost:3030> | RDF graph; default dataset `/ds`, SHACL enabled |
+| server  | <http://localhost:8080/healthz> | returns `ok` |
+
+Data lives on named volumes and survives `task compose:down`. To also drop the volumes:
+`task compose:down -- -v`. The `gdal` sidecar is idle until the P6 BAG/geo load drives it.

@@ -1,0 +1,93 @@
+# Dev stack for Gemeten Stad (Phase 0 · P3).
+#
+# Brings up the two stores the pipeline and server read/write — PostGIS (values +
+# geometry) and Apache Jena Fuseki (the RDF graph) — plus the server itself and an
+# idle GDAL sidecar that P6's BAG/geo load drives with `compose exec`.
+#
+# The db and fuseki service shapes are lifted from spikes/spike-d and spikes/spike-e
+# (both validated there). Data lives on named volumes so a loaded stack survives
+# `compose down` — the same volumes the future `pipeline dump` (P9) round-trips.
+#
+# Config is env-driven: copy .env.example to .env, or rely on the ${VAR:-default}
+# fallbacks below (the stack runs with no .env).
+services:
+  db:
+    # imresamu/postgis is the PostGIS-team-maintained multi-arch build of the
+    # official image (same Dockerfiles) — the official postgis/postgis:18-3.6 is
+    # amd64-only, so this is what runs natively on arm64 (and on amd64 CI).
+    image: imresamu/postgis:18-3.6
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gemeten_stad}
+      POSTGRES_USER: ${POSTGRES_USER:-gs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gs}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"   # host 5433 to avoid clashing with a local postgres
+    volumes:
+      # PG18+ images store data in a major-version subdir; the mount goes at
+      # /var/lib/postgresql (not .../data as in the PG16 spike) — see the image's
+      # own startup note / docker-library/postgres#1259.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gs} -d ${POSTGRES_DB:-gemeten_stad}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  fuseki:
+    image: secoresearch/fuseki:5.5.0   # Apache-2.0 Jena 5.5.0 (Spike E); latest tag, no 6.x exists
+    environment:
+      ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD:-admin}
+      ENABLE_DATA_WRITE: "true"        # Graph Store Protocol PUT/POST (the load path)
+      ENABLE_UPDATE: "true"            # SPARQL Update
+      ENABLE_SHACL: "true"             # the fuseki:shacl validation endpoint (P8 load gate)
+      # TDB2 memory-maps its files into the OS cache; keep the JVM heap modest so it
+      # does not starve that cache (a documented Fuseki footgun). 2 GB is ample here.
+      JVM_ARGS: "-Xmx2g"
+    ports:
+      - "${FUSEKI_PORT:-3030}:3030"    # Fuseki UI + endpoints; default dataset is /ds
+    volumes:
+      - fuseki-data:/fuseki-base/databases
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3030/$$/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  server:
+    build:
+      context: ../..                   # repo root — the Dockerfile needs go.mod + all packages
+      dockerfile: cmd/server/Dockerfile
+    environment:
+      GS_SERVER_ADDR: ":${SERVER_PORT:-8080}"
+      GS_FUSEKI_URL: ${GS_FUSEKI_URL:-http://fuseki:3030/ds}
+      GS_DATABASE_URL: ${GS_DATABASE_URL:-postgres://gs:gs@db:5432/gemeten_stad}
+    ports:
+      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+    depends_on:
+      db:
+        condition: service_healthy
+      fuseki:
+        condition: service_healthy
+    healthcheck:
+      # distroless has no shell/curl — the binary probes its own /healthz.
+      test: ["CMD", "/server", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ogr2ogr with the lvbag + PostgreSQL drivers, kept idle; P6's geo load drives it
+  # with `compose exec`. Mounts a shared landing volume for the downloaded extracts.
+  gdal:
+    image: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - raw-data:/data
+    working_dir: /data
+    command: ["sleep", "infinity"]
+
+volumes:
+  pgdata:
+  fuseki-data:
+  raw-data:

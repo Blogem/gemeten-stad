@@ -4,6 +4,7 @@
 
 # Environment variables
 .env
+deploy/compose/.env
 
 # Go build output
 /bin/
