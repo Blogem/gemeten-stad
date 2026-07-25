@@ -1,0 +1,339 @@
+# Data sources — Amsterdam public-space interventions
+
+Catalog of the public data sources for the claims-vs-observations platform ("De Gemeten
+Stad"): what each source is, how to query it, and the quirks found while probing.
+**Every endpoint, example query, and sample value in this document was verified live on
+2026-07-25.** All sources are free; all except EP-Online work without any key today.
+
+Companion document: `DATA_THREAD_TREES.md` — a fully worked end-to-end example using the
+tree registry as the core dataset.
+
+---
+
+## 0. The geography spine (read this first)
+
+Every source keys geography differently. The official aggregation ladder and the
+identifier systems on it:
+
+```
+address (BAG id)  →  postcode-6  →  buurt  →  wijk  →  gemeente
+```
+
+| Identifier system | Example | Used by |
+|---|---|---|
+| BAG nummeraanduiding / verblijfsobject | `0363200000152534` | EP-Online, BAG itself |
+| Postcode-6 | `1024AK` | Liander, bekendmakingen metadata |
+| CBS buurt/wijk/gemeente codes | `BU0363TE01`, `WK0363NJ`, `GM0363` | CBS statistics, politie crime |
+| Amsterdam "gebieden" ids (14-digit) | `03630980000509` | all Amsterdam Datapunt datasets (`gbdBuurtId`) |
+| Point coordinates | RD (EPSG:28992) or WGS84 | Luchtmeetnet, bekendmakingen geometry, trees |
+
+**Two bridges tie these together:**
+
+1. **PDOK Locatieserver** (free, keyless) — free-text address → everything at once:
+
+   ```
+   curl "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free?q=Jisperveldstraat%20201%20Amsterdam&fl=weergavenaam,buurtnaam,buurtcode,wijknaam,wijkcode,postcode,nummeraanduiding_id,adresseerbaarobject_id,centroide_ll&rows=2"
+   ```
+
+   Returns (verified): BAG ids, `buurtcode: BU0363NJ01`, `wijknaam: Waterlandpleinbuurt`,
+   postcode, WGS84 centroid — one call from surface form to the whole ladder.
+
+   *Quirk:* reference addresses from permit texts ("**t.h.v.** Egeldonk 50" — "near
+   Egeldonk 50") may not resolve to a BAG address at all (e.g. building demolished in an
+   urban-renewal area); PDOK then returns only a street match with geometry. Design the
+   canonicalizer with a point-in-buurt-polygon fallback, never assume an address match.
+
+2. **Amsterdam gebieden API** — Amsterdam id ↔ CBS code:
+
+   ```
+   curl "https://api.data.amsterdam.nl/v1/gebieden/buurten/?_format=json&identificatie=03630980000509&_fields=identificatie,naam,code,cbsCode,ligtInWijkId"
+   ```
+
+   Returns (verified): `naam: "E-buurt"`, `cbsCode: "BU0363TE01"`. Every Datapunt record
+   carrying `gbdBuurtId` is thus one call away from the CBS key space.
+
+CBS buurt/wijk geometries (for point-in-polygon) come from PDOK ("CBS wijken en
+buurten" WFS/GeoPackage) — not probed this session, well-documented standard service.
+
+---
+
+## 1. Officiële bekendmakingen (KOOP) — the intervention document stream
+
+The legally mandated publication channel for every municipal decision: verkeersbesluiten,
+omgevingsvergunningen (bouw/kap), evenementenvergunningen, zoning notices. **This is the
+unstructured side of the platform.** Continuous feed; Amsterdam alone has **25,342
+verkeersbesluiten**, with ~90 EV-charging-spot decisions in June–July 2026 alone.
+
+### Search (SRU 2.0)
+
+```
+curl -G "https://repository.overheid.nl/sru" \
+  --data-urlencode "operation=searchRetrieve" \
+  --data-urlencode "version=2.0" \
+  --data-urlencode "maximumRecords=8" \
+  --data-urlencode 'query=(dt.creator any "Amsterdam" AND dt.type any "verkeersbesluit" AND cql.textAndIndexes any "oplaadpunt opladen laadplaats" AND dt.available>="2026-06-01")'
+```
+
+- Index discovery: `?operation=explain` lists **192 indexes**. The load-bearing ones:
+  `dt.creator` (publishing authority), `dt.title`, `dt.type`, `dt.available`
+  (publication date, supports `>=`/`<=` ranges), `cql.textAndIndexes` (full text),
+  and the verkeersbesluit-specific set `w.typeVerkeersbesluit`, `w.vereisteVanBesluit`
+  (statutory basis!), `w.verkeersbordcode`, `w.wegcategorie`, `w.weggebruiker`,
+  `w.postcode`, `w.gemeentenaam`.
+- Result records carry `dcterms:identifier` (e.g. `gmb-2026-291126`), title, dates.
+
+### Retrieve documents
+
+```
+# full document XML (structured: kop, lijst, al paragraphs)
+https://repository.overheid.nl/frbr/officielepublicaties/gmb/<year>/<id>/1/xml/<id>.xml
+# structured metadata sidecar
+https://zoek.officielebekendmakingen.nl/<id>/metadata.xml
+```
+
+### The verkeersbesluit metadata sidecar is a gift
+
+Verified content for `gmb-2026-291126` (charging spots, Jisperveldstraat 201):
+
+- `OVERHEIDvb.typeVerkeersbesluit = "aanwijzen parkeerplaats voor het opladen van
+  elektrische voertuigen"` — a controlled scheme with a value *specifically for EV
+  charging designations*
+- `OVERHEIDvb.vereisteVanBesluit = "Het bepaalde in artikel 12 van het BABW"` —
+  statutory basis as data
+- `OVERHEIDop.gebiedsmarkering` + `OVERHEIDop.geometrie = POINT(125254 490145)` —
+  **geometry in RD coordinates (EPSG:28992)**, sometimes MULTILINESTRING for road works
+- `OVERHEIDop.postcode = 1024AK`
+- road category + affected road-user classes, also controlled schemes
+
+The quantitative content, however, lives **only in the body prose** — e.g. the verified
+placement rule *"in de buurt Markengouw-Noord de maximaal toegestane bezettingsgraad van
+65% gedurende zes maanden 52 uur is overschreden"*. Extracting that is the NER/relation
+job; the metadata gives the intervention typing for free.
+
+### Quirks
+
+- **Unknown index or no match → silently 0 records, never an error.** Always sanity-check
+  clause-by-clause hit counts when a combined query returns 0.
+- `dt.creator any "Amsterdam"` (355k docs) is the publishing authority;
+  `w.gemeentenaam` (14k docs) is a *different, sparsely populated* location field — don't
+  confuse them. Prefer `any`/`all` relations; exact `==` frequently misses.
+- **Title phrasing is per-gemeente house style.** Amsterdam writes "aanleg twee
+  elektrische oplaadvakken", not "laadpaal" (a title search for "laadpaal" +
+  creator=Amsterdam found only legacy-Weesp docs — Weesp merged into Amsterdam).
+  Full-text (`cql.textAndIndexes`) with synonym lists beats title search.
+- **Omgevingsvergunning (kap/bouw) bekendmakingen have thin metadata** — no geometry,
+  no controlled activity type; the address sits in the title/body free text, often as a
+  "t.h.v." reference address. All the structure the verkeersbesluiten give you must be
+  extracted here.
+- Terminology varies for the same activity: *kappen* / *vellen* / *verplanten* /
+  "houtopstanden". A project-level permit may not mention any affected street by name —
+  see the negative-result finding in `DATA_THREAD_TREES.md`.
+- `w.postcode` exists as an index but was empty for the probed omgevingsvergunningen —
+  populated mainly for verkeersbesluiten.
+
+**Cadence:** continuous (publications appear same-day; newest hit in probing was
+published 2 days before the probe). No auth. XML responses.
+
+---## 2. Amsterdam Datapunt APIs (`api.data.amsterdam.nl/v1/`) — the municipal registries
+
+REST ("DSO") APIs over ~80 datasets. The ones probed:
+
+### 2a. Trees — `bomen` (core dataset of the worked thread)
+
+Sub-datasets: `stamgegevens` (per-tree master data), `kapenherplant` (felling +
+replanting lifecycle), plus `gebrekregistratie`, `stormmeldingen`,
+`veiligheidsinspecties`, `maatregelregistratie`.
+
+```
+# trees within 150 m of a point (WGS84 needs the Accept-Crs header!)
+curl -H "Accept-Crs: EPSG:4326" \
+  "https://api.data.amsterdam.nl/v1/bomen/stamgegevens/?geometrie%5Bwithin%5D=POINT(4.95015%2052.39834),150&_pageSize=3&_count=true&_fields=id,soortnaamTop,jaarVanAanleg,gbdBuurtId"
+
+# felling/replanting lifecycle, filtered
+curl "https://api.data.amsterdam.nl/v1/bomen/kapenherplant/?_count=true&gbdBuurtId=03630980000509&kapmaatregelDatumUitgevoerd%5Bgte%5D=2024-01-01"
+```
+
+- `stamgegevens` (verified sample): species (`soortnaam`, `soortnaamTop`), plant year
+  (`jaarVanAanleg`), height/diameter classes, owner type, point geometry, `gbdBuurtId`.
+  ~1M trees in the city, ~300k municipally managed. Buurt-level counts via
+  `gbdBuurtId=` + `_count=true` (E-buurt: 1,022 municipal trees).
+- `kapenherplant` (verified sample): **the full audit lifecycle per tree** —
+  `datumVergunningsaanvraag` → `datumVergunningVerleend` → `kapmaatregelDatumUitgevoerd`
+  → `plantmaatregelDatumUitgevoerd`, plus `dichtstbijzijndeBagAdres`/`Postcode`,
+  `toeTePassenBoomsoort` (species that must be replanted), `datumAfrondenVoor`,
+  `boommaatregelBesluit` ("Vellen (boom verwijderen)"), `gbdBuurtId`. 3,593 records with
+  felling executed since 2024-01-01 (citywide).
+
+**Quirks (bomen):**
+- `datumAfrondenVoor` timestamps sometimes **precede the felling date** — it is a
+  work-order step deadline, not a reliable replanting due date. The robust audit signal
+  is `kapmaatregelDatumUitgevoerd` set + `plantmaatregelDatumUitgevoerd` null + elapsed
+  time.
+- `datumVergunningVerleend` looks **batch-assigned** (dozens of records share
+  `2023-10-30`) — treat as administrative, not as the bekendmaking date.
+- `soortnaam`/`toeTePassenBoomsoort` are frequently null in `kapenherplant`; join to
+  `stamgegevens` via `boomId` for species.
+- The `[isnull]` filter operator did not work in probing (empty response, no error) —
+  filter null lifecycle dates client-side.
+
+### 2b. Parking spots — `parkeervakken`
+
+```
+curl "https://api.data.amsterdam.nl/v1/parkeervakken/parkeervakken/?format=json&_pageSize=50&straatnaam=Jisperveldstraat"
+```
+
+Per-spot records: `type` (Langs/Haaks), `soort` (FISCAAL/NIET FISCAAL/MULDER), `eType`
+(E-sign designation: E6a/E6b disabled, E8 category-restricted, etc.), street, geometry.
+**Quirk:** registry lags fresh verkeersbesluiten — spots designated in a June decision
+were not yet registered in July. Decision→registry latency is itself measurable.
+
+### 2c. Other catalog entries confirmed to exist (not probed in depth)
+
+`aardgasvrijezones`, `energieverbruik`, `meldingen` (public-space complaints), `bbga`
+(Amsterdam's own buurt statistics), `milieuzones`, `wagenpark`, `evenementen`,
+`crowdmonitor`, `gebieden` (the id bridge, §0), `bag`, `woz`, `vergunningen`,
+`stroomstoringen`, `ecologie`. Catalog: `https://api.data.amsterdam.nl/v1/docs/index.html`.
+
+**Cross-cutting Datapunt mechanics:**
+- Default CRS is **RD (EPSG:28992)** — send `Accept-Crs: EPSG:4326` for lat/lon
+  (geometry filter syntax: `geometrie[within]=POINT(lon lat),meters`).
+- Filters: `field=`, `field[gte]=`, `field[lte]=`, `field[like]=`; projection `_fields=`;
+  `_count=true` for totals; `_pageSize`/`page=`; `_format=json|csv|geojson`.
+- No auth today; docs announce a **mandatory (free) API key from mid-September 2026**
+  (`X-Api-Key` header).
+- Freshness: sourced from the municipal asset systems; `mutatieDatum`/`lastupdate`
+  values observed days-to-months old depending on dataset.
+
+---
+
+## 3. Police crime statistics (OData v3)
+
+Monthly registered crimes per buurt, 2012→now, ~1 month lag.
+
+```
+# table: 47022NED (monthly), 47018NED (annual); catalog: dataderden.cbs.nl/ODataCatalog
+curl "https://dataderden.cbs.nl/ODataApi/odata/47022NED/TypedDataSet?\$format=json&\$filter=WijkenEnBuurten%20eq%20'BU0363TE01'%20and%20SoortMisdrijf%20eq%20'0.0.0%20'%20and%20Perioden%20eq%20'2026MM06'"
+```
+
+Verified: E-buurt `2026MM06` → 8 misdrijven; crime-type breakdown via the
+`SoortMisdrijf` dimension (`1.1.1` woninginbraak, etc.).
+
+**Quirks:**
+- `SoortMisdrijf` keys have a **trailing space** (`'0.0.0 '`) — mandatory in filters;
+  `GM` codes are space-padded to 10 chars.
+- **`$orderby` is silently ignored** — enumerate the `Perioden` dimension endpoint for
+  the latest period instead.
+- OData **v3** dialect (`substringof(...)`, not v4 `contains`).
+- The table is enormous; never query unfiltered (an unfiltered `$top` pages from 2012).
+- The `WijkenEnBuurten` dimension endpoint doubles as a name→code lookup and carries a
+  `Municipality` field for enumerating all buurten of `GM0363`.
+
+---
+
+## 4. CBS Kerncijfers wijken en buurten (OData v3)
+
+Annual socio-demographic profile per buurt: population, households, cars/household,
+income, housing. **One table per vintage year**: `86165NED` (2025), `85984NED` (2024),
+`85618NED` (2023), … discover via the catalog.
+
+```
+curl "https://opendata.cbs.nl/ODataApi/odata/86165NED/TypedDataSet?\$format=json&\$filter=WijkenEnBuurten%20eq%20'BU0363TE01'&\$select=WijkenEnBuurten,AantalInwoners_5,HuishoudensTotaal_29,PersonenautoSPerHuishouden_107"
+```
+
+Verified: E-buurt 2025 → 2,365 inhabitants, 1,025 households, 0.9 cars/household.
+
+**Quirks:**
+- **Column-name suffixes drift between vintages** (`GemiddeldInkomenPerInwoner_78` in
+  2025 vs `_81` in 2023) — resolve column names per table via its `DataProperties`
+  endpoint; never hardcode.
+- Income fields are **null in the newest vintage** (backfilled ~2 years later) — read
+  income from an older vintage.
+- Small-cell privacy suppression → nulls; string values right-padded with spaces.
+- Same `WijkenEnBuurten` key space as the police table — direct joins.
+
+---
+
+## 5. Luchtmeetnet air quality (REST)
+
+Hourly measurements (NO2, PM2.5, PM10, O3, …) from official stations; near-real-time
+(the 00:00 UTC value was retrievable at 01:56 UTC).
+
+```
+curl -sL "https://api.luchtmeetnet.nl/open_api/measurements?station_number=NL49003&formula=NO2&start=2026-07-24T00:00:00Z&end=2026-07-25T00:00:00Z"
+```
+
+Verified: NL49003 (Amsterdam-Nieuwendammerdijk, GGD) NO2 23.1 µg/m³ at 2026-07-25T00:00Z.
+
+**Quirks:**
+- The API **302-redirects** (`api.` → `iq.luchtmeetnet.nl`) — plain curl gets an empty
+  body; always `-L`. Omitted start/end auto-injects a 7-day window.
+- Max ~1 week per request; paginated.
+- **Point coordinates only, ordered [lon, lat]** — no buurt key; ~11 Amsterdam stations,
+  so buurt mapping is nearest-station or point-in-polygon, and coverage is sparse
+  (a buurt gets its nearest station, not its own). Fair-use limit ~100 req/5 min.
+
+---
+
+## 6. Liander kleinverbruik (annual energy per postcode-6)
+
+Standardized annual electricity (SJV/SJA, kWh) and gas (m³) consumption per postcode-6
+range, plus connection counts and type. Reference date Jan 1, one file per year.
+
+```
+# 2025+ (slim format):
+https://www.liander.nl/-/media/files/open-data/kleinverbruikdata/verbruiksdata-kv-2026.csv   (13.8 MB, 268,815 rows)
+# ≤2024 (classic format):
+https://www.liander.nl/-/media/files/open-data/kleinverbruikdata/kleinverbruikgegevens-<year>.zip
+```
+
+Verified sample (2026 file): `1024AA ELK 1x25 → SJA gemiddeld 1913 kWh`;
+`1024AA-1024AB GAS G4 → 26 m³` (a nearly-gasless postcode — the energy-transition signal
+at its rawest).
+
+**Quirks:**
+- **Format break at 2025**: new files are tab-separated *with each whole line wrapped in
+  double quotes* (parse accordingly) and slimmer; classic files are semicolon-separated,
+  space-padded, and richer (street name, city, `SLIMME_METER_PERC`, low-tariff %).
+- Only **2019–2026 hosted** on liander.nl today (2009–2018 URL patterns 404) — source
+  older years from mirrors if trends need them.
+- 2024's zip has an inconsistent filename spelling (`kleinverbruiksgegevens-2024.zip`).
+- ELK and GAS are separate rows; postcode *ranges* aggregate small groups (k-anonymity
+  ≥10 connections) — model suppression, don't impute.
+- Same page hosts **terugleverdata** (solar feed-in, 2023–2026) and a decentral-PV
+  dataset. Liander covers Amsterdam; other DSOs (Stedin, Enexis) publish equivalents for
+  other regions.
+
+---
+
+## 7. EP-Online energy labels (RVO) — per-address, needs a free key
+
+The national register of energy labels, **per address with BAG ids**.
+
+- **Access:** free self-service API key at `https://apikey.ep-online.nl/` (email
+  activation, ~5 minutes, no account). No keyless path (verified: file download → 400,
+  API → 401 without key).
+- **Files:** monthly full snapshot (`v20260701_v4_csv.zip`, ~226 MB zipped) + **daily
+  mutation files** (25–430 KB) — a natural incremental-ingest design forcing function.
+- **API:** `GET /api/v5/PandEnergielabel/Adres?postcode=&huisnummer=` per-address;
+  swagger at `https://public.ep-online.nl/swagger/v5/swagger.json` (publicly readable).
+- **Fields:** `Postcode, Huisnummer, BAGVerblijfsobjectID, BAGPandIDs, Bouwjaar,
+  Energieklasse, EnergieIndex, BerekendeCO2Emissie, Registratiedatum, Geldig_tot,
+  Gebouwklasse, Gebouwtype, …`
+- **Quirk:** current file schema is v4 while the API is v5 (near-identical fields).
+
+---
+
+## 8. Source × dimension × key summary
+
+| Source | Dimension | Geography key | Cadence | Auth |
+|---|---|---|---|---|
+| KOOP bekendmakingen | interventions (docs) | postcode + RD geometry (verkeersbesluiten); free-text address (vergunningen) | continuous | none |
+| Datapunt bomen | ecology / tree lifecycle | point + `gbdBuurtId` (+ nearest BAG address in kapenherplant) | days–months | none (key from 2026-09) |
+| Datapunt parkeervakken | parking inventory | street + geometry | lags decisions | none (key from 2026-09) |
+| Politie 47022NED | crime | CBS buurt code | monthly, ~1 mo lag | none |
+| CBS KWB | demographics, cars, income | CBS buurt code | annual vintage | none |
+| Luchtmeetnet | air quality | station coords [lon,lat] | hourly | none |
+| Liander kleinverbruik | energy (elec + gas) | postcode-6 range | annual (Jan 1) | none |
+| EP-Online | building energy labels | BAG id / postcode+number | monthly full + daily deltas | free key |
+| PDOK Locatieserver | (canonicalizer) | everything ↔ everything | live | none |
+| Datapunt gebieden | (id bridge) | Amsterdam id ↔ CBS code | stable | none |
