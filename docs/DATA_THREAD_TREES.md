@@ -22,6 +22,10 @@ close together.
 ("Vernieuwing E-Buurt Oost"). Identifiers: Amsterdam gebieden id `03630980000509`
 ↔ CBS `BU0363TE01` (bridge verified via the gebieden API).
 
+> **Note on scope:** this thread was worked in **E-buurt, Zuidoost** — it demonstrates the
+> platform's *mechanics* end-to-end. Vertical 1 was **later scoped to stadsdeel Noord**
+> (`IMPLEMENTATION_PLAN.md` §1); the machinery is identical, only the place filter differs.
+
 ---
 
 ## The thread, hop by hop
@@ -41,11 +45,13 @@ The besluit contains a **numeric claim** ("18 bomen"), a **project-area location
 (not a BAG address — "t.h.v. Egeldonk 50"), and a **case id** (`Z2022-ZO000769`) that a
 graph should mint as an entity.
 
-### Hop 2 — canonicalization (with two honest lessons)
+### Hop 2 — location resolution (with two honest lessons)
 
-- "t.h.v. Egeldonk 50, 1103 AK" does **not** resolve to a BAG address in PDOK — the
-  E-buurt renewal demolished buildings; PDOK falls back to a street match with geometry
-  only. Reference addresses need a point-in-buurt-polygon fallback, not an address join.
+- "t.h.v. Egeldonk 50, 1103 AK" does **not** resolve to a BAG address — the
+  E-buurt renewal demolished buildings; resolution falls back to a street/point match with
+  geometry only. Reference addresses need a point-in-buurt-polygon fallback, not an address
+  join. (We resolve locally against the **bulk-loaded BAG**, not the hosted PDOK
+  Locatieserver — see `DATA_SOURCES.md` §0/§8 and `IMPLEMENTATION_PLAN.md` §4.)
 - The registry side needs no geocoding at all: `kapenherplant` records carry
   `gbdBuurtId=03630980000509` directly, and the gebieden API maps it to `BU0363TE01`
   and the name "E-buurt" in one call.
@@ -81,7 +87,11 @@ permit and everything else about the area. Two implications:
    runs through the *project* (E-Buurt Oost, zaaknummer) and *spatial containment*, with
    dates as weak evidence — the registry's permit date looks batch-assigned (dozens of
    records across Zuidoost share `2023-10-30`) and the permit terminology differs
-   (*verplanten* in the document vs *"Vellen (boom verwijderen)"* in the registry).
+   (*verplanten* in the document vs *"Vellen (boom verwijderen)"* in the registry). Whether
+   *verplanten* (transplant) and *vellen* (removal) should even be treated as the same event —
+   and thus whether "18 = 18" is a true match — is an open interpretation question resolved by
+   reading the permit corpus (`IMPLEMENTATION_PLAN.md` §6, Spike C); until then the match here
+   is provisional.
 2. **"No matching publication found" is itself a reportable, grounded finding** — either
    the search modality is incomplete or the publication trail has a gap. The agent must
    be able to say so instead of forcing a match.

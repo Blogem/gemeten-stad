@@ -16,7 +16,7 @@ Every source keys geography differently. The official aggregation ladder and the
 identifier systems on it:
 
 ```
-address (BAG id)  →  postcode-6  →  buurt  →  wijk  →  gemeente
+address (BAG id)  →  postcode-6  →  buurt  →  wijk  →  stadsdeel  →  gemeente
 ```
 
 | Identifier system | Example | Used by |
@@ -24,24 +24,24 @@ address (BAG id)  →  postcode-6  →  buurt  →  wijk  →  gemeente
 | BAG nummeraanduiding / verblijfsobject | `0363200000152534` | EP-Online, BAG itself |
 | Postcode-6 | `1024AK` | Liander, bekendmakingen metadata |
 | CBS buurt/wijk/gemeente codes | `BU0363TE01`, `WK0363NJ`, `GM0363` | CBS statistics, politie crime |
-| Amsterdam "gebieden" ids (14-digit) | `03630980000509` | all Amsterdam Datapunt datasets (`gbdBuurtId`) |
+| Amsterdam "gebieden" ids (14-digit) | buurt `03630980000509`; stadsdeel Noord `03630000000019` | all Amsterdam Datapunt datasets (`gbdBuurtId`); covers buurt/wijk/stadsdeel |
 | Point coordinates | RD (EPSG:28992) or WGS84 | Luchtmeetnet, bekendmakingen geometry, trees |
 
 **Two bridges tie these together:**
 
-1. **PDOK Locatieserver** (free, keyless) — free-text address → everything at once:
-
-   ```
-   curl "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free?q=Jisperveldstraat%20201%20Amsterdam&fl=weergavenaam,buurtnaam,buurtcode,wijknaam,wijkcode,postcode,nummeraanduiding_id,adresseerbaarobject_id,centroide_ll&rows=2"
-   ```
-
-   Returns (verified): BAG ids, `buurtcode: BU0363NJ01`, `wijknaam: Waterlandpleinbuurt`,
-   postcode, WGS84 centroid — one call from surface form to the whole ladder.
+1. **The local BAG (bulk-loaded)** — surface form → the whole ladder. A free-text or
+   reference address resolves to a BAG object (nummeraanduiding / verblijfsobject) and,
+   through it, to postcode-6, buurt, wijk, stadsdeel, and a point/footprint geometry. We do
+   this resolution **locally, against the bulk-loaded BAG (§8) — not via the hosted PDOK
+   Locatieserver.** The fuzzy permit-address → BAG matching is core project work we own, and
+   everything the Locatieserver offered (free-text → BAG, postcode/buurt lookup) is derivable
+   from the local BAG + gebieden + CBS geometries. This is a settled decision — there is
+   deliberately no Locatieserver fallback (`IMPLEMENTATION_PLAN.md` §4).
 
    *Quirk:* reference addresses from permit texts ("**t.h.v.** Egeldonk 50" — "near
    Egeldonk 50") may not resolve to a BAG address at all (e.g. building demolished in an
-   urban-renewal area); PDOK then returns only a street match with geometry. Design the
-   canonicalizer with a point-in-buurt-polygon fallback, never assume an address match.
+   urban-renewal area); resolution then falls back to a street/point match with geometry
+   only. Resolve with a point-in-buurt-polygon fallback, never assume an address match.
 
 2. **Amsterdam gebieden API** — Amsterdam id ↔ CBS code:
 
@@ -53,7 +53,9 @@ address (BAG id)  →  postcode-6  →  buurt  →  wijk  →  gemeente
    carrying `gbdBuurtId` is thus one call away from the CBS key space.
 
 CBS buurt/wijk geometries (for point-in-polygon) come from PDOK ("CBS wijken en
-buurten" WFS/GeoPackage) — not probed this session, well-documented standard service.
+buurten" WFS/GeoPackage) — not probed this session; verified in Phase-0 Spike D
+(`IMPLEMENTATION_PLAN.md` §6) together with the BAG bulk load (§8). Well-documented
+standard service.
 
 ---
 
@@ -141,7 +143,9 @@ job; the metadata gives the intervention typing for free.
 **Cadence:** continuous (publications appear same-day; newest hit in probing was
 published 2 days before the probe). No auth. XML responses.
 
----## 2. Amsterdam Datapunt APIs (`api.data.amsterdam.nl/v1/`) — the municipal registries
+---
+
+## 2. Amsterdam Datapunt APIs (`api.data.amsterdam.nl/v1/`) — the municipal registries
 
 REST ("DSO") APIs over ~80 datasets. The ones probed:
 
@@ -217,8 +221,8 @@ were not yet registered in July. Decision→registry latency is itself measurabl
   (geometry filter syntax: `geometrie[within]=POINT(lon lat),meters`).
 - Filters: `field=`, `field[gte]=`, `field[lte]=`, `field[like]=`; projection `_fields=`;
   `_count=true` for totals; `_pageSize`/`page=`; `_format=json|csv|geojson`.
-- No auth today; docs announce a **mandatory (free) API key from mid-September 2026**
-  (`X-Api-Key` header).
+- No auth today; docs signal a **mandatory (free) API key is coming soon** — the exact date
+  is not yet decided — and recommend provisioning one now (`X-Api-Key` header).
 - Freshness: sourced from the municipal asset systems; `mutatieDatum`/`lastupdate`
   values observed days-to-months old depending on dataset.
 
@@ -341,17 +345,94 @@ The national register of energy labels, **per address with BAG ids**.
 
 ---
 
-## 8. Source × dimension × key summary
+## 8. BAG bulk extract (Kadaster LV BAG 2.0) — the local place backbone
+
+The national address/building register, **bulk-loaded locally** so all location resolution
+(§0) runs against our own copy — no PDOK Locatieserver dependency.
+
+- **Source:** Kadaster *LV BAG 2.0 Extract* — a free national dump, refreshed monthly
+  (~the 8th, ~1.5 GB), plus **daily mutation files** (national-only, applied in order, empty
+  on weekends). Via the Kadaster BAG-Extract product / PDOK atom feed
+  (`https://service.pdok.nl/kadaster/adressen/atom/v1_0/index.xml`, reachable 2026-07-25).
+- **Load:** GDAL's `lvbag` driver reads the extract straight into PostGIS; filter to gemeente
+  `0363` (Amsterdam). Monthly full load + daily mutaties keeps it current incrementally.
+- **Gives:** nummeraanduiding / verblijfsobject / pand with ids, postcode, and point/footprint
+  geometry — the surface-form → ladder resolution and the point-in-polygon joins.
+- **Quirks:** to be characterised during build (verified in Phase-0 Spike D,
+  `IMPLEMENTATION_PLAN.md` §6). Note the `lvbag` driver is BAG-specific; `gebieden` and CBS
+  wijk/buurt polygons load separately via WFS/GeoPackage, **not** the same driver.
+
+---
+
+## 9. Bomenboekhouding (Amsterdam) — the aggregate self-report
+
+The city's own published tree accounting — the **third leg of the audit triangle**
+(`VISION.md`; `IMPLEMENTATION_PLAN.md` §2): the aggregate figures the municipality reports,
+checked against the per-item `kapenherplant` registry and the permit stream. Comparing the
+self-report against our bottom-up counts is what catches under-reporting and figures that
+don't reconcile.
+
+- **Where:** `https://www.amsterdam.nl/leefomgeving/groen/bomen/bomenboekhouding/`.
+- **Access quirk:** automated fetch returns **HTTP 403** (verified 2026-07-25). Either dump
+  the data manually, or adjust the access method (headers/session) to get past the block.
+  Volume and exact figures to be characterised when we wire it in (Phase-4 reconciliation).
+
+---
+
+## 10. Regulation & policy (CVDR) — the external norm
+
+The legal basis the audit tests against (`VISION.md`: "the law as external norm"), published
+in the CVDR (Centrale Voorziening Decentrale Regelgeving).
+
+- **Bomenverordening 2014** — `https://lokaleregelgeving.overheid.nl/CVDR323217/2` (verified
+  2026-07-25). Art. 7 = the herplantplicht ("in beginsel altijd"); the termijn is set per
+  permit by the college. This is the trigger for the claim being audited.
+- **Compensatie en herplant van bomen** (beleidsregel) —
+  `https://lokaleregelgeving.overheid.nl/CVDR697591` (verified 2026-07-25). The
+  compensation/replant rules, including the **diameter-class equivalence** (a mature tree →
+  several young ones) needed to turn a felling into a computed obligation quantity, and the
+  herplantfonds mechanics.
+
+Both also seed the legal top of the SKOS domain vocabulary (§11).
+
+---
+
+## 11. Domain vocabularies — SKOS sources
+
+Authoritative thesauri that seed the NER EntityRuler, ground the agent, and back the SHACL
+controlled value sets (`IMPLEMENTATION_PLAN.md` §3 — import only the slices we touch, align
+with `skos:exactMatch`, grow altLabels from the permit corpus).
+
+- **TOOI** — `https://standaarden.overheid.nl/tooi/waardelijsten/` — the government's SKOS
+  thesauri for official publications; the `OVERHEID*/OVERHEIDvb` schemes the bekendmakingen
+  are tagged with. Document/rubriek + intervention typing (thin for kap-omgevingsvergunningen).
+- **IMBOR** (CROW, published in RDF) — `https://github.com/Stichting-CROW/imbor` — the
+  standard public-space object model, incl. the **BOOM** object (species + management
+  measures), aligned with the Norminstituut Bomen *Handboek Bomen*. The authoritative
+  tree-domain source.
+- **Nederlands Soortenregister** — species Latin/Dutch names + synonyms; fills gaps IMBOR +
+  `stamgegevens.soortnaam` leave.
+- **Local enums & regulation** — distinct values of `kapenherplant.boommaatregelBesluit` /
+  `boomgebreken` / `stamgegevens.soortnaam`, `gebieden`/CBS names + codes, and the concepts
+  from the regulation (§10).
+
+---
+
+## 12. Source × dimension × key summary
 
 | Source | Dimension | Geography key | Cadence | Auth |
 |---|---|---|---|---|
 | KOOP bekendmakingen | interventions (docs) | postcode + RD geometry (verkeersbesluiten); free-text address (vergunningen) | continuous | none |
-| Datapunt bomen | ecology / tree lifecycle | point + `gbdBuurtId` (+ nearest BAG address in kapenherplant) | days–months | none (key from 2026-09) |
-| Datapunt parkeervakken | parking inventory | street + geometry | lags decisions | none (key from 2026-09) |
+| Datapunt bomen | ecology / tree lifecycle | point + `gbdBuurtId` (+ nearest BAG address in kapenherplant) | days–months | none (free key coming soon) |
+| Datapunt parkeervakken | parking inventory | street + geometry | lags decisions | none (free key coming soon) |
 | Politie 47022NED | crime | CBS buurt code | monthly, ~1 mo lag | none |
 | CBS KWB | demographics, cars, income | CBS buurt code | annual vintage | none |
 | Luchtmeetnet | air quality | station coords [lon,lat] | hourly | none |
 | Liander kleinverbruik | energy (elec + gas) | postcode-6 range | annual (Jan 1) | none |
 | EP-Online | building energy labels | BAG id / postcode+number | monthly full + daily deltas | free key |
-| PDOK Locatieserver | (canonicalizer) | everything ↔ everything | live | none |
+| BAG bulk (LV BAG 2.0) | place backbone / resolution | BAG id ↔ whole ladder | monthly full + daily deltas | none |
+| Bomenboekhouding | tree accounting (aggregate self-report) | buurt / stadsdeel (aggregate) | periodic report | none (403 on scrape) |
+| CVDR (Bomenverordening + herplant policy) | legal norm + diameter classes | — | stable | none |
+| TOOI / IMBOR / Soortenregister | domain vocabulary (SKOS) | — | stable | none |
+| PDOK Locatieserver | not used — resolution runs against local BAG (§8) | — | — | — |
 | Datapunt gebieden | (id bridge) | Amsterdam id ↔ CBS code | stable | none |

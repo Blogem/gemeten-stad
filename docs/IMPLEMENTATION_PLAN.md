@@ -162,7 +162,8 @@ reason the versioned/provenanced graph earns its place. It is a real, required a
 A shared **SKOS ConceptScheme** does three jobs: seeds the NER **EntityRuler** (surface forms
 → concepts), **grounds the analytics agent** (what herplantplicht / herplantfonds / houtopstand
 mean; the status vocabulary), and backs the **controlled value sets** SHACL enforces. We do not
-invent it from scratch — the Netherlands already publishes most of it as Linked Data:
+invent it from scratch — the Netherlands already publishes most of it as Linked Data
+(cataloged in `DATA_SOURCES.md` §11, regulation in §10):
 
 - **TOOI** (`standaarden.overheid.nl/tooi/waardelijsten/`) — the government's SKOS thesauri for
   official publications; the `OVERHEID*/OVERHEIDvb` schemes the bekendmakingen are tagged with
@@ -176,8 +177,10 @@ invent it from scratch — the Netherlands already publishes most of it as Linke
   `stamgegevens.soortnaam` leave a gap.
 - **Data enums** — distinct values of `kapenherplant.boommaatregelBesluit`, `boomgebreken`,
   `stamgegevens.soortnaam`; **`gebieden`/CBS** for place names + codes.
-- **The regulation** — legal/obligation concepts from Bomenverordening 2014 + herplant policy
-  (houtopstand, herplantplicht, herplantfonds, monumentale boom, stamomtrek / diameter classes).
+- **The regulation** — legal/obligation concepts from Bomenverordening 2014 (CVDR323217) +
+  the *Compensatie en herplant van bomen* beleidsregel (CVDR697591, source of the diameter-class
+  equivalence) — houtopstand, herplantplicht, herplantfonds, monumentale boom, stamomtrek /
+  diameter classes. See `DATA_SOURCES.md` §10.
 
 **Build recipe:** (1) import only the *slices we actually touch* from the authoritative sources
 (lean — not all of TOOI/IMBOR), aligning our concepts to their IRIs with `skos:exactMatch`
@@ -214,7 +217,9 @@ written as if they were exact. No half-broken data enters the graph.
   (national-only, applied in order, empty on weekends) — via the Kadaster BAG-Extract product
   / PDOK atom feed; GDAL's `lvbag` driver loads it straight into PostGIS. Filter to gemeente
   `0363` for Amsterdam. So: monthly full load + daily mutaties keeps BAG current
-  incrementally. `gebieden` polygons + CBS buurt/wijk geometries load the same way.
+  incrementally. `gebieden` polygons + CBS buurt/wijk geometries load **separately via
+  WFS/GeoPackage** — the `lvbag` driver is BAG-specific. Raw downloads are retained in the
+  landing store like any source (§5). Catalog detail: `DATA_SOURCES.md` §8.
 - Location resolution runs **entirely against the local PostGIS — no PDOK Locatieserver call,
   not even as a fallback.** Everything Locatieserver offered (free-text → BAG, postcode/buurt
   lookup) is derivable from the bulk-loaded BAG + gebieden + CBS, and the fuzzy permit-address
@@ -234,7 +239,10 @@ layering, and the best-practice answer to "where do transforms go").** This is w
 - **raw / landing (bronze):** `ingest` writes each source *verbatim* + provenance to an
   immutable landing store (files/blobs + a raw table), never to the graph. You can always
   reprocess from here — and the **expensive NER output is cached at this layer** (keyed by
-  document id + model/prompt version) so re-runs never re-invoke the LLM.
+  document id + model/prompt version) so re-runs never re-invoke the LLM. Bulk/reference
+  sources (BAG, `gebieden`, CBS geometries) land here too — we **keep all raw** so any stage
+  can be reprocessed; the one candidate to later exempt is the large BAG extract, a cheap
+  idempotent re-fetch rather than a captured event.
 - **conformed (silver):** `load` maps + resolves location + assembles fully-formed, validated
   entities into the graph (+ values/geometry into PostGIS). Only clean data reaches the
   serving model.
@@ -309,7 +317,15 @@ Noord quarter (size the permit volume). Spikes: **(A) — DONE (`spikes/spike-a/
 *termijn* lives nowhere publicly reliable → default `deadlineUnknown`, `datumAfrondenVoor`
 rejected (see §"Fulfilment"); **(B)** permit↔registry match
 rate on place+count+time+project, and the confidence model; **(C)** count/species/project
-extraction feasibility from permit prose.
+extraction feasibility from permit prose — **including how to interpret the activity terms**
+(kappen / vellen / rooien / *verplanten*) against the registry's `boommaatregelBesluit`, and
+whether *verplanten* (transplant, the tree survives) vs *vellen* (removal) changes whether/how
+herplantplicht applies; read the actual corpus before fixing the mapping (the thread's
+"18 verplant = 18 vellen" match is provisional until this settles); **(D)** the geo bulk
+backbone loads & resolves —
+BAG *LV 2.0 Extract* via GDAL `lvbag` into PostGIS (filtered to `0363`) + `gebieden`/CBS
+wijk-buurt polygons via WFS/GeoPackage, and free-text/reference-address → BAG resolution +
+point-in-polygon work locally (the PDOK Locatieserver replacement; `DATA_SOURCES.md` §0/§8).
 
 **Phase 1 — deterministic backbone (no LLM).** `ingest koop` (Noord kap permits, incremental
 by publication id) + `load` (resolve location, assemble to graph, values to PostGIS) +
@@ -326,7 +342,8 @@ open / overdue / **indeterminate**) with an evidence + confidence panel; grounde
 
 **Phase 4 — generalise, productionize & pursue hidden data.** **Productionize on k3s**
 (CronJob-per-source + a `derive` CronJob + server Deployment, from the `deploy/k3s` manifests);
-reconciliation vs the bomenboekhouding; a **WOO request for the herplantfonds balance**
+reconciliation vs the bomenboekhouding (the third audit leg; `DATA_SOURCES.md` §9); a **WOO
+request for the herplantfonds balance**
 (credible precisely because the rest works and uncertainty is shown); then a second
 intervention type (e.g. EV-charging verkeersbesluiten) reusing the machinery — the seam test.
 
@@ -350,5 +367,6 @@ intervention type (e.g. EV-charging verkeersbesluiten) reusing the machinery —
 - Non-1:1 equivalence → obligation quantities need the diameter-class rules.
 - Registry lag & batch-assigned `datumVergunningVerleend` → decision→registry latency is a
   measurable phenomenon, not a bug.
-- Datapunt API key optional now, mandatory at an unannounced later date → provision a free
-  key early.
+- Datapunt API key optional now; Datapunt signals a free key will be required **soon** (the
+  exact date is not yet decided) and recommends provisioning one → provision a free key early;
+  revisit the enforcement details once the vertical slice is up. (`DATA_SOURCES.md` §2.)
