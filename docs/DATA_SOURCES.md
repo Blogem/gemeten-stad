@@ -52,10 +52,14 @@ address (BAG id)  →  postcode-6  →  buurt  →  wijk  →  stadsdeel  →  g
    Returns (verified): `naam: "E-buurt"`, `cbsCode: "BU0363TE01"`. Every Datapunt record
    carrying `gbdBuurtId` is thus one call away from the CBS key space.
 
-CBS buurt/wijk geometries (for point-in-polygon) come from PDOK ("CBS wijken en
-buurten" WFS/GeoPackage) — not probed this session; verified in Phase-0 Spike D
-(`IMPLEMENTATION_PLAN.md` §6) together with the BAG bulk load (§8). Well-documented
-standard service.
+Point-in-polygon polygons (verified in Spike D, `spikes/spike-d/`):
+- **`gebieden` buurt/wijk polygons** — from the Datapunt API itself, `GET
+  /v1/gebieden/buurten/?_format=geojson` (and `/wijken/`) with `Accept-Crs: EPSG:28992`; keyed by
+  `identificatie` = the `gbdBuurtId` the registry uses, so this is the **primary** set for scoring.
+- **CBS "wijken en buurten"** — PDOK WFS `https://service.pdok.nl/cbs/wijkenbuurten/2024/wfs/v1_0`
+  (layers `wijkenbuurten:buurten`/`:wijken`/`:gemeenten`, default CRS **EPSG:28992**, filter
+  `gemeentecode='GM0363'`); one URL per vintage year. A cross-reference only — the ladder the
+  registry indexes is `gebieden`, and gebieden/CBS boundaries differ at water/harbour.
 
 ---
 
@@ -370,19 +374,53 @@ The national register of energy labels, **per address with BAG ids**.
 ## 8. BAG bulk extract (Kadaster LV BAG 2.0) — the local place backbone
 
 The national address/building register, **bulk-loaded locally** so all location resolution
-(§0) runs against our own copy — no PDOK Locatieserver dependency.
+(§0) runs against our own copy — no PDOK Locatieserver dependency. **Characterised in Spike D
+(`spikes/spike-d/`, verified 2026-07-25): the backbone loads and resolves locally at 90% address
+precision / 100% point-in-polygon.**
 
-- **Source:** Kadaster *LV BAG 2.0 Extract* — a free national dump, refreshed monthly
-  (~the 8th, ~1.5 GB), plus **daily mutation files** (national-only, applied in order, empty
-  on weekends). Via the Kadaster BAG-Extract product / PDOK atom feed
-  (`https://service.pdok.nl/kadaster/adressen/atom/v1_0/index.xml`, reachable 2026-07-25).
-- **Load:** GDAL's `lvbag` driver reads the extract straight into PostGIS; filter to gemeente
-  `0363` (Amsterdam). Monthly full load + daily mutaties keeps it current incrementally.
-- **Gives:** nummeraanduiding / verblijfsobject / pand with ids, postcode, and point/footprint
-  geometry — the surface-form → ladder resolution and the point-in-polygon joins.
-- **Quirks:** to be characterised during build (verified in Phase-0 Spike D,
-  `IMPLEMENTATION_PLAN.md` §6). Note the `lvbag` driver is BAG-specific; `gebieden` and CBS
-  wijk/buurt polygons load separately via WFS/GeoPackage, **not** the same driver.
+- **Source:** Kadaster *LV BAG 2.0 Extract* — a free **national-only** dump (~**3.6 GB**;
+  `lvbag-extract-nl.zip` = 3,610,187,048 bytes), refreshed monthly (~the 8th). Via the PDOK atom
+  feed (`https://service.pdok.nl/kadaster/adressen/atom/v1_0/index.xml`, verified 2026-07-25). A
+  per-gemeente extract needs an ordered Kadaster BAG-Extract account, so **filter at load, not at
+  download**. Nested zip: outer → per-object-type inner zips (NUM 353 MB, VBO 1.2 GB, PND 2.0 GB, …).
+- **`lvbag` reads only the ST snapshot — the daily Mutatie-Levering (ML) files are NOT supported by
+  the driver.** So there is **no incremental-via-`lvbag`**; the refresh is an **idempotent monthly
+  full reload** (a custom ML applier / NLExtract is only needed if daily freshness ever is).
+- **Load as-is; the only filter is municipality (data rule).** BAG is the authoritative **master
+  data** for addresses/buildings and the geography ladder — the reference every other source is tied
+  to on location — so we mirror it faithfully and keep it correct and complete rather than
+  pre-filtering to today's needs. **Rule: load full tables, no column projection, all voorkomens; the
+  only load-time filter is municipality**, because pre-dropping columns or rows bakes in assumptions
+  we'd have to unwind (another vertical needs another column; a backdated audit needs an old
+  voorkomen; a demolished address must still resolve). The safe reductions are municipality (we only
+  audit Amsterdam) and omitting **whole** object types we provably don't use (footprints) — both
+  remove no address and are trivially reversible.
+  `ogr2ogr -f PostgreSQL -oo AUTOCORRECT_INVALID_DATA=YES /vsizip//…/9999<TYPE>…zip
+  -where "identificatie LIKE '%.0363%'"` — note `identificatie` is the IMBAG-URI form
+  `NL.IMBAG.<Type>.0363…`, so match `'%.0363%'`, **not** `'0363%'`. Load the three **adresseerbaar
+  object**
+  types — `verblijfsobject` (address point), **`ligplaats`** (houseboat berth) and **`standplaats`**
+  (polygons → centroid, reached via `hoofdadresNummeraanduidingRef`) — for complete address-point
+  coverage, plus `nummeraanduiding` + `openbareruimte`. `pand` (footprints) and `woonplaats` are
+  optional whole-table omissions (no address point is lost). `gebieden`/CBS polygons load separately
+  via WFS/GeoJSON (§0), **not** the `lvbag` driver.
+- **BAG is bitemporal — load ALL voorkomens and resolve at valid-time.** Each object has a sequence
+  of voorkomens with valid-time (`beginGeldigheid`/`eindGeldigheid`) and transaction-time
+  (`tijdstipRegistratie`/`eindRegistratie`). 26% of `0363` addresses have >1 voorkomen; **87% are
+  real-world changes** (valid-time advances), **13% technical corrections** (same valid-time,
+  re-registered). Because we audit **backdated** interventions, prefer the state valid at the
+  intervention's date: `beginGeldigheid <= D AND (eindGeldigheid IS NULL OR eindGeldigheid > D) AND
+  eindRegistratie IS NULL`. **But permit dates/addresses can be unreliable, so if nothing is valid at
+  D, fall back to any best-known voorkomen and record the outcome on the link** (`time_match =
+  valid_at_date | any_time` → a `timeMismatch` caveat on the `AuditLink`): resolve anyway, flag the
+  weakness rather than drop the link (Spike D: lifts permit address resolution 90.4% → 95.1%).
+  **Withdrawal/demolition is a `status` change** (`… ingetrokken`) on the latest voorkomen, *not* a
+  dropped row (the file holds 39,903 VBO + 48,966 NUM ingetrokken for `0363`) — so never filter on
+  `status`, or a permit pointing at a since-demolished address fails.
+- **Table/column shape:** an address row (`nummeraanduiding`: `postcode`, `huisnummer`,
+  `openbareruimteref`) has **no geometry**; the point is on `verblijfsobject`/`ligplaats`/
+  `standplaats` via `hoofdadresnummeraanduidingref`; `openbareruimte.naam` is the street. Reach a
+  point NUM → adresseerbaar object.
 
 ---
 

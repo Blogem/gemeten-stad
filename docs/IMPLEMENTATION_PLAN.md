@@ -105,6 +105,20 @@ for rows that change, e.g. a replant date filled in months later.
 `amends`/`supersedes` to the prior, each with its own validity — never an in-place edit. The
 `Assessment` model below is just the most active instance of this one general rule.
 
+**Reference data is bitemporal too — resolve at the intervention's valid-time.** This is not only
+an internal concern: **BAG itself is bitemporal** (Spike D, `spikes/spike-d/`) — every address is a
+sequence of *voorkomens* with valid-time (`beginGeldigheid`/`eindGeldigheid`) and transaction-time
+(`tijdstipRegistratie`/`eindRegistratie`), and a change may be a real-world event (valid-time
+advances) or a correction (same valid-time, re-registered). Because we audit **backdated**
+interventions, a 2022 permit's location must be resolved against the BAG state **valid in 2022**,
+not today's snapshot — so we load the *full* voorkomen history and prefer `beginGeldigheid <= D AND
+(eindGeldigheid IS NULL OR eindGeldigheid > D) AND eindRegistratie IS NULL`. Withdrawal/demolition
+is a `status` change, not a dropped row, so a since-demolished address still resolves (with its
+status). And because the intervention's *own* date can be unreliable, if nothing is valid at D we
+**fall back to any voorkomen and stamp the mismatch on the link** (a `timeMismatch` caveat on the
+resolved-location edge) rather than lose the link — resolve, but record how sure we are of the
+time alignment. Detail + the load recipe: `DATA_SOURCES.md` §8.
+
 ### Fulfilment: best-effort, multi-axis, and tracked through time
 
 Two rules here, both load-bearing for auditability.
@@ -327,11 +341,14 @@ extraction feasibility from permit prose — **including how to interpret the ac
 (kappen / vellen / rooien / *verplanten*) against the registry's `boommaatregelBesluit`, and
 whether *verplanten* (transplant, the tree survives) vs *vellen* (removal) changes whether/how
 herplantplicht applies; read the actual corpus before fixing the mapping (the thread's
-"18 verplant = 18 vellen" match is provisional until this settles); **(D)** the geo bulk
-backbone loads & resolves —
-BAG *LV 2.0 Extract* via GDAL `lvbag` into PostGIS (filtered to `0363`) + `gebieden`/CBS
-wijk-buurt polygons via WFS/GeoPackage, and free-text/reference-address → BAG resolution +
-point-in-polygon work locally (the PDOK Locatieserver replacement; `DATA_SOURCES.md` §0/§8).
+"18 verplant = 18 vellen" match is provisional until this settles); **(D) — DONE
+(`spikes/spike-d/`):** the geo bulk backbone loads & resolves locally — BAG *LV 2.0 Extract* via
+GDAL `lvbag` into PostGIS (national ~3.6 GB, filtered to `0363`, **all voorkomens**) + `gebieden`
+(Datapunt GeoJSON) / CBS (PDOK WFS) polygons, with **100% point-in-polygon** accuracy vs
+`gbdBuurtId` and **90% address-precision** free-text/reference resolution at the permit's valid-time,
+median 0 m from the permit's own point — confirming the PDOK Locatieserver replacement. Corrections
+folded into `DATA_SOURCES.md` §0/§8: extract is national-only ~3.6 GB, `lvbag` is ST-snapshot-only
+(no daily ML → monthly full reload), BAG is bitemporal (resolve at valid-time).
 
 **Phase 1 — deterministic backbone (no LLM).** `ingest koop` (Noord kap permits, incremental
 by publication id) + `load` (resolve location, assemble to graph, values to PostGIS) +
