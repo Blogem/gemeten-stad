@@ -1,0 +1,32 @@
+version: "3"
+
+vars:
+  BIN_DIR: bin
+
+tasks:
+  build:
+    desc: Build the Go binaries and the webapp
+    cmds:
+      - task: build:go
+      - task: build:web
+
+  build:go:
+    desc: Build the pipeline and server binaries into {{.BIN_DIR}}/
+    cmds:
+      - go build -o {{.BIN_DIR}}/ ./cmd/pipeline ./cmd/server
+
+  build:web:
+    desc: Build the SvelteKit webapp
+    dir: webapp
+    cmds:
+      - npm run build
+
+  test:
+    desc: Run the Go test suite
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run

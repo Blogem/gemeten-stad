@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  # The "standard" set: errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - misspell   # catch typos in comments and strings
+    - revive     # golint successor: style and correctness
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
