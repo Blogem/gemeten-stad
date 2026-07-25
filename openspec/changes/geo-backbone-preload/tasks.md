@@ -44,15 +44,15 @@ All Go tests use **testify** (`require`/`assert`), table-driven where it fits (a
 
 **Integration (automatic, in CI — SQL-seeded real-shaped subset, no `gdal` sidecar):**
 
-- [ ] 7.4 Add a checked-in real-*shaped* BAG subset (a handful of OPR/NUM/VBO/LIG/STA rows spanning voorkomens, incl. a withdrawn `status` and a valid-at-date vs any-time pair, + a few `gebieden` polygons) as SQL/`COPY` seed data; load it into a `*_staging` table in a fresh `internal/testdb` schema (`GS_TEST_DATABASE_URL`).
-- [ ] 7.5 Exercise the real load code from staging onward on the subset: upsert (new voorkomen inserts, re-run is a no-op, an absent object is soft-deleted with `source_deleted_at`) → indexes → sanity gates.
-- [ ] 7.6 Resolver against the seeded subset: address tier via `(postcode,huisnummer)` and via street; postcode-only fallback; buurt PIP fallback with `unresolvedLocation` (and not snapped to a nearer address); valid-at-date preferred; `any_time` fallback flagged; a since-withdrawn address still resolves; a point with a known `gbdBuurtId` places into that same buurt.
+- [x] 7.4 Add a checked-in real-*shaped* BAG subset (a handful of OPR/NUM/VBO/LIG/STA rows spanning voorkomens, incl. a withdrawn `status` and a valid-at-date vs any-time pair, + a few `gebieden` polygons) as SQL/`COPY` seed data; load it into a `*_staging` table in a fresh `internal/testdb` schema (`GS_TEST_DATABASE_URL`).
+- [x] 7.5 Exercise the real load code from staging onward on the subset: upsert (new voorkomen inserts, re-run is a no-op, an absent object is soft-deleted with `source_deleted_at`) → indexes → sanity gates.
+- [x] 7.6 Resolver against the seeded subset: address tier via `(postcode,huisnummer)` and via street; postcode-only fallback; buurt PIP fallback with `unresolvedLocation` (and not snapped to a nearer address); valid-at-date preferred; `any_time` fallback flagged; a since-withdrawn address still resolves; a point with a known `gbdBuurtId` places into that same buurt.
 
 **Full-corpus (manual/opt-in — real `ogr2ogr`/`lvbag` execution):**
 
-- [ ] 7.7 Document the opt-in full-corpus gate (full compose stack incl. `gdal` + the real landed extract) that runs the actual `ogr2ogr`/`lvbag` load and asserts the exact Spike D numbers (69/15, single SRID 28992, 90% address / 100% PIP distribution); not run in default CI.
+- [x] 7.7 Document the opt-in full-corpus gate (full compose stack incl. `gdal` + the real landed extract) that runs the actual `ogr2ogr`/`lvbag` load and asserts the exact Spike D numbers (69/15, single SRID 28992, 90% address / 100% PIP distribution); not run in default CI.
 
 ## 8. Docs & cleanup
 
-- [ ] 8.1 Add a `location/`-or-`deploy` README note documenting the load recipe, the sidecar prefix/env knobs, and how to run the integration gate.
-- [ ] 8.2 Remove `spikes/spike-d/` (its behaviour now lives in the packages) and mark P6 done in `docs/PHASE_0_PLAN.md`.
+- [x] 8.1 Add a `location/`-or-`deploy` README note documenting the load recipe, the sidecar prefix/env knobs, and how to run the integration gate.
+- [x] 8.2 Remove `spikes/spike-d/` (its behaviour now lives in the packages) and mark P6 done in `docs/PHASE_0_PLAN.md`.
