@@ -99,14 +99,14 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 	require.NoError(t, upsertAll(ctx, pool, loadTS1))
 
 	wantCounts := map[string]int{
-		"bag_openbareruimte":  1,
+		"bag_openbareruimte":   1,
 		"bag_nummeraanduiding": 8, // num-a (2 voorkomens) + b,c,d,e,f,g
-		"bag_verblijfsobject": 4,
-		"bag_ligplaats":       1,
-		"bag_standplaats":     1,
-		"gebieden_buurten":    2,
-		"gebieden_wijken":     1,
-		"cbs_buurten":         1,
+		"bag_verblijfsobject":  4,
+		"bag_ligplaats":        1,
+		"bag_standplaats":      1,
+		"gebieden_buurten":     2,
+		"gebieden_wijken":      1,
+		"cbs_buurten":          1,
 	}
 
 	assertCounts := func(t *testing.T) {

@@ -98,7 +98,7 @@ func TestSidecarCommand(t *testing.T) {
 // a shared prefix across concurrent calls, e.g. building commands for
 // multiple layers from the same base prefix).
 func TestSidecarCommand_DoesNotMutateInputs(t *testing.T) {
-	prefix := make([]string, 3, 3) // zero spare capacity: append must copy
+	prefix := make([]string, 3) // len==cap, zero spare capacity: append must copy
 	copy(prefix, []string{"docker", "exec", "gdal"})
 	args := []string{"-f", "GeoJSON"}
 
