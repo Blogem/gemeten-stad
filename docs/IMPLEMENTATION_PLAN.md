@@ -355,7 +355,17 @@ GDAL `lvbag` into PostGIS (national ~3.6 GB, filtered to `0363`, **all voorkomen
 `gbdBuurtId` and **90% address-precision** free-text/reference resolution at the permit's valid-time,
 median 0 m from the permit's own point — confirming the PDOK Locatieserver replacement. Corrections
 folded into `DATA_SOURCES.md` §0/§8: extract is national-only ~3.6 GB, `lvbag` is ST-snapshot-only
-(no daily ML → monthly full reload), BAG is bitemporal (resolve at valid-time).
+(no daily ML → monthly full reload), BAG is bitemporal (resolve at valid-time); **(E) — DONE
+(`spikes/spike-e/`):** the triple store is **Apache Jena Fuseki** (Apache-2.0) — the only genuinely
+open-source candidate that meets all five needs (RDF-star, SHACL gate, PROV named graphs, free
+container, native dump) in one container, confirmed empirically against Fuseki 5.5.0. The two flagged
+risks hold up: SHACL validates over RDF-star (Jena #3503 does not bite), and the **confidence-presence
+rule is enforced with a `sh:sparql` SPARQL-star constraint** — core SHACL cannot reach into a quoted
+triple — validated identically by the Fuseki SHACL endpoint and the Jena CLI. Confidence is written with
+the `{| … |}` annotation form (asserts the base edge **and** annotates it); run provenance lives in a
+dedicated named graph (the dataset serves `unionDefaultGraph` on). GraphDB Free (proprietary + lock-in),
+Oxigraph (no native SHACL) and RDF4J (beta RDF-star, flagged RDF-1.2-incompatible) were eliminated on
+their downsides, not their feature lists.
 
 **Phase 1 — deterministic backbone (no LLM).** `ingest koop` (Noord kap permits, incremental
 by publication id) + `load` (resolve location, assemble to graph, values to PostGIS) +

@@ -6,7 +6,7 @@ where Phase 0 sits; this file decomposes it into independently-tackleable work i
 
 ## Spike status
 
-All four design spikes that de-risk this vertical are **done** — their findings are already folded
+All five design spikes that de-risk this vertical are **done** — their findings are already folded
 into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
 
 - **Spike A** (`spikes/spike-a/`) — the replant *termijn* lives nowhere publicly reliable →
@@ -22,8 +22,11 @@ into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
 - **Spike D** (`spikes/spike-d/`) — the geo bulk backbone loads & resolves locally: BAG *LV 2.0
   Extract* via GDAL `lvbag` into PostGIS + gebieden/CBS polygons, 100% point-in-polygon accuracy,
   90% address-precision resolution at the permit's valid-time.
-
-Only **Spike E** (triple-store selection, item P2) is new and still open.
+- **Spike E** (`spikes/spike-e/`) — the triple store is **Apache Jena Fuseki** (Apache-2.0), the only
+  genuinely open candidate meeting all five needs in one container. SHACL validates over RDF-star (Jena
+  #3503 does not bite); the confidence-presence rule is enforced with a `sh:sparql` SPARQL-star constraint
+  (core SHACL can't reach a quoted triple); confidence is written with the `{| … |}` form; run provenance
+  lives in a dedicated named graph. GraphDB Free / Oxigraph / RDF4J eliminated on their downsides.
 
 ## Recommended sequencing
 
@@ -35,7 +38,8 @@ Only **Spike E** (triple-store selection, item P2) is new and still open.
 - **Wave D — modeling (needs P2):** P8 ontology + vocab + shapes + uncertainty/temporal patterns
 - **Wave E — tooling (needs the stores populated):** P9 dump / NER-cache tool
 
-The two hard gates are **P2** (blocks all of Wave D) and **P1** (blocks all code). Start both first.
+The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all code). **P2 is now DONE**
+(triple store = Fuseki), so only **P1** remains as an open gate — start it first.
 
 ---
 
@@ -52,7 +56,7 @@ The two hard gates are **P2** (blocks all of Wave D) and **P1** (blocks all code
   subcommands (no-op).
 - **Depends on:** nothing.
 
-## P2 · Triple-store selection — Spike E
+## P2 · Triple-store selection — Spike E · **DONE** (`spikes/spike-e/`)
 
 - **Goal:** Settle Jena Fuseki vs GraphDB against the three requirements (free-to-use, container,
   RDF-star) **plus** the two load-bearing needs the design imposes: SHACL validation and PROV
@@ -60,14 +64,18 @@ The two hard gates are **P2** (blocks all of Wave D) and **P1** (blocks all code
 - **Entails:** a throwaway `spikes/spike-e/` that, in a container, (1) loads a tiny RDF-star
   sample, (2) runs a SPARQL-star query reading a `<< … >> :confidence`, (3) validates against a
   SHACL shape, (4) writes into a run-stamped named graph and queries across graphs.
-- **Recommendation:** **Apache Jena Fuseki** most likely wins — the only candidate that is
-  actually open source (Apache-2.0, vs GraphDB Free which is free-tier but proprietary/
-  feature-gated), ships official containers, has native SPARQL-star, and bundles `jena-shacl`.
-  Confirm SHACL-over-RDF-star and named-graph ergonomics before committing — everything in Wave D
-  sits on this.
-- **Done when:** a written decision (one paragraph) + a compose service definition for the
-  winner + the four checks pass.
-- **Depends on:** nothing. **Blocks:** P3, P8.
+- **Decision: Apache Jena Fuseki** (Apache-2.0), confirmed empirically against Fuseki 5.5.0 — the only
+  genuinely open-source candidate meeting all five needs in one container. All 13 checks pass
+  (`./run.sh`). The two flagged risks hold: SHACL validates over RDF-star (Jena #3503 does not bite), and
+  the **confidence-presence rule needs a `sh:sparql` SPARQL-star constraint** (core SHACL can't reach a
+  quoted triple) — validated identically by the SHACL endpoint and the Jena CLI. Confidence is written
+  with the `{| … |}` form; run provenance lives in a dedicated named graph (dataset serves
+  `unionDefaultGraph` on). GraphDB Free / Oxigraph / RDF4J eliminated on their downsides (see the spike
+  README). **Hand-offs:** P3 lifts `compose.yaml`'s `fuseki` service (named volume, healthcheck,
+  `-Xmx2g`, `ENABLE_SHACL`); P8 uses the `{| … |}` + `sh:sparql` pattern from `shapes/shapes.ttl`.
+- **Done when:** ~~a written decision (one paragraph) + a compose service definition for the
+  winner + the four checks pass.~~ ✓ all delivered in `spikes/spike-e/`.
+- **Depends on:** nothing. **Blocks:** P3, P8 (now unblocked).
 
 ## P3 · Dev docker compose
 
