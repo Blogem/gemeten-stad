@@ -22,11 +22,50 @@ tasks:
       - npm run build
 
   test:
+    desc: Run all test suites (Go, webapp, Python)
+    cmds:
+      - task: test:go
+      - task: test:web
+      - task: test:python
+
+  test:go:
     desc: Run the Go test suite
     cmds:
       - go test ./...
 
+  test:web:
+    desc: Run the webapp unit tests
+    dir: webapp
+    cmds:
+      - npm run test
+
+  test:python:
+    desc: Run the Python NER extractor tests
+    dir: extract/ner
+    cmds:
+      - pytest
+
   lint:
+    desc: Run all linters (Go, webapp, Python)
+    cmds:
+      - task: lint:go
+      - task: lint:web
+      - task: lint:python
+
+  lint:go:
     desc: Run golangci-lint
     cmds:
       - golangci-lint run
+
+  lint:web:
+    desc: Run eslint on the webapp
+    dir: webapp
+    cmds:
+      - npm run lint
+
+  lint:python:
+    desc: Run ruff check + format check on the Python NER extractor
+    dir: extract/ner
+    cmds:
+      - ruff check .
+      - ruff format --check .
