@@ -39,8 +39,8 @@ into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
 - **Wave E — tooling (needs the stores populated):** P9 dump / NER-cache tool
 
 The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all code); **both are now
-DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is unblocked. **P3** and
-**P4** are also DONE. The remaining open work is P5–P9.
+DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is unblocked. **P3**,
+**P4**, and **P5** are also DONE. The remaining open work is P6–P9.
 
 ---
 
@@ -100,15 +100,19 @@ DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is 
   lands with P5.)
 - **Depends on:** P1 (and P5 for the integration lane).
 
-## P5 · Integration-test DB isolation
+## P5 · Integration-test DB isolation · **DONE** (`internal/testdb/`)
 
 - **Goal:** The guard from §5 — tests hit a **separate** triplestore repo/namespace + separate
   Postgres db/schema, and **refuse** to run against production names.
 - **Entails:** env-driven test config; a startup assertion that aborts if target names match the
   production set; helpers to create/tear down the isolated namespace + schema; a shared test
   harness both Go and (if needed) Python use.
-- **Done when:** tests run against the isolated targets; flipping the env to a production name
-  makes the guard abort.
+- **Done when:** ~~tests run against the isolated targets; flipping the env to a production name
+  makes the guard abort.~~ ✓ `internal/testdb` creates a randomly-named schema (Postgres) / dataset
+  (Fuseki) per run via `GS_TEST_DATABASE_URL`/`GS_TEST_FUSEKI_URL` (no fallback to the app's own
+  `GS_*` vars) and `AssertNotProduction` aborts before any connection/mutation if the resolved name
+  is `gemeten_stad`/`public`/`ds` — verified live against the compose stack, incl. the abort path.
+  `task test:integration` and the `go-integration` CI job (`.github/workflows/ci.yml`) run it.
 - **Depends on:** P1; informs P3/P4.
 
 ## P6 · Lift BAG / gebieden / CBS preload into main code
