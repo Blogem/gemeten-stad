@@ -200,12 +200,22 @@ curl "https://api.data.amsterdam.nl/v1/bomen/kapenherplant/?_count=true&gbdBuurt
   from each other 100% of the time). Treat as administrative, not as the bekendmaking date;
   anchor elapsed-time reasoning on the felling date instead.
 - `soortnaam`/`toeTePassenBoomsoort` are frequently null in `kapenherplant`; join to
-  `stamgegevens` via `boomId` for species.
+  `stamgegevens` via `boomId` (with the `boomNieuwId` fallback below) for species.
 - The `[isnull]` filter operator did not work in probing (empty response, no error) —
   filter null lifecycle dates client-side.
 - **`kapenherplant` rejects spatial filters** (`geometrie[within]` → HTTP 403); only
   `stamgegevens` accepts them (Spike B). To place a permit point at buurt level pre-BAG,
   query `stamgegevens` near the point and vote the `gbdBuurtId` of the nearest standing trees.
+- **Resolving a felled tree to a point needs a `boomNieuwId` fallback** (Spike B). Because
+  `kapenherplant` carries no queryable geometry (the 403 above), a felled row's coordinates come
+  only from joining `boomId` → `stamgegevens`. But `boomId` alone resolves just **~71%** of felled
+  Noord rows: when a replacement tree is planted the registry **retires the original `boomId` and
+  issues a `boomNieuwId`** for the new tree, so the old id vanishes from `stamgegevens` (the
+  `boomAanwezigheid = "Ja, nieuwe boom reeds aangeplant"` cases — 170/1,298 in Noord — resolve
+  0% via `boomId`). Resolve `boomId` first, then fall back to `boomNieuwId` on a miss → **~98%**
+  resolution. Note this is *not* "vellen removed it": removed (`Nee`) trees stay in the snapshot
+  and resolve fine; it is specifically the replant → new-id swap that breaks the join — i.e. the
+  misses are exactly the audit-interesting *replanted* trees, so `boomId`-only silently drops them.
 - **`kapenherplant` has no permit-reference field** — no zaaknummer/OLO/dossier; `projectnaamBomen`
   and `selectiecode` exist but are 0% populated in Noord (Spike B). Hence permit↔registry linkage
   is fuzzy resolution, never a key join.
