@@ -5,3 +5,4 @@ all_permits.jsonl
 noord_permits.jsonl
 match_candidates.jsonl
 buurt_cache.json
+sweep.err
