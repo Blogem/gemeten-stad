@@ -41,8 +41,8 @@ VERB_STEMS = [
     ("kap", "kappen"),
     ("plant", "herplanten"),   # bare "planten" = replant side
 ]
-FELLING = {"kappen", "vellen", "rooien"}       # trigger the obligation
-REPLANT = {"herplanten"}                        # fulfilment side, never a felling count
+FELLING = {"kappen", "vellen", "rooien", "verplanten"}  # obligation (art. 1k: verplant IS vellen)
+REPLANT = {"herplanten"}                                 # fulfilment side, never a felling count
 
 WORD_NUM = {
     "een": 1, "één": 1, "twee": 2, "drie": 3, "vier": 4, "vijf": 5, "zes": 6,
@@ -170,11 +170,10 @@ def main():
         acts = parse_abstract(p.get("abstract"))
         nc = naive_count(f'{p.get("title")} {p.get("abstract")}')
         ft = felling_total(acts)
-        # conflation: naive picked a number that is not the felling total, because a
-        # verplant/herplant clause carried the larger count.
-        conflated = bool(acts and nc is not None and ft is not None and nc != ft
-                         and any(a["verb"] in (REPLANT | {"verplanten"})
-                                 and a["count"] == nc for a in acts))
+        # naive is wrong when its single largest-int != the obligation sum: it either grabbed a
+        # herplant (replant) number as the felling count, or returned max() instead of the sum
+        # of the felling activities ("vellen 33 en verplanten 43" → obligation 76, naive 43).
+        conflated = bool(acts and nc is not None and ft is not None and nc != ft)
         rows.append({"id": p["id"], "doctype": p["doctype"], "noord": p.get("noord", False),
                      "abstract": p.get("abstract"), "activities": acts,
                      "naive_count": nc, "felling_total": ft, "conflated": conflated})
