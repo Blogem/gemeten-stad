@@ -33,6 +33,14 @@ tasks:
     cmds:
       - go test ./...
 
+  test:integration:
+    desc: >
+      Run the Go integration test suite against the isolated test targets (Phase 0 · P5).
+      Requires GS_TEST_DATABASE_URL, GS_TEST_FUSEKI_URL, FUSEKI_ADMIN_PASSWORD — see README.md.
+      Typically run after `task compose:up`.
+    cmds:
+      - go test -tags=integration ./...
+
   test:web:
     desc: Run the webapp unit tests
     dir: webapp
