@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,11 +20,13 @@ func TestRootRegistersStages(t *testing.T) {
 	assert.ElementsMatch(t, []string{"ingest", "extract", "load", "derive", "dump"}, got)
 }
 
-// TestStageIsNoOp confirms each stage runs, exits without error, and reports
-// that it is not yet implemented.
+// TestStageIsNoOp confirms the stub stages (extract, derive, dump) run, exit
+// without error, and report that they are not yet implemented. ingest and
+// load are wired to real work and are covered by TestIngestAndLoadAreWired
+// instead — running their RunE here would require network/DB access.
 func TestStageIsNoOp(t *testing.T) {
 	for name := range map[string]bool{
-		"ingest": true, "extract": true, "load": true, "derive": true, "dump": true,
+		"extract": true, "derive": true, "dump": true,
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := newRootCmd()
@@ -35,5 +38,35 @@ func TestStageIsNoOp(t *testing.T) {
 			require.NoError(t, root.Execute())
 			assert.Equal(t, name+": not yet implemented\n", out.String())
 		})
+	}
+}
+
+// TestIngestAndLoadAreWired asserts ingest/load are wired to real
+// implementations (non-stub RunE) without invoking that RunE, which would
+// require network/DB access. It also checks load registers its --reset flag.
+func TestIngestAndLoadAreWired(t *testing.T) {
+	root := newRootCmd()
+	commands := map[string]*cobra.Command{}
+	for _, c := range root.Commands() {
+		commands[c.Name()] = c
+	}
+
+	for _, name := range []string{"ingest", "load"} {
+		c, ok := commands[name]
+		if !ok {
+			t.Fatalf("missing subcommand %q", name)
+		}
+		if c.RunE == nil {
+			t.Errorf("%s: expected non-nil RunE", name)
+		}
+	}
+
+	loadCmd := commands["load"]
+	resetFlag := loadCmd.Flags().Lookup("reset")
+	if resetFlag == nil {
+		t.Fatal("load: expected a --reset flag")
+	}
+	if resetFlag.Value.Type() != "bool" {
+		t.Errorf("load: --reset flag type = %q, want %q", resetFlag.Value.Type(), "bool")
 	}
 }
