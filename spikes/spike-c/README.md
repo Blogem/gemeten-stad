@@ -197,10 +197,19 @@ recovery is near-complete with them:
    Soortenregister / mined altLabels), each pattern carrying its concept IRI — the `msr-graph`
    `graph_reader → seeding` pattern. This is the primary **recognition** engine (recall 83% → 90%) and the
    home of the NER learning track; it grows as the vocabulary grows, no code changes.
-3. **LLM count-binding (over the one-sentence abstract, closed-set validated).** The recognized activity /
-   species IRIs constrain an LLM that binds the per-activity counts — resolving appositives, snoeien-mixed
-   and multi-count clauses the rule binders miss (**95%** on the hard tail). This is `msr-graph`'s
-   quantity-binding choice, empirically justified here.
+3. **LLM count-binding (over the one-sentence abstract, closed-set validated) — invoked SELECTIVELY, not on
+   everything.** The recognized activity / species IRIs constrain an LLM that binds the per-activity counts
+   — resolving appositives, snoeien-mixed and multi-count clauses the rule binders miss (**95%** on the hard
+   tail). This is `msr-graph`'s quantity-binding choice, empirically justified here.
+
+**Escalation policy (the key cost/robustness lever).** The LLM does **not** see every permit — it is an
+*escalation* triggered only where tiers 1–2 are uncertain: the deterministic parser and spaCy **disagree**,
+a felling permit yields **no count** (residual), or a hard-shape flag is present (multi-activity /
+appositive / snoeien / "waarvan" / "of"). Where the two cheap tiers **agree**, that count is taken as-is —
+justified directly: on the 100 easy agreeing cases the LLM matched **98/100** and added 2 abstentions, so
+escalating them would spend tokens to *lose* accuracy. In corpus terms ~1,600 of ~1,986 felling permits are
+settled by the cheap agreeing path and only **~14%** (~275) escalate to the LLM — bounding cost, keeping the
+majority classified offline/reproducibly, and applying the LLM exactly where its 55%→95% edge lives.
 - **Vocabulary growth (statistical `nl` model).** A fourth, offline loop: mine noun-chunk candidates the
   vocab doesn't yet cover → altLabel **proposals** → human confirmation → back into the SKOS graph (the
   plan's "living vocab" recipe = `msr-graph`'s mining loop). The `nl_core_news_md` lemmatizer is too weak

@@ -371,8 +371,12 @@ scaled so the audit works without the fancy parts but count recovery is near-com
    IMBOR/Soortenregister/mined altLabels; concept IRI in the pattern `id` → `ent_id_`, the `msr-graph`
    `graph_reader → seeding` shape). Primary recognizer (recall 83%→90%) and the NER learning track; grows
    with the vocab, no code changes. Per-span provenance into the graph; feeds Spike B's matcher.
-3. **LLM count-binding** — the recognized activity/species IRIs constrain an LLM that binds the counts over
-   the one-sentence abstract (44%→55%→**95%** on the hard tail); resolves appositives / snoeien / "waarvan".
+3. **LLM count-binding — invoked selectively, not on every permit** — the recognized activity/species IRIs
+   constrain an LLM that binds the counts over the one-sentence abstract (44%→55%→**95%** on the hard tail);
+   resolves appositives / snoeien / "waarvan". It is an **escalation**: triggered only where tiers 1–2
+   disagree, a felling permit yields no count, or a hard-shape flag fires — where the two cheap tiers agree
+   the count is taken as-is (LLM matched 98/100 there). So only ~14% of felling permits reach the LLM;
+   the majority is classified offline, bounding cost and preserving reproducibility.
 Plus a **statistical-`nl` mining loop** proposing new species/project altLabels → human confirmation → the
 graph (the SKOS "living vocab" recipe). §5 holds: the floor is Go, **Python owns spaCy**; the LLM binder is a
 new *additive* dependency the evidence earns — NER is central, but the audit core still runs without it.
