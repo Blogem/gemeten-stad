@@ -38,12 +38,13 @@ into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
 - **Wave D — modeling (needs P2):** P8 ontology + vocab + shapes + uncertainty/temporal patterns
 - **Wave E — tooling (needs the stores populated):** P9 dump / NER-cache tool
 
-The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all code). **P2 is now DONE**
-(triple store = Fuseki), so only **P1** remains as an open gate — start it first.
+The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all code); **both are now
+DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is unblocked. **P3** and
+**P4** are also DONE. The remaining open work is P5–P9.
 
 ---
 
-## P1 · Repo skeleton
+## P1 · Repo skeleton · **DONE**
 
 - **Goal:** Stand up the `stage × source` package layout from `IMPLEMENTATION_PLAN.md` §5 as a
   compiling Go module + the empty dir tree.
@@ -52,8 +53,9 @@ The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all cod
   deploy/` tree; a `Makefile`/`Taskfile` with build/test/lint targets; `.golangci.yml`; a README
   pointing at the docs. SvelteKit `webapp/` as a bare `create-svelte` stub so CI wiring is real.
 - **Key decisions:** subcommand wire-up (cobra vs stdlib `flag`); module path.
-- **Done when:** `make build` produces both binaries; `pipeline --help` lists the five
-  subcommands (no-op).
+- **Done when:** ~~`make build` produces both binaries; `pipeline --help` lists the five
+  subcommands (no-op).~~ ✓ `task build` builds both binaries; `pipeline --help` lists the five
+  subcommands. (Build tooling is a `Taskfile`, not a Makefile.)
 - **Depends on:** nothing.
 
 ## P2 · Triple-store selection — Spike E · **DONE** (`spikes/spike-e/`)
@@ -77,22 +79,25 @@ The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all cod
   winner + the four checks pass.~~ ✓ all delivered in `spikes/spike-e/`.
 - **Depends on:** nothing. **Blocks:** P3, P8 (now unblocked).
 
-## P3 · Dev docker compose
+## P3 · Dev docker compose · **DONE** (`deploy/compose/compose.yaml`)
 
 - **Goal:** One `deploy/compose/` bringing up triplestore + PostGIS + server.
 - **Entails:** lift spike-d's `compose.yaml` (PostGIS 16-3.4, named volume, healthcheck) as the
   base; add the P2-chosen triplestore service; add the `server` service; keep the `gdal` sidecar
   for loads (or fold into P6's decision). Env-driven connection config.
-- **Done when:** `docker compose up` yields a healthy PostGIS + triplestore + reachable server.
+- **Done when:** ~~`docker compose up` yields a healthy PostGIS + triplestore + reachable server.~~
+  ✓ delivered in `deploy/compose/compose.yaml`.
 - **Depends on:** P1, P2.
 
-## P4 · CI
+## P4 · CI · **DONE** (`.github/workflows/ci.yml`)
 
 - **Goal:** Build/test/lint gate on push.
 - **Entails:** Go build + `go test ./...` + golangci-lint; Python lint/test for the extractor
   scaffold; SvelteKit build for the stub; a job that spins compose services for integration tests
   (ties to P5). Runner: GitHub Actions.
-- **Done when:** green pipeline on a trivial PR; red on a failing test.
+- **Done when:** ~~green pipeline on a trivial PR; red on a failing test.~~ ✓ `.github/workflows/ci.yml`
+  gates Go build/test/lint, the Python extractor scaffold, and the SvelteKit stub. (Integration lane
+  lands with P5.)
 - **Depends on:** P1 (and P5 for the integration lane).
 
 ## P5 · Integration-test DB isolation
