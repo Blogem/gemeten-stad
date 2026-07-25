@@ -7,20 +7,26 @@ vellen / rooien / **verplanten**) map onto the registry's `boommaatregelBesluit`
 Read the corpus before fixing the mapping; the thread's "18 verplant = 18 vellen" match is provisional
 until this settles.
 
-**Answer.** **Counts are feasible with a lightweight deterministic parser — no NER needed for the
-audit core.** And **verplanten ≡ vellen**: the Bomenverordening *defines* vellen to include verplanten,
-and the registry has no separate Verplanten value at all — so "18 = 18" **holds** (with a
-`transplantOrigin` caveat). Measured:
+**Answer.** **Counts are feasible; the best extractor is a graph-vocabulary spaCy pipeline with LLM
+count-binding, and a lightweight deterministic parser is the zero-dependency floor.** And **verplanten ≡
+vellen**: the Bomenverordening *defines* vellen to include verplanten, and the registry has no separate
+Verplanten value at all — so "18 = 18" **holds** (with a `transplantOrigin` caveat). Measured:
 
-- The abstract is **formulaic prose** ("het `<verb>` van `<N>` bomen …"). A per-activity parser lifts
-  the count yield from the naive largest-int baseline **35% → 70%** (citywide besluiten) / **49% → 73%**
-  (Noord besluiten), reading spelled-out numbers and the `houtopstand` noun the baseline misses — and,
-  unlike the baseline, it **never sums vellen + verplant** (the baseline conflated them in **12** cases,
-  e.g. picking 43 where the felling was 33).
+- The abstract is **formulaic prose** ("het `<verb>` van `<N>` bomen …"). A per-activity **deterministic
+  parser** lifts obligation-count yield from the naive largest-int baseline **35% → 72%** (citywide
+  besluiten) / **49% → 73%** (Noord), reading spelled-out numbers and the `houtopstand` noun the baseline
+  misses — and, unlike the baseline, it **splits the felling activities** (kappen/vellen/rooien/verplant)
+  and sums them instead of picking `max()` (the baseline disagrees with the obligation in **32** citywide
+  besluiten, e.g. returning 43 where "vellen 33 + verplant 43" obligation is 76).
+- **Vocabulary-driven recognition + LLM binding beats both** (probes 5a–c). A spaCy EntityRuler seeded
+  from a species/activity vocab (the `msr-graph` pattern) lifts obligation recall **83% → 90%** by
+  recognizing species-headed counts the regex can't ("drie essen", "Kappen Ceder"); and an **LLM binds
+  the counts far more accurately** — on an 80-case hand-labeled hard set, exact-match **deterministic 44%
+  → spaCy 55% → LLM 95%**, resolving appositives ("een boom, de Es" = 1), snoeien-mixed clauses, and
+  "13 bomen, waarvan 7 … en 6" = 13 that defeat both rule binders.
 - **Species <10%** in prose (120/2299 = **5.2%** citywide, 2.5% Noord), **project ~1.3%**, boomnummer
   2.3% — and the registry's species/project fields are **0% populated city-wide**, so prose is the
-  *only* source. This is the genuine, fuzzy residue → **the home for the spaCy NER lane** (off the
-  audit critical path, scope-expandable — see the Decision).
+  *only* source; these feed the same vocabulary-driven recognizer (see the Decision).
 - `boommaatregelBesluit` over all **35,202** city rows has **no "Verplanten" value** — only
   `Vellen (boom verwijderen)` (+ `Ecoscan - Vellen` + 3 typos). The E-buurt "verplant 18 bomen" permit's
   trees are logged as **Vellen** with a real felling date and **9/18 replanted** — the registry treats a
@@ -30,9 +36,10 @@ and the registry has no separate Verplanten value at all — so "18 = 18" **hold
   2 parses the abstract, no per-document fetch.**
 
 All figures verified **2026-07-25** over the full 2022 Amsterdam kap corpus + the full city
-`kapenherplant`. Reproduce: `python3 parse_activities.py`, `species_project.py`, `registry_enum.py`,
-`body_vs_abstract.py` (needs `../spike-b/all_permits.jsonl`; run `../spike-a/probe.py` then
-`../spike-b/harvest_permits.py` first if absent).
+`kapenherplant`. Reproduce (stdlib probes): `python3 parse_activities.py`, `species_project.py`,
+`registry_enum.py`, `body_vs_abstract.py` (needs `../spike-b/all_permits.jsonl`; run `../spike-a/probe.py`
+then `../spike-b/harvest_permits.py` first if absent). The spaCy/LLM comparison needs the local venv +
+an LLM key — see **Finding 5** and **Files**.
 
 ---
 
@@ -55,25 +62,24 @@ The abstract is short, controlled-ish prose — `"het <verb> van <N> bomen (en <
 so a deterministic pattern parser (split clauses on `en`/`,`, bind each verb to its adjacent count,
 read spelled-out `een…twintig`, match `boom`/`bomen`/`houtopstand`) is the right tool. **No NER.**
 
-| Segment | naive baseline count | per-activity parser | multi-activity | naive conflated |
+| Segment | naive baseline count | per-activity parser | multi-activity | naive wrong |
 |---|---|---|---|---|
-| citywide · besluit (n=978) | 344 (35%) | **687 (70%)** | 18 | 4 |
-| citywide · aanvraag (n=1136) | 430 (38%) | **824 (73%)** | 15 | 6 |
-| Noord · besluit (n=147) | 72 (49%) | **107 (73%)** | 3 | 0 |
-| Noord · aanvraag (n=177) | 88 (50%) | **128 (72%)** | 1 | 0 |
+| citywide · besluit (n=978) | 344 (35%) | **700 (72%)** | 18 | 32 |
+| citywide · aanvraag (n=1136) | 430 (38%) | **824 (73%)** | 15 | 40 |
+| Noord · besluit (n=147) | 72 (49%) | **107 (73%)** | 3 | 10 |
+| Noord · aanvraag (n=177) | 88 (50%) | **128 (72%)** | 1 | 7 |
 
 The lift comes from **spelled-out numbers** ("het kappen van *vier* bomen") and the **`houtopstand`**
 noun (`"het vellen van 7 houtopstanden"`) that the baseline's `\d+ bomen` regex misses entirely. The
-residual unparsed ~27% is mostly abstracts with **no stated number** (e.g. "Kappen kastanje boom",
-"Vellen houtopstand (kap) Jan van Eijckstraat 12") and a species-as-noun gap ("een *populier*", no
-"boom" word) — genuine `countUnknown` cases, not parser failures, feeding the Spike-B `countUnknown`
-caveat. Countless buckets ("diverse/meerdere bomen") are rare (~6 citywide).
+residual unparsed ~28% is a **mix** (probe 1 breakdown): ~150 genuinely count-absent (plural "kappen van
+bomen", address-only stubs) — real `countUnknown` — but ~110 species-headed ("drie essen", "7 populieren")
+and ~60 singular implicit-1 ("Kappen Ceder") that a **vocabulary** recovers (Finding 5), not more regex.
 
-**The correctness point is the split, not just the yield.** The baseline takes the *largest* integer near
-"bomen", so on `"het vellen van 33 bomen en het verplanten van 43 bomen"` it returns **43** — the
-*verplant* count, not the felling. The per-activity parser returns `{vellen: 33, verplanten: 43}` and a
-**felling total of 33**. It also keeps any *herplant/plant* ("herplanten van N") strictly on the replant
-side, never in the felling total — the single biggest trap in the naive parser.
+**The correctness point is the split, not just the yield.** The baseline takes the *largest* single
+integer near "bomen", so on `"het vellen van 33 bomen en het verplanten van 43 bomen"` it returns **43** —
+a partial. The per-activity parser returns `{vellen: 33, verplanten: 43}` and the **obligation sum 76**
+(verplant is a felling, §Decision), while keeping any *herplant/plant* strictly on the replant side, never
+in the obligation — the single biggest trap in the naive parser.
 
 **Correction to `DATA_SOURCES.md` §1** ("only the tree count genuinely needs NER; present in prose ~50%"):
 the count is present in prose **~70%** of besluiten once spelled-out numbers + `houtopstand` are parsed,
@@ -92,11 +98,11 @@ Over the same abstracts (seed lexicon: Dutch common names + Latin genera + culti
 Top Dutch terms: iep 41, esdoorn 20, beuk 11, berk 7, es 6, populier 6, wilg 5, kastanje 4. Species appear
 as Dutch ("de Es", "(iep)"), Latin ("Betula pubescens"), or cultivar ("Ulmus 'Dodoens'", "Tilia x
 europaea"); projects cluster ("De Oranje Loper" ×10, "E-Buurt Oost NZ"). Because the **registry carries no
-species or project** (0% city-wide, probe 3), the prose is the *only* source for these — so this residue,
-though small, is real and is exactly the fuzzy, non-formulaic target that earns a **spaCy NER lane**. It
-is **off the audit critical path** (the audit works on counts + place + activity without it), so it is the
-place to build/experiment with NER, and its scope can be **widened** (richer entity/relation extraction,
-cross-permit project clustering) if the species/project residue proves too thin on its own.
+species or project** (0% city-wide, probe 3), the prose is the *only* source for these. These species terms
+are **not just a side-target — they are the recognition vocabulary** that also unlocks the count residue:
+a species-headed count ("drie essen") is unparseable by a boom-only regex but trivial once "essen" is a
+known species term. That is what Finding 5 exploits, and why species recognition sits at the *centre* of
+the extractor, not off to the side.
 
 ## Finding 3 — the registry has no "Verplanten" value; transplants are logged as Vellen
 
@@ -134,23 +140,74 @@ correct abstract count (e.g. abstract felling 4 → body 1 via the "een houtopst
 a stub.) Squeezing the residual count out of noisier bodies is a fuzzy task for the NER lane, not the
 deterministic parser.
 
+## Finding 5 — vocabulary-driven spaCy recognition + LLM binding (the msr-graph pattern)
+
+Rather than hand-grow the deterministic parser's rules to chase the residual (plural species tables,
+compound-number regexes, implicit-1 heuristics — the "curated lists always miss" trap), we adopt the
+`msr-graph` architecture: a **spaCy pipeline whose EntityRuler is seeded from the vocabulary** (here
+`vocab.py`, a stand-in for a SKOS SPARQL read — each concept's surface forms become patterns carrying the
+concept IRI in `id` → resolved via `ent_id_`), then bind counts. Two probes, then a scored comparison.
+
+**5a — recognition (spaCy `nl_core_news_md` + EntityRuler from vocab, `extract_ner.py`).** Recognizing the
+tree terms from the vocabulary lifts obligation-count recall **83% → 90%** of felling permits, recovering
+146/340 of the deterministic residual — species-headed ("drie essen"→3, "7 populieren"→7), compound
+numbers ("vierenveertig"→44, via a small nl number-normalizer), and singular implicit-1 ("Kappen Ceder"→1).
+No plural tables or cultivar regex — the vocab supplies the forms. *Honest limit:* the `nl_core_news_md`
+lemmatizer mis-normalizes botanical terms ("essen"→"Essen", "iepen"→"ie", "berken"→VERB), so the vocab must
+carry plural **altLabels** — it cannot lean on lemmatization (this is what corpus-mining grows).
+
+**5b/5c — binding (LLM vs the rule binders, `extract_llm.py` + `compare_methods.py`).** Recognition is the
+easy half; **binding the count to the right activity is where the rule binders systematically err** —
+spaCy over-counts species appositives ("een boom, de Es" = one tree, it says two), the deterministic
+parser drops snoeien-mixed and multi-count clauses, and "13 bomen, waarvan 7 … en 6" (= 13) fools both.
+`msr-graph` binds quantities with an LLM + closed-set validation; scored on an **80-case hand-labeled gold
+set** (`gold_labels.py`, the 55 det↔spaCy disagreements + a 25-row residual sample — the contested tail):
+
+| method | obligation exact-match (gold, n=80) | residual recovery (n=117) |
+|---|---|---|
+| deterministic regex | 44% | — (this is the residual) |
+| spaCy + graph vocab | 55% | 67/117 (57%) |
+| **LLM binding** (deepseek, closed-set prompt) | **95%** | **101/117 (86%)** |
+
+The LLM's 4 gold "misses" are mostly arguable even against the gold ("… de zaailing van een derde boom" —
+LLM 3, gold 2; "6 bomen (5 gekapt, 1 geweigerd)" — LLM 6, gold 5), and it does not regress on easy cases
+(98/100 agree with the parser). *Honest limit:* the LLM returned **no** count on ~7% of the sample
+(abstention / malformed JSON), so it needs the deterministic floor as a fallback, not a replacement.
+
+**Verdict:** recognition is a vocabulary problem (solved by the graph-seeded EntityRuler); **binding is a
+semantics problem the LLM solves decisively** (55% → 95% on the hard tail). The deterministic parser
+remains the honest, dependency-free floor (72%).
+
 ---
 
 ## Decision
 
-### Part 1 — extraction: a deterministic core, with NER as an additive lane
+### Part 1 — extraction: a three-tier extractor mirroring `msr-graph`
 
-- **The audit core does not depend on NER.** Counts + the per-activity split come from a lightweight
-  deterministic **abstract parser** (spelled-out-aware, clause-splitting, herplant-excluding), yielding
-  ~70–73% of besluiten. Place + activity + zaaknummer are already structured metadata (Spike B). This is
-  the "much simpler" verdict — stated as a **robustness** property: the backbone works with zero
-  statistical NER.
-- **spaCy NER is preserved as an additive enrichment lane**, not dropped. Its natural targets are the
-  genuinely fuzzy residue the registry lacks entirely: **species** (Dutch/Latin/cultivar, ~5%), **project**
-  names (~1%, they cluster), and boomnummers. It sits **off the critical path** (the audit is complete
-  without it), so it is the safe place to build and experiment with NER; if that residue is too thin to be
-  interesting, its scope can be **widened** (relation extraction over bodies, project clustering) rather
-  than removed. The `IMPLEMENTATION_PLAN.md` §5 "Python only for spaCy NER" boundary **stands**.
+Phase 2 builds the extractor as three tiers, so the audit works without the fancy parts but the count
+recovery is near-complete with them:
+
+1. **Deterministic floor (no dependency).** The abstract parser (`parse_activities.py`) — spelled-out-aware,
+   clause-splitting, herplant-excluding — extracts the obligation count for **72%** of besluiten with zero
+   NER/LLM. Place + activity + zaaknummer are already structured (Spike B). **The audit backbone never
+   depends on NER or an LLM** — this is the robustness guarantee (and the offline fallback for the ~7% of
+   abstracts the LLM abstains on).
+2. **Vocabulary-driven recognition (spaCy EntityRuler ← the SKOS graph).** A `spacy` pipeline whose
+   EntityRuler is **seeded live from the domain graph** (activity altLabels + species from IMBOR /
+   Soortenregister / mined altLabels), each pattern carrying its concept IRI — the `msr-graph`
+   `graph_reader → seeding` pattern. This is the primary **recognition** engine (recall 83% → 90%) and the
+   home of the NER learning track; it grows as the vocabulary grows, no code changes.
+3. **LLM count-binding (over the one-sentence abstract, closed-set validated).** The recognized activity /
+   species IRIs constrain an LLM that binds the per-activity counts — resolving appositives, snoeien-mixed
+   and multi-count clauses the rule binders miss (**95%** on the hard tail). This is `msr-graph`'s
+   quantity-binding choice, empirically justified here.
+- **Vocabulary growth (statistical `nl` model).** A fourth, offline loop: mine noun-chunk candidates the
+  vocab doesn't yet cover → altLabel **proposals** → human confirmation → back into the SKOS graph (the
+  plan's "living vocab" recipe = `msr-graph`'s mining loop). The `nl_core_news_md` lemmatizer is too weak
+  for botanical morphology (Finding 5), so growth is via mined surface variants, not lemmatization.
+- **On the §5 boundary:** the deterministic floor is Go; **Python owns spaCy** (recognition + mining); the
+  LLM binding is a new, *additive* dependency the evidence earns (55% → 95%). NER is now **central**, not a
+  side-lane — but the core still runs without it, honoring the earlier "core doesn't depend on NER" rule.
 
 ### Part 2 — *verplanten* ≡ *vellen* for the audit (the "18 = 18" match holds)
 
@@ -187,27 +244,45 @@ So **"18 verplant = 18 vellen" is a true match**, resolving Spike B's carried ac
   herplantplicht applies to verplant.
 - **`DATA_SOURCES.md` §11 / `IMPLEMENTATION_PLAN.md` §3** — the `boommaatregelBesluit` enum is pulled (feeds
   the SHACL data-enum value set); place **verplanten** as a `skos:altLabel` under the felling concept.
-- **`IMPLEMENTATION_PLAN.md` §6** — mark **Spike C DONE**: extraction feasible via a deterministic parser
-  (35%→70% besluit yield), verplant ≡ vellen settled, "18 = 18" confirmed.
+- **`IMPLEMENTATION_PLAN.md` §6** — mark **Spike C DONE**: extraction feasible (deterministic floor 72% →
+  graph-vocab spaCy 90% recall → LLM binding 95% on the hard tail); verplant ≡ vellen settled, "18 = 18"
+  confirmed.
 - **`IMPLEMENTATION_PLAN.md` §2** — resolve the "18 verplant = 18 vellen provisional" line to a true match.
 - **`IMPLEMENTATION_PLAN.md` §"Fulfilment"** — resolve Spike B's activity caveat: verplant counts enter the
   felling/obligation denominator (with a `transplantOrigin` caveat); herplant counts are fulfilment only.
-- **`IMPLEMENTATION_PLAN.md` Phase 2** — the extractor is a **deterministic formulaic-abstract parser for the
-  core** (counts/activity split), with **spaCy NER as the additive species/project enrichment lane**
-  (off critical path, scope-expandable). Keep the §5 "Python only for spaCy" boundary.
+- **`IMPLEMENTATION_PLAN.md` Phase 2** — the extractor is **three tiers** (Decision Part 1): a deterministic
+  abstract parser (Go, no-dependency floor), a **spaCy EntityRuler seeded from the SKOS graph** for
+  recognition (the `msr-graph` pattern), and **LLM count-binding** — plus a statistical-`nl` mining loop
+  that grows the vocab. §5's "Python owns spaCy" holds; the LLM is a new additive dependency the evidence
+  earns.
+- **`IMPLEMENTATION_PLAN.md` §3 (SKOS)** — species altLabels are recognition-critical (the count residue
+  rides on them) and the `nl` lemmatizer is too weak for botanical morphology → the vocab must carry plural
+  surface variants, grown by corpus mining.
 - **`DATA_THREAD_TREES.md`** — Hop 4's "provisional (Spike C)" note resolved: verplant ≡ vellen, so the
   18-permit ↔ 18-felled match stands.
 
 ## Files
 
+**Stdlib probes (1–4):**
 - `parse_activities.py` — probe 1: per-activity count parser vs the naive largest-int baseline; yield,
   conflation, spelled-out lift by doctype/scope. Reads `../spike-b/all_permits.jsonl`; writes
   `activities.jsonl`.
-- `species_project.py` — probe 2: species/project/boomnummer mention cataloguer + yield (the NER lane).
-  Writes `mentions.jsonl`.
+- `species_project.py` — probe 2: species/project/boomnummer mention cataloguer + yield. Writes `mentions.jsonl`.
 - `registry_enum.py` — probe 3: city-wide `boommaatregelBesluit`/`boomAanwezigheid` enum + populate-rates
   + the E-buurt verplant cross-check. Writes `registry_enums.json`.
-- `body_vs_abstract.py` — probe 4: hard-shape body fetch vs abstract diff. Reads `activities.jsonl`,
-  `mentions.jsonl`; writes `bodies_sample.jsonl`.
+- `body_vs_abstract.py` — probe 4: hard-shape body fetch vs abstract diff. Writes `bodies_sample.jsonl`.
 
-All `*.jsonl`/`*.json` artifacts are `.gitignore`d (re-run to recreate).
+**spaCy/LLM comparison (5) — needs the local venv + an LLM key:**
+- `vocab.py` — the seed vocabulary (activity + species concepts with IRIs); stand-in for the SKOS SPARQL read.
+- `extract_ner.py` — probe 5a: `nl_core_news_md` + EntityRuler-from-vocab; count binding via the dependency
+  parse. Writes `ner_counts.jsonl`.
+- `extract_llm.py` — probe 5b: LLM count-binding over the comparison sample (reads `DEEPSEEK_API_KEY` /
+  `LLM_MODEL_EXTRACT` from the **env**, never a file). Writes `llm_counts.jsonl`.
+- `gold_labels.py` — **committed** hand-authored gold obligation counts (80 hard cases) — human ground truth.
+- `compare_methods.py` — probe 5c: scores deterministic vs spaCy vs LLM against the gold set.
+
+**Setup for probe 5** (from this dir): `uv venv .venv && . .venv/bin/activate && uv pip install "spacy>=3.8"
+click && python -m spacy download nl_core_news_md`. Run: `python extract_ner.py`; then with an LLM key in
+the env, `python extract_llm.py && python compare_methods.py`.
+
+All `*.jsonl`/`*.json` artifacts + `.venv/` are `.gitignore`d; `gold_labels.py` and the scripts are committed.

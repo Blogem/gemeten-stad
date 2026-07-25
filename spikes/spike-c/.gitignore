@@ -5,4 +5,7 @@ activities.jsonl
 mentions.jsonl
 registry_enums.json
 bodies_sample.jsonl
+ner_counts.jsonl
+llm_counts.jsonl
 __pycache__/
+.venv/
