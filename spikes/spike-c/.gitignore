@@ -1,0 +1,8 @@
+# Regenerable probe outputs (re-run the scripts to recreate).
+# activities/mentions re-derive from ../spike-b/all_permits.jsonl in seconds;
+# registry_enums re-pulls citywide (~36 pages); bodies_sample re-fetches ~14 docs.
+activities.jsonl
+mentions.jsonl
+registry_enums.json
+bodies_sample.jsonl
+__pycache__/
