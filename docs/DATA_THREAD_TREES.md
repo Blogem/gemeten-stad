@@ -88,10 +88,13 @@ permit and everything else about the area. Two implications:
    dates as weak evidence — the registry's permit date looks batch-assigned (dozens of
    records across Zuidoost share `2023-10-30`) and the permit terminology differs
    (*verplanten* in the document vs *"Vellen (boom verwijderen)"* in the registry). Whether
-   *verplanten* (transplant) and *vellen* (removal) should even be treated as the same event —
-   and thus whether "18 = 18" is a true match — is an open interpretation question resolved by
-   reading the permit corpus (`IMPLEMENTATION_PLAN.md` §6, Spike C); until then the match here
-   is provisional.
+   *verplanten* (transplant) and *vellen* (removal) are the same event — and thus whether
+   "18 = 18" is a true match — **is now settled (Spike C, `spikes/spike-c/`): yes.** The
+   Bomenverordening (art. 1) *defines* vellen to include verplanten, and the registry has **no
+   Verplanten value at all** (all 35,202 rows: only `Vellen (boom verwijderen)`), so it logs the
+   transplant as a felling and tracks its replant — the match holds, with a `transplantOrigin`
+   caveat (the tree may persist at its new site). The link still rests on project + place, not a
+   shared key.
 2. **"No matching publication found" is itself a reportable, grounded finding** — either
    the search modality is incomplete or the publication trail has a gap. The agent must
    be able to say so instead of forcing a match.
@@ -135,10 +138,11 @@ reported per link, and a missing source is surfaced, not papered over.
 - **The aggregation ladder is real**: tree → address/postcode → `gbdBuurtId` → CBS
   buurt code → wijk/stadsdeel, with live counts at each level and the gebieden API as
   the bridge.
-- **The NER/extraction difficulty is calibrated**: controlled metadata gives typing for
-  verkeersbesluiten, but kap permits are nearly all free text ("verplanten van 18 bomen",
-  "t.h.v. Egeldonk 50", zaaknummers) — exactly the extraction targets, with the registry
-  as ground truth to validate against.
+- **The NER/extraction difficulty is calibrated (and smaller than it looked)**: kap permits
+  carry structured metadata for place + activity + zaaknummer (Spike B), and the tree **count**
+  yields to a deterministic parser over the formulaic abstract, not NER (Spike C, 35%→70% of
+  besluiten). Only **species (~5%) and project (~1%)** — absent registry-side — are true NER
+  targets, with the registry as ground truth to validate against.
 - **Entity resolution needs project entities**: interventions cluster under projects
   (bestemmingsplan, zaaknummer, project name); modeling the project as a first-class
   node is what makes the document↔registry join robust.

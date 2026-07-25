@@ -133,10 +133,17 @@ job; the metadata gives the intervention typing for free.
   `OVERHEIDop.activiteit`** (`kappen`), the **zaaknummer** (`OVERHEIDop.referentienummer`,
   whose prefix encodes the stadsdeel — `Z2022-N…` = Noord), and an abstract with the tree
   count — all present ~99% of the time over the 2022 corpus. So *place* and *activity* are
-  **structured**, not free text; only the **tree count** genuinely needs NER (present in
-  prose ~50% of the time). The free-text "t.h.v." reference address is a fallback for the
-  finer-than-buurt rung, not the primary locator. (Bouw omgevingsvergunningen not re-probed;
-  the thin-metadata caveat may still hold for those.)
+  **structured**, not free text; only the **tree count** lives in prose — but it needs a
+  **deterministic parser, not NER** (corrected by Spike C, `spikes/spike-c/`). The abstract is
+  formulaic ("het `<verb>` van `<N>` bomen …") and *is* the document's `Omschrijving` line, so
+  parsing it lifts the count yield from a naive largest-int floor **~50% → ~70%** of besluiten
+  (reading spelled-out numbers + the `houtopstand` noun) — and, critically, it states **per-activity
+  counts that must be split, not summed**: "vellen van 33 bomen en verplanten van 43 bomen" is
+  {vellen 33, verplant 43}, felling total 33; the naive largest-int returns 43 (it conflates the two
+  and can grab a *herplant* promise as the felling count). Species (<10% in prose) and project (~1%)
+  are the fuzzy NER residue (§2a: 0% registry-side). The free-text "t.h.v." reference address is a
+  fallback for the finer-than-buurt rung, not the primary locator. (Bouw omgevingsvergunningen not
+  re-probed; the thin-metadata caveat may still hold for those.)
 - **The kap publication body is a stub** (Spike A, `spikes/spike-a/`): an *aanvraag* or
   *besluit* notice carries activity + address (+ count/zaaknummer for a besluit) and **no
   permit conditions and no replant termijn** — the besluit itself is "per e-mail" only, not
@@ -146,7 +153,9 @@ job; the metadata gives the intervention typing for free.
   the individual permit.
 - Terminology varies for the same activity: *kappen* / *vellen* / *verplanten* /
   "houtopstanden". A project-level permit may not mention any affected street by name —
-  see the negative-result finding in `DATA_THREAD_TREES.md`.
+  see the negative-result finding in `DATA_THREAD_TREES.md`. **`verplanten` is not a lighter
+  event: the Bomenverordening (§10) defines *vellen* to include *verplanten***, so it triggers
+  herplantplicht identically and counts toward the felling obligation (Spike C).
 - `w.postcode` exists as an index but was empty for the probed omgevingsvergunningen —
   populated mainly for verkeersbesluiten.
 
@@ -184,6 +193,15 @@ curl "https://api.data.amsterdam.nl/v1/bomen/kapenherplant/?_count=true&gbdBuurt
   `toeTePassenBoomsoort` (species that must be replanted), `datumAfrondenVoor`,
   `boommaatregelBesluit` ("Vellen (boom verwijderen)"), `gbdBuurtId`. 3,593 records with
   felling executed since 2024-01-01 (citywide).
+  - **`boommaatregelBesluit` enum, pulled city-wide (all 35,202 rows, Spike C):** the only
+    meaningful value is **`Vellen (boom verwijderen)`** (7,833) — plus an `Ecoscan - Vellen`
+    variant (965), 3 typo singletons, and ~75% null/empty. **There is no `Verplanten` value**:
+    the registry cannot record a transplant as anything but a felling, so `verplanten` permits
+    are logged as `Vellen` (confirming §10's legal definition and settling the audit mapping).
+    The fulfilment axis is **`boomAanwezigheid`**: `Nee` (18,360) / `Ja, nieuwe boom reeds
+    aangeplant` (5,449) / `Ja` (5,279) / `Niet te beoordelen` (677) / null (5,436).
+    `toeTePassenBoomsoort` / `soortnaam` / `projectnaamBomen` are **0% populated city-wide** — so
+    species and project exist *only* in the permit prose (§1), never registry-side.
   - **The record is schema `v3` and carries far more date fields than the published schema
     lists** (verified via `spikes/spike-a/`): also `datumBesluitVergunningKap`,
     `datumEindeBezwaar`, `datumAkkoordBoomsoort`, `groeiplaatsmaatregelDatumUitgevoerd`,
@@ -446,7 +464,10 @@ in the CVDR (Centrale Voorziening Decentrale Regelgeving).
 
 - **Bomenverordening 2014** — `https://lokaleregelgeving.overheid.nl/CVDR323217/2` (verified
   2026-07-25). Art. 7 = the herplantplicht ("in beginsel altijd"); the termijn is set per
-  permit by the college. This is the trigger for the claim being audited.
+  permit by the college. This is the trigger for the claim being audited. **Art. 1 defines
+  *vellen* as "rooien, kappen, kandelaberen **of verplanten**"** (verified, Spike C) — so a
+  *verplant* is legally a velling, triggers herplantplicht identically, and counts toward the
+  felling obligation; the registry's logging of transplants as `Vellen` (§2a) is correct.
 - **Compensatie en herplant van bomen** (beleidsregel) —
   `https://lokaleregelgeving.overheid.nl/CVDR697591` (verified 2026-07-25). The
   compensation/replant rules, including the **diameter-class equivalence** (a mature tree →
@@ -474,7 +495,9 @@ with `skos:exactMatch`, grow altLabels from the permit corpus).
   `stamgegevens.soortnaam` leave.
 - **Local enums & regulation** — distinct values of `kapenherplant.boommaatregelBesluit` /
   `boomgebreken` / `stamgegevens.soortnaam`, `gebieden`/CBS names + codes, and the concepts
-  from the regulation (§10).
+  from the regulation (§10). The `boommaatregelBesluit` enum is **pulled** (Spike C, §2a): a
+  single meaningful value `Vellen (boom verwijderen)`, **no Verplanten** — so *verplanten* is a
+  `skos:altLabel` under the felling concept, not a separate concept.
 
 ---
 
