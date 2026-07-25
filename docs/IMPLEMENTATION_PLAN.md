@@ -200,7 +200,7 @@ finest level we can establish, with confidence:
 
 | Source side | What it gives | Resolves to |
 |---|---|---|
-| Kap permit | free-text address / reference address ("t.h.v. …"), sometimes a project area; usually no geometry | the **smallest area we can confidently place it in**: BAG object (point/footprint) ideally, else whichever of {project polygon, postcode-6, buurt} is *smallest by actual area* and clears a confidence threshold — a project polygon may be smaller than a postcode-6, so compare areas, don't assume a fixed order |
+| Kap permit | a **structured point geometry (RD+WGS84)** ~99% of the time (Spike B — the metadata is *not* thin), plus a free-text / reference address ("t.h.v. …") and sometimes a project area | the **smallest area we can confidently place it in** — point-in-polygon from the permit's own geometry first, the free-text address only as a fallback: BAG object (point/footprint) ideally, else whichever of {project polygon, postcode-6, buurt} is *smallest by actual area* and clears a confidence threshold — a project polygon may be smaller than a postcode-6, so compare areas, don't assume a fixed order |
 | `kapenherplant` | `dichtstbijzijndeBagAdres` + postcode, `gbdBuurtId`, and (via `boomId`→`stamgegevens`) a point | already pinned; point + buurt + nearest address |
 
 The join is then finest-common-granularity + count + time-window (+ project when
@@ -315,8 +315,14 @@ RDF-star confidence + bitemporal-assessment patterns. Preload
 BAG/gebieden/CBS into PostGIS and the full `kapenherplant`/`stamgegevens`. Pick the exact
 Noord quarter (size the permit volume). Spikes: **(A) — DONE (`spikes/spike-a/`):** the replant
 *termijn* lives nowhere publicly reliable → default `deadlineUnknown`, `datumAfrondenVoor`
-rejected (see §"Fulfilment"); **(B)** permit↔registry match
-rate on place+count+time+project, and the confidence model; **(C)** count/species/project
+rejected (see §"Fulfilment"); **(B) — DONE (`spikes/spike-b/`):** permit→registry links at
+**90%** (place+time, buurt-level; 54% also on count), registry→permit at **≥70%**, with **~3
+candidate clusters per hit** so buurt+time alone is not unique — a **place-led confidence model**
+(τ=0.60; count + finer BAG place disambiguate) carries the `AuditLink`. Two corrections fell out:
+kap permits **do** carry a structured point geometry + controlled activiteit + zaaknummer (so
+place/activity are structured, not NER'd; see §4 and `DATA_SOURCES.md` §1), and Phase-1 load must
+**dedup by zaaknummer** (aanvraag+besluit duplicates) and audit the besluit; **(C)**
+count/species/project
 extraction feasibility from permit prose — **including how to interpret the activity terms**
 (kappen / vellen / rooien / *verplanten*) against the registry's `boommaatregelBesluit`, and
 whether *verplanten* (transplant, the tree survives) vs *vellen* (removal) changes whether/how
@@ -362,7 +368,10 @@ intervention type (e.g. EV-charging verkeersbesluiten) reusing the machinery —
   time, overshot 100%), and the policy makes the termijn a per-permit discretionary condition.
   → default `deadlineUnknown`, don't invent one; anchor any elapsed-time signal on the felling
   date, not a permit date.
-- Linkage false-negatives (Spike B) → report the rate; confidence is shown, not hidden.
+- Linkage false-negatives — **measured by Spike B (`spikes/spike-b/`):** permit→registry 90%
+  (place+time), registry→permit ≥70%; ~3 candidate clusters per hit mean buurt-level place is not
+  unique, so the τ=0.60 place-led confidence model reports the rate and the unmatched cases as
+  grounded "no source found" findings — confidence is shown, not hidden.
 - Herplantfonds blind spot → *indeterminate* verdicts until the WOO data lands.
 - Non-1:1 equivalence → obligation quantities need the diameter-class rules.
 - Registry lag & batch-assigned `datumVergunningVerleend` → decision→registry latency is a

@@ -123,10 +123,16 @@ job; the metadata gives the intervention typing for free.
   elektrische oplaadvakken", not "laadpaal" (a title search for "laadpaal" +
   creator=Amsterdam found only legacy-Weesp docs — Weesp merged into Amsterdam).
   Full-text (`cql.textAndIndexes`) with synonym lists beats title search.
-- **Omgevingsvergunning (kap/bouw) bekendmakingen have thin metadata** — no geometry,
-  no controlled activity type; the address sits in the title/body free text, often as a
-  "t.h.v." reference address. All the structure the verkeersbesluiten give you must be
-  extracted here.
+- **Kap omgevingsvergunningen carry MORE metadata than first thought** (corrected by
+  Spike B, `spikes/spike-b/`): the SRU record + `metadata.xml` expose a **point geometry in
+  both RD and WGS84** (`overheidwetgeving:geometrie` / `locatiepunt`), a **controlled
+  `OVERHEIDop.activiteit`** (`kappen`), the **zaaknummer** (`OVERHEIDop.referentienummer`,
+  whose prefix encodes the stadsdeel — `Z2022-N…` = Noord), and an abstract with the tree
+  count — all present ~99% of the time over the 2022 corpus. So *place* and *activity* are
+  **structured**, not free text; only the **tree count** genuinely needs NER (present in
+  prose ~50% of the time). The free-text "t.h.v." reference address is a fallback for the
+  finer-than-buurt rung, not the primary locator. (Bouw omgevingsvergunningen not re-probed;
+  the thin-metadata caveat may still hold for those.)
 - **The kap publication body is a stub** (Spike A, `spikes/spike-a/`): an *aanvraag* or
   *besluit* notice carries activity + address (+ count/zaaknummer for a besluit) and **no
   permit conditions and no replant termijn** — the besluit itself is "per e-mail" only, not
@@ -197,6 +203,12 @@ curl "https://api.data.amsterdam.nl/v1/bomen/kapenherplant/?_count=true&gbdBuurt
   `stamgegevens` via `boomId` for species.
 - The `[isnull]` filter operator did not work in probing (empty response, no error) —
   filter null lifecycle dates client-side.
+- **`kapenherplant` rejects spatial filters** (`geometrie[within]` → HTTP 403); only
+  `stamgegevens` accepts them (Spike B). To place a permit point at buurt level pre-BAG,
+  query `stamgegevens` near the point and vote the `gbdBuurtId` of the nearest standing trees.
+- **`kapenherplant` has no permit-reference field** — no zaaknummer/OLO/dossier; `projectnaamBomen`
+  and `selectiecode` exist but are 0% populated in Noord (Spike B). Hence permit↔registry linkage
+  is fuzzy resolution, never a key join.
 
 ### 2b. Parking spots — `parkeervakken`
 
@@ -422,7 +434,7 @@ with `skos:exactMatch`, grow altLabels from the permit corpus).
 
 | Source | Dimension | Geography key | Cadence | Auth |
 |---|---|---|---|---|
-| KOOP bekendmakingen | interventions (docs) | postcode + RD geometry (verkeersbesluiten); free-text address (vergunningen) | continuous | none |
+| KOOP bekendmakingen | interventions (docs) | postcode + RD geometry (verkeersbesluiten); **RD+WGS84 point** + free-text address (kap vergunningen — Spike B) | continuous | none |
 | Datapunt bomen | ecology / tree lifecycle | point + `gbdBuurtId` (+ nearest BAG address in kapenherplant) | days–months | none (free key coming soon) |
 | Datapunt parkeervakken | parking inventory | street + geometry | lags decisions | none (free key coming soon) |
 | Politie 47022NED | crime | CBS buurt code | monthly, ~1 mo lag | none |
