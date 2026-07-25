@@ -10,10 +10,18 @@ that decide whether the audit is sound before build-out.
 - **Domain:** the statutory tree replant obligation (Bomenverordening 2014 art. 7 —
   herplantplicht "in beginsel altijd"; termijn per permit by the college).
 - **Place:** stadsdeel **Noord** (`gebieden` id `03630000000019`, code `N`).
-- **Timeframe:** kap/verplant permits from a **single backdated quarter (target: a 2022
-  quarter)** — old enough that the replant window (often the next planting season, and up to
-  ~2.5 yr in observed data) has elapsed, so fulfilment is actually observable. Phase 0 sizes
-  Noord volume and picks the exact quarter.
+- **Timeframe:** kap/verplant permits over a **rolling backdated window — Noord publications
+  from 2021 onward, with no recent-end cutoff.** The floor is data-driven, not arbitrary: the KOOP
+  omgevingsvergunning kap stream for Amsterdam is empty in 2020 and begins in 2021 (855 citywide
+  publications, vs 2,299 in 2022), and the `kapenherplant` registry's earliest Noord felling is
+  **2021-02-10** — so permits older than 2021 have nothing to audit against. There is deliberately
+  **no upper cutoff:** a permit whose replant window has not yet elapsed yields a *pending /
+  indeterminate* verdict (a required first-class output — see "The test" below and §2), not noise —
+  so ingesting the recent tail **is** the production behaviour, with no dev-only clipping to unwind.
+  Observability is a **per-record** property (does a matched felling exist, and has its replant
+  window elapsed?), read off the felling date — never a corpus-wide date filter. Phase 0 (P10)
+  sizes the corpus; it is tiny at every horizon (Noord besluiten per settled year: 2021 · 38,
+  2022 · 147, 2023 · 169).
 - **The test:** harvest those permits, extract what was felled/moved (counts, species,
   project, location, any stated termijn), resolve their locations, and measure how much maps
   onto the `kapenherplant` registry — then compute replant progress, **with explicit

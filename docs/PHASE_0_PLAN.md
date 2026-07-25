@@ -31,7 +31,7 @@ into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
 ## Recommended sequencing
 
 - **Wave A — unblockers (start immediately, mostly independent):** P1 repo skeleton · P2
-  triple-store selection · P10 pick the quarter
+  triple-store selection · P10 set the Noord backfill window
 - **Wave B — infra (needs A):** P3 dev compose · P4 CI · P5 integration-test isolation
 - **Wave C — preload (needs skeleton + compose):** P6 lift BAG/geo · P7
   kapenherplant/stamgegevens preload
@@ -184,14 +184,44 @@ vocabulary can be fixed now that Spike C has settled it (**verplanten ≡ vellen
 - **Done when:** a dump→restore round-trip reproduces both stores on a clean volume.
 - **Depends on:** P6, P7 (something to dump); the triplestore from P2.
 
-## P10 · Pick the exact Noord quarter
+## P10 · Set the Noord backfill window & size the corpus — **DONE**
 
-- **Goal:** Choose the single backdated 2022 quarter the vertical is built on, and size its permit
-  volume.
-- **Entails:** reuse `spikes/spike-b/harvest_permits.py` (KOOP SRU, already proven) to count
-  kap/verplant omgevingsvergunningen in Noord per 2022 quarter; pick one with enough volume *and*
-  an elapsed replant window; sanity-check that those permits' felling dates land in
-  `kapenherplant`.
-- **Done when:** the quarter is recorded in `IMPLEMENTATION_PLAN.md` §1 (replacing "target: a 2022
-  quarter") with the permit count.
-- **Depends on:** nothing — pure data analysis, runs parallel to everything.
+- **Goal:** Replace "a 2022 quarter" with the rolling backdated window the vertical loads, and size
+  its permit volume. This is a **characterization**, not a narrow pick — the earlier "pick a
+  quarter" framing assumed volume was the constraint; it never was (the corpus is tiny at any
+  horizon), so the only real bound is *observability of the replant obligation*.
+- **Decision (verified 2026-07-25):** **stadsdeel Noord, kap/verplant omgevingsvergunningen
+  published 2021 → present, no recent-end cutoff.**
+  - **Floor = 2021, data-driven.** The KOOP kap omgevingsvergunning stream for Amsterdam is empty
+    in 2020 and starts in 2021 (855 citywide publications, vs 2,299 in 2022); the `kapenherplant`
+    registry's earliest Noord felling is **2021-02-10**. Permits before 2021 have nothing to audit
+    against.
+  - **No recent bound.** A permit whose replant window has not yet elapsed resolves to a *pending /
+    indeterminate* verdict — a first-class output (`IMPLEMENTATION_PLAN.md` §1/§2), not a case to
+    exclude. So the load is production-shaped from day one; observability is judged **per-record**
+    off the felling date, never by clipping the corpus.
+  - **Corpus size (`spikes/spike-b/size_window.py`, reusing the proven harvest):** tiny at every
+    horizon — a rolling multi-year window still processes very little data.
+
+    | year | Noord publications | of which besluiten | observability |
+    |---|---|---|---|
+    | 2020 | 0 | 0 | stream absent |
+    | 2021 | 93 | 38 | settled |
+    | 2022 | 365 | 147 | settled |
+    | 2023 | 376 | 169 | mostly settled |
+    | 2024 | 297 | 121 | mixed |
+    | 2025 | 300 | 138 | mostly *pending* |
+    | 2026 | partial (year in progress) | — | *pending* |
+
+    ~600 besluiten across the whole settled-plus-recent span (2021–2025) — a full rolling
+    multi-year window still processes trivially little data, which is the point: the single-quarter
+    restriction bought nothing.
+
+  - **Observability gradient** — replant rate by felling year (Noord `kapenherplant`): 2021 **70%**
+    → 2022 **84%** → 2023 **37%** → 2024 **28%** → 2025 **11%** → 2026 **0%**. The recent collapse
+    is *pending, not violation* — which is exactly why the derived aggregation **must bucket
+    pending/indeterminate separately** from fulfilled/overdue (a discipline the full window forces
+    from the start).
+- **Done when:** ~~the quarter is recorded~~ ✓ the window (Noord, 2021 → present) + per-year sizing
+  are recorded in `IMPLEMENTATION_PLAN.md` §1.
+- **Depends on:** nothing — pure data analysis, ran parallel to everything.
