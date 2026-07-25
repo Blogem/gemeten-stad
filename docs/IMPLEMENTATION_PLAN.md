@@ -118,6 +118,15 @@ axes, each computed from whatever evidence exists:
   of whether we know the deadline or the fund status.
 - **timeliness** — `notYetDue` / `onTime` / `overdue` / `deadlineUnknown`. Needs the termijn
   (Spike A); absent it, `deadlineUnknown` — which does **not** block the fulfilment estimate.
+  **Spike A settled this: the termijn lives nowhere publicly reliable, so `deadlineUnknown` is
+  the default for almost all claims** (`spikes/spike-a/`). Deadline ladder: (1) an explicit
+  permit-text termijn if Phase-2 NER finds one — expect ≈0 hits, and never accept the bezwaar
+  window "binnen N weken" as the deadline; (2) a *soft* project horizon for herstructurering
+  ("by end of project", `deadlineApprox`, low confidence); (3) `deadlineUnknown`.
+  `kapenherplant.datumAfrondenVoor` is **rejected** (work-order artifact: 53% precede the
+  felling, overshot in 100% of completed cases). Any elapsed-time signal must anchor on
+  `kapmaatregelDatumUitgevoerd` (felling) — the "permit granted" dates are batch-assigned. An
+  advisory "long-overdue" flag off elapsed-since-felling is a caveat, not a hard `overdue`.
 - **caveats** — explicit flags for what we *don't* know: `fundEligibilityUnknown`,
   `deadlineUnknown`, `weakLink`. They qualify the estimate; they don't erase it.
 - **confidence** — how sure we are of the permit↔trees link the whole assessment rests on
@@ -296,8 +305,9 @@ PostGIS) + CI + the `dump`/NER-cache tool + integration-test DB isolation (k3s d
 Phase 4). Ontology v0 + the SKOS domain vocab (bootstrapped from sources) + SHACL + the
 RDF-star confidence + bitemporal-assessment patterns. Preload
 BAG/gebieden/CBS into PostGIS and the full `kapenherplant`/`stamgegevens`. Pick the exact
-Noord quarter (size the permit volume). Spikes: **(A)** where the replant *termijn* actually
-lives (permit text vs `datumAfrondenVoor`, known-unreliable); **(B)** permit↔registry match
+Noord quarter (size the permit volume). Spikes: **(A) — DONE (`spikes/spike-a/`):** the replant
+*termijn* lives nowhere publicly reliable → default `deadlineUnknown`, `datumAfrondenVoor`
+rejected (see §"Fulfilment"); **(B)** permit↔registry match
 rate on place+count+time+project, and the confidence model; **(C)** count/species/project
 extraction feasibility from permit prose.
 
@@ -329,8 +339,12 @@ intervention type (e.g. EV-charging verkeersbesluiten) reusing the machinery —
 
 ## 8. Risks carried into design
 
-- Deadline source unresolved until Spike A → if it lives nowhere reliable, report "obligation
-  open, no deadline on record," don't invent one.
+- Deadline source — **resolved by Spike A (`spikes/spike-a/`): it lives nowhere publicly
+  reliable.** Not in the permit (published kap notices are stubs; the only date is the bezwaar
+  "6 weken" decoy), not in the registry (`datumAfrondenVoor` precedes the felling 53% of the
+  time, overshot 100%), and the policy makes the termijn a per-permit discretionary condition.
+  → default `deadlineUnknown`, don't invent one; anchor any elapsed-time signal on the felling
+  date, not a permit date.
 - Linkage false-negatives (Spike B) → report the rate; confidence is shown, not hidden.
 - Herplantfonds blind spot → *indeterminate* verdicts until the WOO data lands.
 - Non-1:1 equivalence → obligation quantities need the diameter-class rules.

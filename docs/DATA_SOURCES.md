@@ -125,6 +125,13 @@ job; the metadata gives the intervention typing for free.
   no controlled activity type; the address sits in the title/body free text, often as a
   "t.h.v." reference address. All the structure the verkeersbesluiten give you must be
   extracted here.
+- **The kap publication body is a stub** (Spike A, `spikes/spike-a/`): an *aanvraag* or
+  *besluit* notice carries activity + address (+ count/zaaknummer for a besluit) and **no
+  permit conditions and no replant termijn** — the besluit itself is "per e-mail" only, not
+  published. The **only** date-term in the body is *"binnen 6 weken"*, the **bezwaar (appeal)
+  window — a decoy**; never read it as a replant deadline. Any stated termijn/herplant rule
+  lives in *policy* documents (the beleidsregel *'Compensatie en herplant van bomen'*), not in
+  the individual permit.
 - Terminology varies for the same activity: *kappen* / *vellen* / *verplanten* /
   "houtopstanden". A project-level permit may not mention any affected street by name —
   see the negative-result finding in `DATA_THREAD_TREES.md`.
@@ -163,14 +170,25 @@ curl "https://api.data.amsterdam.nl/v1/bomen/kapenherplant/?_count=true&gbdBuurt
   `toeTePassenBoomsoort` (species that must be replanted), `datumAfrondenVoor`,
   `boommaatregelBesluit` ("Vellen (boom verwijderen)"), `gbdBuurtId`. 3,593 records with
   felling executed since 2024-01-01 (citywide).
+  - **The record is schema `v3` and carries far more date fields than the published schema
+    lists** (verified via `spikes/spike-a/`): also `datumBesluitVergunningKap`,
+    `datumEindeBezwaar`, `datumAkkoordBoomsoort`, `groeiplaatsmaatregelDatumUitgevoerd`,
+    `datumHerplantinspectie`, `datumToezichtHerplantinspectie`, `kapDatumToezicht`,
+    `plantenDatumToezicht`, `inspectiedatum`, `mutatiedatum`, plus work-order codes
+    `deelopdrachtGroeiplaats`/`deelopdrachtPlanten`. Only `kapmaatregelDatumUitgevoerd` (felling)
+    is 100% populated; none of the fields is a usable replant *deadline* (Spike A).
 
 **Quirks (bomen):**
-- `datumAfrondenVoor` timestamps sometimes **precede the felling date** — it is a
-  work-order step deadline, not a reliable replanting due date. The robust audit signal
-  is `kapmaatregelDatumUitgevoerd` set + `plantmaatregelDatumUitgevoerd` null + elapsed
-  time.
-- `datumVergunningVerleend` looks **batch-assigned** (dozens of records share
-  `2023-10-30`) — treat as administrative, not as the bekendmaking date.
+- `datumAfrondenVoor` is a **work-order step deadline, not a replant due date** — quantified
+  over stadsdeel Noord (Spike A): populated in only 53% of felled rows, **precedes the felling
+  date in 53%** of those (median −6 days), and where a replant actually landed it was overshot
+  in **100%** of cases (median 467 days late). Do not use it as the herplant termijn. The robust
+  audit signal is `kapmaatregelDatumUitgevoerd` set + `plantmaatregelDatumUitgevoerd` null +
+  elapsed time.
+- **Both "permit granted" dates are batch-assigned** — `datumVergunningVerleend` *and*
+  `datumBesluitVergunningKap` each take only ~16 distinct values over 796 Noord rows (and differ
+  from each other 100% of the time). Treat as administrative, not as the bekendmaking date;
+  anchor elapsed-time reasoning on the felling date instead.
 - `soortnaam`/`toeTePassenBoomsoort` are frequently null in `kapenherplant`; join to
   `stamgegevens` via `boomId` for species.
 - The `[isnull]` filter operator did not work in probing (empty response, no error) —
