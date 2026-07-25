@@ -1,0 +1,7 @@
+# Regenerable probe outputs / cached fetches (re-run the scripts to recreate).
+# Kept on disk between runs so the Spike-D/BAG re-run of probe 3 re-resolves
+# locations without re-fetching KOOP or the bomen API.
+all_permits.jsonl
+noord_permits.jsonl
+match_candidates.jsonl
+buurt_cache.json
