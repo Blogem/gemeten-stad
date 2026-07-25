@@ -12,8 +12,9 @@ gemeente `0363` (Amsterdam) the national BAG extract loads through `lvbag` into 
 minutes, the polygons load in RD, and a local, **valid-time-aware** resolver reproduces known
 geography and places permit addresses at address precision:
 
-- **point-in-polygon is exact:** **100%** (939/939) of felled-tree points fall in the `gebieden`
-  buurt their own `gbdBuurtId` names (the ground truth) — the polygons + CRS are correct.
+- **point-in-polygon is exact:** **100%** (1,292/1,292) of felled-tree points fall in the `gebieden`
+  buurt their own `gbdBuurtId` names (the ground truth) — the polygons + CRS are correct. Point
+  coverage is 99.5% of felled rows once the `boomNieuwId` fallback recovers replanted trees.
 - **permit free-text → BAG address:** **95.1%** of the 365 Noord kap permits resolve to a BAG
   **address** point (median **0.0 m** from the permit's own published coordinate) — 90.4% at the
   permit's exact valid-time and a further 4.7% via an **any-time fallback** (flagged on the link,
@@ -126,11 +127,15 @@ way, not just an internal concern.
 ## Finding 3 — point-in-polygon is exact, and free-text → BAG resolves at address precision
 
 **Point-in-polygon (needs no BAG):** placing each felled tree's `stamgegevens` point into a
-`gebieden` buurt with `ST_Contains` reproduces the row's own `gbdBuurtId` in **939/939 = 100.0%** of
-cases — the gebieden polygons, the RD (28992) CRS and the spatial join are all correct (a mismatch
-would mean silently-empty `ST_Contains` downstream). *Coverage caveat:* only **939 of 1,298** felled
-Noord rows still resolve to a `stamgegevens` point — ~28% of felled trees are gone from the
-standing-tree registry (removed after felling), expected and reportable. The same local join
+`gebieden` buurt with `ST_Contains` reproduces the row's own `gbdBuurtId` in **1,292/1,292 = 100.0%**
+of cases — the gebieden polygons, the RD (28992) CRS and the spatial join are all correct (a mismatch
+would mean silently-empty `ST_Contains` downstream). *Coverage:* **1,292 of 1,298 (99.5%)** felled
+Noord rows resolve to a point — **939 via `boomId`, 353 via the `boomNieuwId` fallback**. The misses
+are not "removed after felling": a replant retires the original `boomId` and issues a `boomNieuwId`
+for the new tree (Spike B, `DATA_SOURCES.md` §2a), so `boomId`-only silently drops exactly the
+replanted — audit-interesting — rows; the fallback recovers them. Point-in-polygon is **100% for both
+methods**, and the replant-resolved points land in the felling's own buurt (herplant is at-location),
+so the backbone correctly places the near-complete felled set. The same local join
 replaces Spike B's **remote** "vote the nearest standing trees' `gbdBuurtId`" stand-in: placing each
 permit's own point locally agrees with Spike B's vote in **86.8%** (317/365) of permits (0 outside
 the Noord polygons); the 48 disagreements are boundary cases where exact containment beats the
@@ -169,7 +174,7 @@ permit's **own** published RD coordinate (Spike B) as ground truth:
   (`IMPLEMENTATION_PLAN.md` §4; `DATA_THREAD_TREES.md` Hop 2). The classic demolished-in-renewal case
   (Egeldonk 50) is a **Zuidoost** case not in this Noord sample; the fallback path is implemented and
   exercised by the 14 buurt-tier permits. Honest limit.
-- **Registry cross-check:** **92.9%** (872/939) of the felled rows' `dichtstbijzijndeBagAdres` +
+- **Registry cross-check:** **93.0%** (1,202/1,292) of the felled rows' `dichtstbijzijndeBagAdres` +
   postcode resolve to a BAG nummeraanduiding — the registry's nearest-address strings are clean.
 
 Net: local BAG resolution promotes 95% of permits from buurt-only (`0.50`) to address (`0.90`) place,

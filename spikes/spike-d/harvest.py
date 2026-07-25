@@ -20,9 +20,10 @@ Produces four artifacts the load + resolve steps consume:
                                  PRIMARY point-in-polygon set; keyed by identificatie
                                  (= kapenherplant.gbdBuurtId, our ground truth).
   data/noord_wijken.geojson   — gebieden wijk polygons, Noord, RD (context/sanity).
-  data/tree_points.geojson    — one Point per FELLED Noord kap row (via boomId ->
-                                 stamgegevens), RD, carrying the row's gbdBuurtId
-                                 (ground truth) + dichtstbijzijndeBagAdres/Postcode.
+  data/tree_points.geojson    — one Point per FELLED Noord kap row (via boomId -> stamgegevens,
+                                 with the boomNieuwId fallback for replanted rows -> ~99.5%), RD,
+                                 carrying the row's gbdBuurtId (ground truth) + resolved_via
+                                 + dichtstbijzijndeBagAdres/Postcode.
   data/permit_points.geojson  — Spike B's Noord permits as Points (their own rd_x/rd_y),
                                  with the free-text title address parsed out. The permit
                                  geometry is GROUND TRUTH for the local-BAG address resolver,
@@ -117,33 +118,47 @@ def geojson_polygons(path, embed_key, id_set):
 # ------------------------------------------------- felled kap rows -> tree points
 
 def load_felled():
-    """Reuse Spike A's noord_kap.jsonl; keep felled rows that carry a boomId."""
+    """Reuse Spike A's noord_kap.jsonl; keep felled rows with a boomId OR boomNieuwId."""
     rows = [json.loads(l) for l in open(SPIKE_A_KAP)]
-    return [r for r in rows if r.get("kapmaatregelDatumUitgevoerd") and r.get("boomId")]
+    return [r for r in rows if r.get("kapmaatregelDatumUitgevoerd")
+            and (r.get("boomId") or r.get("boomNieuwId"))]
+
+
+def fetch_geom(bid):
+    """RD point of a stamgegevens tree, or None if the id is gone / has no geometry."""
+    if not bid:
+        return None
+    try:
+        tree = json.loads(get(f"{API}/bomen/stamgegevens/{bid}?_format=json", {"Accept-Crs": RD}))
+    except Exception:  # noqa: BLE001 — a retired/missing id is a real, reportable gap
+        return None
+    return tree.get("geometrie")
 
 
 def tree_points(kap_rows):
-    """Fetch the RD point per felled row via boomId -> stamgegevens/{id}."""
+    """Fetch the RD point per felled row: boomId first, then the boomNieuwId fallback.
+
+    A replant retires the original boomId and issues a boomNieuwId (Spike B, DATA_SOURCES §2a),
+    so boomId-only silently drops exactly the replanted (audit-interesting) trees — the fallback
+    recovers them. We record which id resolved the point (resolved_via)."""
     feats, n = [], len(kap_rows)
     for i, r in enumerate(kap_rows, 1):
-        bid = r["boomId"]
-        try:
-            tree = json.loads(get(f"{API}/bomen/stamgegevens/{bid}?_format=json",
-                                  {"Accept-Crs": RD}))
-        except Exception:  # noqa: BLE001 — a retired/missing boomId is a real, reportable gap
-            continue
-        if not tree.get("geometrie"):
-            continue
-        feats.append({
-            "type": "Feature", "geometry": tree["geometrie"],
-            "properties": {
-                "kap_id": r["id"], "boom_id": bid,
-                "gbd_buurt_id": r.get("gbdBuurtId"),   # GROUND TRUTH for point-in-polygon
-                "bag_adres": r.get("dichtstbijzijndeBagAdres"),
-                "bag_postcode": r.get("dichtstbijzijndeBagPostcode"),
-                "replanted": r.get("plantmaatregelDatumUitgevoerd") is not None,
-            },
-        })
+        geom, via = fetch_geom(r.get("boomId")), "boomId"
+        if geom is None:
+            geom, via = fetch_geom(r.get("boomNieuwId")), "boomNieuwId"
+        if geom is not None:
+            feats.append({
+                "type": "Feature", "geometry": geom,
+                "properties": {
+                    "kap_id": r["id"], "boom_id": r.get("boomId"),
+                    "boom_nieuw_id": r.get("boomNieuwId"), "resolved_via": via,
+                    "gbd_buurt_id": r.get("gbdBuurtId"),   # GROUND TRUTH for point-in-polygon
+                    "boom_aanwezigheid": r.get("boomAanwezigheid"),
+                    "bag_adres": r.get("dichtstbijzijndeBagAdres"),
+                    "bag_postcode": r.get("dichtstbijzijndeBagPostcode"),
+                    "replanted": r.get("plantmaatregelDatumUitgevoerd") is not None,
+                },
+            })
         if i % 50 == 0 or i == n:
             print(f"\r  tree points {i}/{n}  ok: {len(feats)}",
                   end="", file=sys.stderr, flush=True)

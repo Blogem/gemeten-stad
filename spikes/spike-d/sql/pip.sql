@@ -5,17 +5,20 @@
 -- Each felled tree's stamgegevens point placed into a gebieden buurt locally;
 -- compared to the row's own gbdBuurtId. Expect ~100% — any gap = polygon/CRS bug.
 WITH hit AS (
-  SELECT t.kap_id, t.gbd_buurt_id,
+  SELECT t.kap_id, t.gbd_buurt_id, t.resolved_via,
          (SELECT b.identificatie FROM gebieden_buurten b
           WHERE ST_Contains(b.geom, t.geom) LIMIT 1) AS pip_buurt
   FROM tree_points t
 )
-SELECT count(*)                                                   AS trees,
-       count(pip_buurt)                                           AS placed_in_a_buurt,
-       count(*) FILTER (WHERE pip_buurt = gbd_buurt_id)           AS correct,
+SELECT coalesce(resolved_via, 'ALL')                             AS resolved_via,
+       count(*)                                                  AS trees,
+       count(pip_buurt)                                          AS placed_in_a_buurt,
+       count(*) FILTER (WHERE pip_buurt = gbd_buurt_id)          AS correct,
        round(100.0 * count(*) FILTER (WHERE pip_buurt = gbd_buurt_id)
-             / nullif(count(*), 0), 1)                            AS pct_correct
-FROM hit;
+             / nullif(count(*), 0), 1)                           AS pct_correct
+FROM hit
+GROUP BY ROLLUP (resolved_via)
+ORDER BY resolved_via NULLS FIRST;
 
 \echo '=== POPULATION 2 (permits): own-geometry point-in-polygon vs Spike B tree-vote ==='
 -- Replaces Spike B's remote "vote nearest trees' gbdBuurtId" hack with a local
