@@ -83,27 +83,27 @@ func TestTimeMatchFor(t *testing.T) {
 // consts you can assert fragments on") without pinning exact identifier names.
 // Absent a pinned name, this file assumes three exported string constants
 // mirroring spikes/spike-d/sql/resolve.sql's addr_cand / pip.sql shape:
-//   AddressSQL      - the (postcode,huisnummer) + exact-street address match
-//   FuzzyAddressSQL - the pg_trgm fuzzy street match
-//   BuurtPIPSQL     - the ST_Contains point-in-polygon buurt match
+//   addressByPostcodeHuisnummerSQL      - the (postcode,huisnummer) + exact-street address match
+//   addressByStreetFuzzySQL - the pg_trgm fuzzy street match
+//   buurtPIPSQL     - the ST_Contains point-in-polygon buurt match
 // If the real implementation exposes different names, pass 2 must adjust
 // these identifiers (not the fragments being asserted) to match.
 
 func TestAddressSQL_ContainsRequiredFragments(t *testing.T) {
-	assert.Contains(t, AddressSQL, "eindregistratie IS NULL",
+	assert.Contains(t, addressByPostcodeHuisnummerSQL, "eindregistratie IS NULL",
 		"address SQL must select the best-known voorkomen")
-	assert.Contains(t, AddressSQL, "hoofdadresnummeraanduidingref",
+	assert.Contains(t, addressByPostcodeHuisnummerSQL, "hoofdadresnummeraanduidingref",
 		"address SQL must reach the adresseerbaar object via hoofdadresnummeraanduidingref")
 }
 
 func TestFuzzyAddressSQL_ContainsSimilarity(t *testing.T) {
-	assert.Contains(t, FuzzyAddressSQL, "similarity(",
+	assert.Contains(t, addressByStreetFuzzySQL, "similarity(",
 		"fuzzy address path must use pg_trgm similarity()")
 }
 
 func TestBuurtPIPSQL_ContainsPointInPolygonFragments(t *testing.T) {
-	assert.Contains(t, BuurtPIPSQL, "ST_Contains",
+	assert.Contains(t, buurtPIPSQL, "ST_Contains",
 		"buurt PIP SQL must use ST_Contains")
-	assert.Contains(t, BuurtPIPSQL, "gebieden_buurten",
+	assert.Contains(t, buurtPIPSQL, "gebieden_buurten",
 		"buurt PIP SQL must reference gebieden_buurten, never the CBS cross-reference")
 }
