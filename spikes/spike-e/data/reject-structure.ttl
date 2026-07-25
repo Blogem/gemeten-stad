@@ -1,0 +1,6 @@
+# SHACL *reject* path — structural violation: an Intervention with no locatedAt edge
+# at all. Must be caught by a plain sh:minCount on gs:locatedAt.
+@prefix gs:   <http://gemeten-stad.nl/ns#> .
+@prefix data: <http://gemeten-stad.nl/id/> .
+
+data:intv-nostruct a gs:Intervention .

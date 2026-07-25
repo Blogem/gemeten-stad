@@ -1,0 +1,46 @@
+# Spike E — the SHACL shape the load gate would enforce (IMPLEMENTATION_PLAN.md §4).
+# Two concerns, and they need two different mechanisms:
+#
+#   1. STRUCTURE — an Intervention must have a locatedAt edge to a Place.
+#      Expressed in core SHACL (sh:path + sh:minCount + sh:class). This works
+#      because the `{| … |}` annotation form asserts the base edge, so a normal
+#      property path sees it.
+#
+#   2. CONFIDENCE PRESENCE — every locatedAt edge must carry a gs:confidence
+#      annotation (no fuzzy edge written as if it were exact). This CANNOT be
+#      expressed with a core SHACL property path: a path cannot traverse into an
+#      RDF-star annotation (the confidence hangs off the *quoted triple*, not off
+#      any node reachable by a path). It requires a sh:sparql constraint using a
+#      SPARQL-star `<< … >>` pattern. This is the crux probe A settles.
+#
+# Full IRIs are inlined in the SPARQL to avoid the sh:prefixes/sh:declare machinery.
+
+@prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix gs:  <http://gemeten-stad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+gs:InterventionShape
+    a sh:NodeShape ;
+    sh:targetClass gs:Intervention ;
+
+    # (1) structure
+    sh:property [
+        sh:path     gs:locatedAt ;
+        sh:minCount 1 ;
+        sh:class    gs:Place ;
+        sh:message  "An Intervention must be locatedAt at least one Place." ;
+    ] ;
+
+    # (2) confidence presence on the fuzzy edge (SPARQL-star)
+    sh:sparql [
+        sh:message "locatedAt edge has no gs:confidence annotation — a fuzzy edge must not be written as if exact." ;
+        sh:select """
+            SELECT $this ?place WHERE {
+              $this <http://gemeten-stad.nl/ns#locatedAt> ?place .
+              FILTER NOT EXISTS {
+                << $this <http://gemeten-stad.nl/ns#locatedAt> ?place >>
+                    <http://gemeten-stad.nl/ns#confidence> ?c .
+              }
+            }
+        """ ;
+    ] .

@@ -1,0 +1,50 @@
+# Spike E — the triple store, run entirely in containers.
+# Two services, mirroring spike-d's (server + idle tool-sidecar) shape:
+#   fuseki      — the candidate store (Apache Jena Fuseki). Serves SPARQL(-star),
+#                 the Graph Store Protocol loader, and a SHACL validation endpoint.
+#   jena-tools  — the Apache Jena command-line tools (riot/shacl/sparql/arq) kept
+#                 idle; run.sh drives them with `compose exec`. They exist because
+#                 the Fuseki server image bundles the server + tdbloader only, NOT
+#                 the general CLI — and we need an *independent* SHACL implementation
+#                 (the CLI `shacl validate`) to tell an endpoint quirk (Jena #3503)
+#                 apart from a genuine SHACL-over-RDF-star limitation (probe A).
+#
+# The dataset lives on a named volume so a loaded run survives `compose down` —
+# this is also what the future `pipeline dump` (P9) round-trips against.
+services:
+  fuseki:
+    image: secoresearch/fuseki:5.5.0   # Apache-2.0 Jena 5.5.0; env-driven config
+    environment:
+      ADMIN_PASSWORD: spike            # throwaway; the update/SHACL endpoints need auth
+      ENABLE_DATA_WRITE: "true"        # Graph Store Protocol PUT/POST (load path)
+      ENABLE_UPDATE: "true"            # SPARQL Update
+      ENABLE_SHACL: "true"             # the fuseki:shacl validation endpoint (off by default)
+      # TDB2 memory-maps its files into the OS cache; keep the JVM heap modest so it
+      # does not starve that cache (a documented Fuseki footgun). 2 GB is ample here.
+      JVM_ARGS: "-Xmx2g"
+    ports:
+      - "3030:3030"                    # Fuseki UI + endpoints at http://localhost:3030
+    volumes:
+      - fuseki-data:/fuseki-base/databases
+    healthcheck:
+      # the image ships wget, not curl
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3030/$$/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  jena-tools:
+    image: stain/jena:5.1.0            # full Jena CLI (riot, shacl, sparql, arq, update)
+    platform: linux/amd64              # no arm64 build published; runs under emulation
+    depends_on:
+      fuseki:
+        condition: service_healthy
+    volumes:
+      - ./data:/data
+      - ./shapes:/shapes
+      - ./sparql:/sparql
+    working_dir: /data
+    command: ["sleep", "infinity"]
+
+volumes:
+  fuseki-data:

@@ -1,0 +1,11 @@
+# A single well-formed Intervention (plain Turtle) for the SHACL *accept* path.
+# The locatedAt edge is asserted and carries a confidence annotation.
+@prefix gs:   <http://gemeten-stad.nl/ns#> .
+@prefix data: <http://gemeten-stad.nl/id/> .
+
+data:intv-ok a gs:Intervention ;
+    gs:locatedAt data:place-ok
+        {| gs:confidence 0.7 ;
+           gs:evidence "place+time match, Spike B tau=0.60" |} .
+
+data:place-ok a gs:Place .

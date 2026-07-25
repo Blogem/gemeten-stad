@@ -1,0 +1,16 @@
+# Check 4 — a query that spans TWO named graphs: each Intervention (in its run
+# graph) joined to its run's PROV transaction-time (in the run:_provenance graph).
+# Answers "what did we know, and when", per run.
+PREFIX gs:   <http://gemeten-stad.nl/ns#>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX run:  <http://gemeten-stad.nl/run/>
+
+SELECT ?run ?intervention ?confidence ?generatedAt WHERE {
+  GRAPH ?run {
+    ?intervention a gs:Intervention ;
+                  gs:locatedAt ?place .
+    << ?intervention gs:locatedAt ?place >> gs:confidence ?confidence .
+  }
+  GRAPH run:_provenance { ?run prov:generatedAtTime ?generatedAt . }
+}
+ORDER BY ?generatedAt

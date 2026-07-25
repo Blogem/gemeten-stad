@@ -1,0 +1,12 @@
+# SHACL *reject* path — the RDF-star case (probe A). The Intervention HAS its
+# locatedAt edge (so structural validation passes), but the edge carries NO
+# confidence annotation. This is exactly the "half-broken data" the load gate must
+# refuse: a fuzzy edge written as if it were exact. Catching this requires the
+# validator to reach into the RDF-star annotation — the crux of probe A.
+@prefix gs:   <http://gemeten-stad.nl/ns#> .
+@prefix data: <http://gemeten-stad.nl/id/> .
+
+data:intv-noconf a gs:Intervention ;
+    gs:locatedAt data:place-noconf .
+
+data:place-noconf a gs:Place .

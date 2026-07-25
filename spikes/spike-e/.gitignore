@@ -1,0 +1,3 @@
+# Regenerable spike output — recreate by running ./run.sh (it prints a PASS/FAIL gate).
+out/
+*.log

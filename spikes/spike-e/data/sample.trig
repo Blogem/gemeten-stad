@@ -1,0 +1,51 @@
+# Spike E — a tiny, well-formed sample mirroring IMPLEMENTATION_PLAN.md §3.
+#
+# Two run-stamped named graphs (transaction-time = PROV): each is a load run that
+# wrote one Intervention whose fuzzy `locatedAt` edge carries a confidence + the
+# evidence it rests on. The confidence lives as an RDF-star *annotation* using the
+# `{| … |}` form — which asserts the base edge AND annotates it (verified with riot:
+# the bare `<< … >>` form does NOT assert the base edge, so structural SHACL could
+# not see the edge; the annotation form is the one the model must use).
+#
+# PROV metadata about each run (prov:Activity + prov:generatedAtTime) sits in its
+# own `run:_provenance` named graph, so "what did we know, and when" is answerable
+# per run — and a cross-graph query genuinely joins two named graphs. (The dataset
+# runs with unionDefaultGraph on, so the stored *default* graph is shadowed by the
+# union of named graphs; a dedicated provenance graph sidesteps that entirely.)
+
+@prefix gs:   <http://gemeten-stad.nl/ns#> .
+@prefix data: <http://gemeten-stad.nl/id/> .
+@prefix run:  <http://gemeten-stad.nl/run/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# --- provenance / transaction-time (its own named graph) ---
+run:_provenance {
+    run:load-2022q4-001 a prov:Activity ;
+        prov:generatedAtTime "2026-07-20T09:00:00Z"^^xsd:dateTime .
+
+    run:load-2022q4-002 a prov:Activity ;
+        prov:generatedAtTime "2026-07-24T14:30:00Z"^^xsd:dateTime .
+}
+
+# --- run 1 ---
+run:load-2022q4-001 {
+    data:intv-001 a gs:Intervention ;
+        gs:locatedAt data:place-noord-a
+            {| gs:confidence 0.7 ;
+               gs:evidence "place+time match, Spike B place-led model tau=0.60" |} .
+
+    data:place-noord-a a gs:Place ;
+        gs:label "Meeuwenlaan 1, Amsterdam-Noord" .
+}
+
+# --- run 2 (a later run; distinct named graph, distinct generatedAtTime) ---
+run:load-2022q4-002 {
+    data:intv-002 a gs:Intervention ;
+        gs:locatedAt data:place-noord-b
+            {| gs:confidence 0.9 ;
+               gs:evidence "exact BAG address match at permit valid-time" |} .
+
+    data:place-noord-b a gs:Place ;
+        gs:label "Nieuwendammerdijk 5, Amsterdam-Noord" .
+}

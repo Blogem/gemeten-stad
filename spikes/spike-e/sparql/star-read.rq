@@ -1,0 +1,12 @@
+# Check 2 — the exact SPARQL-star read the server/UI will use: pull the confidence
+# (and evidence) back off the fuzzy locatedAt edge. Reads across all named graphs.
+PREFIX gs: <http://gemeten-stad.nl/ns#>
+
+SELECT ?intervention ?place ?confidence ?evidence WHERE {
+  GRAPH ?g {
+    ?intervention gs:locatedAt ?place .
+    << ?intervention gs:locatedAt ?place >> gs:confidence ?confidence .
+    OPTIONAL { << ?intervention gs:locatedAt ?place >> gs:evidence ?evidence . }
+  }
+}
+ORDER BY ?intervention
