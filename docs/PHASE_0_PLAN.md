@@ -19,9 +19,10 @@ into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
   registry has no separate Verplanten value, so the thread's "18 = 18" holds (with a
   `transplantOrigin` caveat). Species/project are the fuzzy residue (<10% in prose, 0% in the
   registry) → the home for the Phase-2 spaCy NER lane, off the audit critical path.
-- **Spike D** (`spikes/spike-d/`) — the geo bulk backbone loads & resolves locally: BAG *LV 2.0
-  Extract* via GDAL `lvbag` into PostGIS + gebieden/CBS polygons, 100% point-in-polygon accuracy,
-  90% address-precision resolution at the permit's valid-time.
+- **Spike D** (promoted into `ingest/bag`, `ingest/gebieden`, `load/geo`, `location/` — P6, DONE;
+  the throwaway spike itself has been retired) — the geo bulk backbone loads & resolves locally: BAG
+  *LV 2.0 Extract* via GDAL `lvbag` into PostGIS + gebieden/CBS polygons, 100% point-in-polygon
+  accuracy, 90% address-precision resolution at the permit's valid-time.
 - **Spike E** (`spikes/spike-e/`) — the triple store is **Apache Jena Fuseki** (Apache-2.0), the only
   genuinely open candidate meeting all five needs in one container. SHACL validates over RDF-star (Jena
   #3503 does not bite); the confidence-presence rule is enforced with a `sh:sparql` SPARQL-star constraint
@@ -40,7 +41,7 @@ into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
 
 The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all code); **both are now
 DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is unblocked. **P3**,
-**P4**, and **P5** are also DONE. The remaining open work is P6–P9.
+**P4**, **P5**, and **P6** are also DONE. The remaining open work is P7–P9.
 
 ---
 
@@ -115,9 +116,10 @@ DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is 
   `task test:integration` and the `go-integration` CI job (`.github/workflows/ci.yml`) run it.
 - **Depends on:** P1; informs P3/P4.
 
-## P6 · Lift BAG / gebieden / CBS preload into main code
+## P6 · Lift BAG / gebieden / CBS preload into main code · **DONE**
+(`ingest/bag`, `ingest/gebieden`, `load/geo`, `location/`)
 
-- **Goal:** Promote spike-d's geo backbone from throwaway shell into `ingest/bag`,
+- **Goal:** Promote Spike D's geo backbone from throwaway shell into `ingest/bag`,
   `ingest/gebieden`, `load/geo`, `location/`.
 - **Entails:** decide **how much stays ogr2ogr vs moves to Go** — the `lvbag`→PostGIS load is
   genuinely easier as ogr2ogr, so likely a Go orchestrator shelling to the GDAL sidecar, not a
@@ -125,8 +127,18 @@ DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is 
   `sql/pip.sql` into `location/` as the resolver (smallest-area + valid-time voorkomen selection +
   `timeMismatch`/`unresolvedLocation` caveats). Keep the monthly-full-reload idempotency. Recipe:
   `DATA_SOURCES.md` §8.
-- **Done when:** the ingest reproduces spike-d's sanity gates (69 buurten, 15 wijken, single SRID
-  28992) on a clean volume; the resolver returns the same PIP/address-precision numbers.
+- **Done when:** ~~the ingest reproduces spike-d's sanity gates (69 buurten, 15 wijken, single SRID
+  28992) on a clean volume; the resolver returns the same PIP/address-precision numbers.~~ ✓
+  `ingest/bag`/`ingest/gebieden` land the extract + polygons (bronze); `load/geo` stages via the
+  `gdal` sidecar's `ogr2ogr`, upserts by voorkomen identity with soft-delete, builds the resolver
+  indexes, and asserts the SRID/69-buurten/15-wijken sanity gates on load; `location/` implements
+  the address→postcode→buurt resolver ladder with `time_match`/`timeMismatch`/`unresolvedLocation`.
+  Unit tests cover the pure-function logic (arg builders, landing/provenance, resolver SQL/ladder).
+  The automatic integration tier (a SQL-seeded real-shaped subset, no `gdal` sidecar) and the manual
+  full-corpus reproduction of the exact Spike D rates (69/15, 90%/100%) against the real extract are
+  documented in `deploy/compose/README.md`; the full-corpus run is currently gated on a known dev
+  limitation (the `raw-data` volume is not yet bridged to `GS_RAW_DATA_PATH`), noted there as a
+  deploy follow-up. `spikes/spike-d/` has been removed — its behaviour now lives in these packages.
 - **Depends on:** P1, P3.
 
 ## P7 · Preload kapenherplant + stamgegevens

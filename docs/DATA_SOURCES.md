@@ -52,7 +52,7 @@ address (BAG id)  →  postcode-6  →  buurt  →  wijk  →  stadsdeel  →  g
    Returns (verified): `naam: "E-buurt"`, `cbsCode: "BU0363TE01"`. Every Datapunt record
    carrying `gbdBuurtId` is thus one call away from the CBS key space.
 
-Point-in-polygon polygons (verified in Spike D, `spikes/spike-d/`):
+Point-in-polygon polygons (verified in Spike D, now `load/geo` / `location/`):
 - **`gebieden` buurt/wijk polygons** — from the Datapunt API itself, `GET
   /v1/gebieden/buurten/?_format=geojson` (and `/wijken/`) with `Accept-Crs: EPSG:28992`; keyed by
   `identificatie` = the `gbdBuurtId` the registry uses, so this is the **primary** set for scoring.
@@ -393,8 +393,9 @@ The national register of energy labels, **per address with BAG ids**.
 
 The national address/building register, **bulk-loaded locally** so all location resolution
 (§0) runs against our own copy — no PDOK Locatieserver dependency. **Characterised in Spike D
-(`spikes/spike-d/`, verified 2026-07-25): the backbone loads and resolves locally at 90% address
-precision / 100% point-in-polygon.**
+(verified 2026-07-25, now implemented in `ingest/bag`, `ingest/gebieden`, `load/geo`, `location/` —
+see `deploy/compose/README.md` for the load recipe): the backbone loads and resolves locally at 90%
+address precision / 100% point-in-polygon.**
 
 - **Source:** Kadaster *LV BAG 2.0 Extract* — a free **national-only** dump (~**3.6 GB**;
   `lvbag-extract-nl.zip` = 3,610,187,048 bytes), refreshed monthly (~the 8th). Via the PDOK atom

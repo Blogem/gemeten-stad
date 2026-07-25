@@ -114,7 +114,7 @@ for rows that change, e.g. a replant date filled in months later.
 `Assessment` model below is just the most active instance of this one general rule.
 
 **Reference data is bitemporal too — resolve at the intervention's valid-time.** This is not only
-an internal concern: **BAG itself is bitemporal** (Spike D, `spikes/spike-d/`) — every address is a
+an internal concern: **BAG itself is bitemporal** (Spike D, now `location/`) — every address is a
 sequence of *voorkomens* with valid-time (`beginGeldigheid`/`eindGeldigheid`) and transaction-time
 (`tijdstipRegistratie`/`eindRegistratie`), and a change may be a real-world event (valid-time
 advances) or a correction (same valid-time, re-registered). Because we audit **backdated**
@@ -357,7 +357,8 @@ vellen to include verplanten, the registry has **no Verplanten value** (all 35,2
 `Vellen (boom verwijderen)`) and logs transplants as Vellen + replants them → the "18 verplant = 18 vellen"
 match **holds** (carry a `transplantOrigin` caveat). Corrections folded into `DATA_SOURCES.md`
 §1/§2a/§10/§11 and §"Fulfilment"/Phase 2 below; **(D) — DONE
-(`spikes/spike-d/`):** the geo bulk backbone loads & resolves locally — BAG *LV 2.0 Extract* via
+(promoted into `ingest/bag`, `ingest/gebieden`, `load/geo`, `location/` — Phase 0 · P6):** the geo
+bulk backbone loads & resolves locally — BAG *LV 2.0 Extract* via
 GDAL `lvbag` into PostGIS (national ~3.6 GB, filtered to `0363`, **all voorkomens**) + `gebieden`
 (Datapunt GeoJSON) / CBS (PDOK WFS) polygons, with **100% point-in-polygon** accuracy vs
 `gbdBuurtId` and **90% address-precision** free-text/reference resolution at the permit's valid-time,
