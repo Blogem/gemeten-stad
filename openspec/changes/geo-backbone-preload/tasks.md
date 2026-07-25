@@ -6,29 +6,29 @@
 
 ## 2. BAG ingest (`ingest/bag`)
 
-- [ ] 2.1 Fetch the *LV BAG 2.0 Extract* from the PDOK atom feed into the landing store; skip the download when already landed; record provenance.
-- [ ] 2.2 Implement refresh as an idempotent full reload (replace the landed extract); no daily Mutatie-Levering path.
+- [x] 2.1 Fetch the *LV BAG 2.0 Extract* from the PDOK atom feed into the landing store; skip the download when already landed; record provenance.
+- [x] 2.2 Implement refresh as an idempotent full reload (replace the landed extract); no daily Mutatie-Levering path.
 
 ## 3. Boundary ingest (`ingest/gebieden`)
 
-- [ ] 3.1 Harvest the whole-city `gebieden` buurt + wijk polygons (Datapunt API, GeoJSON, `Accept-Crs: EPSG:28992`) — all of gemeente `0363`, no stadsdeel filter — carrying `identificatie` (`gbdBuurtId`); land with provenance.
-- [ ] 3.2 Land the CBS "wijken en buurten" WFS reference (`gemeentecode='GM0363'`) as a best-effort, logged cross-reference; skip when already landed.
+- [x] 3.1 Harvest the whole-city `gebieden` buurt + wijk polygons (Datapunt API, GeoJSON, `Accept-Crs: EPSG:28992`) — all of gemeente `0363`, no stadsdeel filter — carrying `identificatie` (`gbdBuurtId`); land with provenance.
+- [x] 3.2 Land the CBS "wijken en buurten" WFS reference (`gemeentecode='GM0363'`) as a best-effort, logged cross-reference; skip when already landed.
 
 ## 4. Geo load into PostGIS (`load/geo`)
 
-- [ ] 4.1 Ensure the `postgis` + `pg_trgm` extensions; stage the `lvbag`→PostGIS load for OPR/NUM/VBO/LIG/STA via the sidecar `ogr2ogr` into `*_staging` tables (municipality filter `'%.0363%'`, all voorkomens/columns, `AUTOCORRECT_INVALID_DATA=YES`, `GEOMETRY_NAME=geom`, `PROMOTE_TO_MULTI` for LIG/STA); omit `pand`/`woonplaats`.
-- [ ] 4.2 Stage the whole-city `gebieden` buurt/wijk GeoJSON and the CBS reference (SRID 28992).
-- [ ] 4.3 Upsert each staging table into its target keyed by the voorkomen identity (`identificatie` + `begingeldigheid` + `tijdstipregistratie`) via `pgx` `MERGE`: insert new voorkomens, no-op unchanged, and soft-delete rows absent from staging (`source_deleted_at = load_ts`) — never physically delete. Add a `source_deleted_at` column to the targets.
-- [ ] 4.4 Create the resolver indexes: GIST on the PIP geometry columns, `pg_trgm` GIN on `lower(openbareruimte.naam)`, and the NUM/VBO/LIG/STA join + `(postcode, huisnummer)` b-tree indexes.
-- [ ] 4.5 Add a reset flag that drops + rebuilds the targets from the landed data (clean dev volume); absent the flag, the reload is the non-destructive upsert.
-- [ ] 4.6 Assert the sanity gates after load (single SRID 28992; the 69 Noord buurten + 15 Noord wijken present in the whole-city load) and exit non-zero on failure; log whole-city row counts.
+- [x] 4.1 Ensure the `postgis` + `pg_trgm` extensions; stage the `lvbag`→PostGIS load for OPR/NUM/VBO/LIG/STA via the sidecar `ogr2ogr` into `*_staging` tables (municipality filter `'%.0363%'`, all voorkomens/columns, `AUTOCORRECT_INVALID_DATA=YES`, `GEOMETRY_NAME=geom`, `PROMOTE_TO_MULTI` for LIG/STA); omit `pand`/`woonplaats`.
+- [x] 4.2 Stage the whole-city `gebieden` buurt/wijk GeoJSON and the CBS reference (SRID 28992).
+- [x] 4.3 Upsert each staging table into its target keyed by the voorkomen identity (`identificatie` + `begingeldigheid` + `tijdstipregistratie`) via `pgx` `MERGE`: insert new voorkomens, no-op unchanged, and soft-delete rows absent from staging (`source_deleted_at = load_ts`) — never physically delete. Add a `source_deleted_at` column to the targets.
+- [x] 4.4 Create the resolver indexes: GIST on the PIP geometry columns, `pg_trgm` GIN on `lower(openbareruimte.naam)`, and the NUM/VBO/LIG/STA join + `(postcode, huisnummer)` b-tree indexes.
+- [x] 4.5 Add a reset flag that drops + rebuilds the targets from the landed data (clean dev volume); absent the flag, the reload is the non-destructive upsert.
+- [x] 4.6 Assert the sanity gates after load (single SRID 28992; the 69 Noord buurten + 15 Noord wijken present in the whole-city load) and exit non-zero on failure; log whole-city row counts.
 
 ## 5. Location resolver (`location`)
 
-- [ ] 5.1 Implement `Resolve(Query{Street,Huisnummer,Postcode,Point,Date}) Result{PlaceLevel,Geom,Confidence,TimeMatch,Caveats}` with the address→postcode→buurt ladder and match preference (`(postcode,huisnummer)` → exact street → `pg_trgm` fuzzy).
-- [ ] 5.2 Implement voorkomen selection: best-known (`eindregistratie IS NULL`), prefer valid-at-date, else any-time fallback recorded as `time_match`; never filter on `status`.
-- [ ] 5.3 Reach the address point NUM → adresseerbaar object (VBO point / LIG·STA centroid) via `hoofdadresnummeraanduidingref`; union all three types.
-- [ ] 5.4 Implement point-in-polygon against `gebieden_buurten` (keyed by `gbdBuurtId`), never CBS; attach `unresolvedLocation` on the buurt tier and `timeMismatch` on `any_time`. Do NOT snap the point to a nearer address/postcode — buurt is the floor when the text address does not resolve (avoids false precision).
+- [x] 5.1 Implement `Resolve(Query{Street,Huisnummer,Postcode,Point,Date}) Result{PlaceLevel,Geom,Confidence,TimeMatch,Caveats}` with the address→postcode→buurt ladder and match preference (`(postcode,huisnummer)` → exact street → `pg_trgm` fuzzy).
+- [x] 5.2 Implement voorkomen selection: best-known (`eindregistratie IS NULL`), prefer valid-at-date, else any-time fallback recorded as `time_match`; never filter on `status`.
+- [x] 5.3 Reach the address point NUM → adresseerbaar object (VBO point / LIG·STA centroid) via `hoofdadresnummeraanduidingref`; union all three types.
+- [x] 5.4 Implement point-in-polygon against `gebieden_buurten` (keyed by `gbdBuurtId`), never CBS; attach `unresolvedLocation` on the buurt tier and `timeMismatch` on `any_time`. Do NOT snap the point to a nearer address/postcode — buurt is the floor when the text address does not resolve (avoids false precision).
 
 ## 6. Pipeline wiring (`cmd/pipeline`)
 
@@ -38,9 +38,9 @@ All Go tests use **testify** (`require`/`assert`), table-driven where it fits (a
 
 **Unit (no DB):**
 
-- [ ] 7.1 The `ogr2ogr` argument builders: correct object-type filter, `'%.0363%'`, geometry/promote flags per BAG table and per polygon/WFS load.
+- [x] 7.1 The `ogr2ogr` argument builders: correct object-type filter, `'%.0363%'`, geometry/promote flags per BAG table and per polygon/WFS load.
 - [x] 7.2 The landing/provenance plumbing: lands + writes provenance on first run; reports "already landed" (no re-download) on second; a refresh preserves prior provenance history.
-- [ ] 7.3 The resolver SQL builders / place-tier ladder / `time_match` selection as pure functions.
+- [x] 7.3 The resolver SQL builders / place-tier ladder / `time_match` selection as pure functions.
 
 **Integration (automatic, in CI — SQL-seeded real-shaped subset, no `gdal` sidecar):**
 
