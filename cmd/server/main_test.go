@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestConfigFromEnv checks the env-driven config: dev defaults when unset, and
@@ -38,9 +40,7 @@ func TestConfigFromEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			env := func(k string) string { return tt.env[k] }
-			if got := configFromEnv(env); got != tt.want {
-				t.Errorf("configFromEnv() = %+v, want %+v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, configFromEnv(env))
 		})
 	}
 }
@@ -52,13 +52,9 @@ func TestHealthHandler(t *testing.T) {
 
 	newHandler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, rec.Code)
 	body, _ := io.ReadAll(rec.Result().Body)
-	if got, want := string(body), "ok\n"; got != want {
-		t.Errorf("body = %q, want %q", got, want)
-	}
+	assert.Equal(t, "ok\n", string(body))
 }
 
 // TestRunHealthcheck drives the -healthcheck probe against a live test server
@@ -68,15 +64,12 @@ func TestRunHealthcheck(t *testing.T) {
 	defer srv.Close()
 
 	// srv.Listener.Addr() is a concrete host:port the probe can hit.
-	if err := runHealthcheck(srv.Listener.Addr().String()); err != nil {
-		t.Errorf("healthcheck against live server failed: %v", err)
-	}
+	assert.NoError(t, runHealthcheck(srv.Listener.Addr().String()),
+		"healthcheck against live server")
 
 	// A closed listener: the same address after Close should error.
 	closed := httptest.NewServer(newHandler())
 	addr := closed.Listener.Addr().String()
 	closed.Close()
-	if err := runHealthcheck(addr); err == nil {
-		t.Error("healthcheck against closed server: got nil error, want failure")
-	}
+	assert.Error(t, runHealthcheck(addr), "healthcheck against closed server")
 }

@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestFusekiDatasetLifecycle(t *testing.T) {
@@ -17,56 +19,37 @@ func TestFusekiDatasetLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	datasetName, err := NewDatasetName()
-	if err != nil {
-		t.Fatalf("NewDatasetName: %v", err)
-	}
+	require.NoError(t, err)
 
-	if err := CreateDataset(ctx, baseURL, adminPassword, datasetName); err != nil {
-		t.Fatalf("CreateDataset: %v", err)
-	}
+	require.NoError(t, CreateDataset(ctx, baseURL, adminPassword, datasetName))
 	t.Cleanup(func() {
-		if err := DropDataset(ctx, baseURL, adminPassword, datasetName); err != nil {
-			t.Errorf("DropDataset cleanup: %v", err)
-		}
+		require.NoError(t, DropDataset(ctx, baseURL, adminPassword, datasetName), "DropDataset cleanup")
 	})
 
 	datasetURL := strings.TrimRight(baseURL, "/") + "/" + datasetName
 
 	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, datasetURL+"/data?default",
 		strings.NewReader("<urn:testdb:s> <urn:testdb:p> <urn:testdb:o> ."))
-	if err != nil {
-		t.Fatalf("build PUT request: %v", err)
-	}
+	require.NoError(t, err, "build PUT request")
 	putReq.SetBasicAuth(fusekiAdminUser, adminPassword)
 	putReq.Header.Set("Content-Type", "text/turtle")
 	putResp, err := http.DefaultClient.Do(putReq)
-	if err != nil {
-		t.Fatalf("PUT triple: %v", err)
-	}
+	require.NoError(t, err, "PUT triple")
 	defer func() { _ = putResp.Body.Close() }()
-	if putResp.StatusCode/100 != 2 {
-		t.Fatalf("PUT triple: status %d", putResp.StatusCode)
-	}
+	require.Equalf(t, 2, putResp.StatusCode/100, "PUT triple: status %d", putResp.StatusCode)
 
 	askReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		datasetURL+"/sparql?query="+url.QueryEscape("ASK { <urn:testdb:s> <urn:testdb:p> <urn:testdb:o> }"), nil)
-	if err != nil {
-		t.Fatalf("build ASK request: %v", err)
-	}
+	require.NoError(t, err, "build ASK request")
 	askReq.SetBasicAuth(fusekiAdminUser, adminPassword)
 	askReq.Header.Set("Accept", "application/sparql-results+json")
 	askResp, err := http.DefaultClient.Do(askReq)
-	if err != nil {
-		t.Fatalf("ASK query: %v", err)
-	}
+	require.NoError(t, err, "ASK query")
 	defer func() { _ = askResp.Body.Close() }()
 	body, _ := io.ReadAll(askResp.Body)
-	if askResp.StatusCode/100 != 2 {
-		t.Fatalf("ASK query: status %d: %s", askResp.StatusCode, body)
-	}
-	if !strings.Contains(string(body), "true") {
-		t.Fatalf("expected the written triple to be found in the isolated dataset, got %s", body)
-	}
+	require.Equalf(t, 2, askResp.StatusCode/100, "ASK query: status %d: %s", askResp.StatusCode, body)
+	require.Containsf(t, string(body), "true",
+		"expected the written triple to be found in the isolated dataset, got %s", body)
 }
 
 func TestFusekiGuardAbortsOnProductionName(t *testing.T) {
@@ -74,7 +57,6 @@ func TestFusekiGuardAbortsOnProductionName(t *testing.T) {
 	adminPassword := requireEnv(t, "FUSEKI_ADMIN_PASSWORD")
 	ctx := context.Background()
 
-	if err := CreateDataset(ctx, baseURL, adminPassword, "ds"); err == nil {
-		t.Fatal("CreateDataset against the production dataset name must abort, got nil error")
-	}
+	require.Error(t, CreateDataset(ctx, baseURL, adminPassword, "ds"),
+		"CreateDataset against the production dataset name must abort")
 }

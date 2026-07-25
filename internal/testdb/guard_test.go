@@ -1,6 +1,10 @@
 package testdb
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestAssertNotProduction(t *testing.T) {
 	tests := []struct {
@@ -23,8 +27,10 @@ func TestAssertNotProduction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := AssertNotProduction(tt.schemaName, tt.datasetName)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("AssertNotProduction(%q, %q) error = %v, wantErr %v", tt.schemaName, tt.datasetName, err, tt.wantErr)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}
@@ -32,14 +38,9 @@ func TestAssertNotProduction(t *testing.T) {
 
 func TestNewSchemaAndDatasetNamesAreIsolated(t *testing.T) {
 	schemaName, err := NewSchemaName()
-	if err != nil {
-		t.Fatalf("NewSchemaName: %v", err)
-	}
+	require.NoError(t, err)
 	datasetName, err := NewDatasetName()
-	if err != nil {
-		t.Fatalf("NewDatasetName: %v", err)
-	}
-	if err := AssertNotProduction(schemaName, datasetName); err != nil {
-		t.Fatalf("a freshly generated name must never be rejected by the guard: %v", err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, AssertNotProduction(schemaName, datasetName),
+		"a freshly generated name must never be rejected by the guard")
 }
