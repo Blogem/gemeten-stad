@@ -32,7 +32,7 @@
 
 ## 6. Pipeline wiring (`cmd/pipeline`)
 
-- [ ] 6.1 Wire the BAG + gebieden ingest work items into `pipeline ingest`, and the geo load (with the reset flag) into `pipeline load`, replacing the no-op stubs for these sources.
+- [x] 6.1 Wire the BAG + gebieden ingest work items into `pipeline ingest`, and the geo load (with the reset flag) into `pipeline load`, replacing the no-op stubs for these sources.
 
 All Go tests use **testify** (`require`/`assert`), table-driven where it fits (already a direct dependency; the repo is uniformly testify). Integration tests use the P5 conventions: `//go:build integration`, `internal/testdb` random-schema isolation + reserved-name guard, `GS_TEST_DATABASE_URL`, the `requireEnv` fail-loud helper; they run under the existing `task test:integration` / `go-integration` CI job (which brings up only `db`+`fuseki` — no `ci.yml` change).
 
