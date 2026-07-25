@@ -1,8 +1,8 @@
 ## 1. Shared plumbing (`ingest/shared`, config)
 
-- [ ] 1.1 Add a raw landing-store helper: land a source artifact under the `raw-data` volume path and write a history-preserving provenance sidecar (source URL, fetch timestamp, byte size, content hash) — a refresh lands a new dated snapshot, never erasing prior provenance; expose an "already landed?" check for idempotency.
-- [ ] 1.2 Add a PostGIS connection helper over the existing `github.com/jackc/pgx/v5` dependency (already in `go.mod` from P5), reading `GS_DATABASE_URL` at runtime (same env the server uses).
-- [ ] 1.3 Add the GDAL-sidecar command-prefix config (env-driven, default `docker compose -f deploy/compose/compose.yaml exec -T gdal`) and a small `os/exec` runner that builds `<prefix> ogr2ogr <args>`.
+- [x] 1.1 Add a raw landing-store helper: land a source artifact under the `raw-data` volume path and write a history-preserving provenance sidecar (source URL, fetch timestamp, byte size, content hash) — a refresh lands a new dated snapshot, never erasing prior provenance; expose an "already landed?" check for idempotency.
+- [x] 1.2 Add a PostGIS connection helper over the existing `github.com/jackc/pgx/v5` dependency (already in `go.mod` from P5), reading `GS_DATABASE_URL` at runtime (same env the server uses).
+- [x] 1.3 Add the GDAL-sidecar command-prefix config (env-driven, default `docker compose -f deploy/compose/compose.yaml exec -T gdal`) and a small `os/exec` runner that builds `<prefix> ogr2ogr <args>`.
 
 ## 2. BAG ingest (`ingest/bag`)
 
@@ -39,7 +39,7 @@ All Go tests use **testify** (`require`/`assert`), table-driven where it fits (a
 **Unit (no DB):**
 
 - [ ] 7.1 The `ogr2ogr` argument builders: correct object-type filter, `'%.0363%'`, geometry/promote flags per BAG table and per polygon/WFS load.
-- [ ] 7.2 The landing/provenance plumbing: lands + writes provenance on first run; reports "already landed" (no re-download) on second; a refresh preserves prior provenance history.
+- [x] 7.2 The landing/provenance plumbing: lands + writes provenance on first run; reports "already landed" (no re-download) on second; a refresh preserves prior provenance history.
 - [ ] 7.3 The resolver SQL builders / place-tier ladder / `time_match` selection as pure functions.
 
 **Integration (automatic, in CI — SQL-seeded real-shaped subset, no `gdal` sidecar):**
