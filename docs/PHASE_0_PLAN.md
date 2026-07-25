@@ -149,6 +149,15 @@ vocabulary can be fixed now that Spike C has settled it (**verplanten ≡ vellen
     `skos:exactMatch`; ingest data enums (`boommaatregelBesluit`, `boomgebreken`, `soortnaam`,
     gebieden/CBS); hand-author the small legal top. Corpus-mined `altLabel`s are a Phase-2
     feedback loop — v0 seeds from sources + enums only. → `ontology/vocab.ttl`.
+    - **Species concepts MUST carry plural (and inflected) surface forms as `skos:altLabel`s**, not
+      only the `skos:prefLabel` singular — e.g. `iep`/`iepen`, `es`/`essen`, `populier`/`populieren`,
+      `els`/`elzen`, plus the Latin genus. This is load-bearing, not cosmetic: Spike C
+      (`spikes/spike-c/`) showed the spaCy EntityRuler is seeded directly from these labels and the
+      `nl_core_news_md` lemmatizer **mis-normalizes botanical terms** ("essen"→"Essen", "iepen"→"ie",
+      "berken"→VERB), so a singular-only vocab silently fails to recognize the plural — and because a
+      species-headed count ("drie *essen*") is unparseable until "essen" is a known term, missing
+      plurals directly loses tree counts. Seed the common Amsterdam species with both forms in v0;
+      the Phase-2 mining loop grows the long tail.
   - **SHACL shapes:** enforce structure + the SKOS-backed controlled value sets + confidence/
     caveat presence rules so "no half-broken data enters the graph" (§4); wired into `load` as a
     gate. → `ontology/shapes.ttl`.
