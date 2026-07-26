@@ -144,6 +144,14 @@ job; the metadata gives the intervention typing for free.
   are the fuzzy NER residue (§2a: 0% registry-side). The free-text "t.h.v." reference address is a
   fallback for the finer-than-buurt rung, not the primary locator. (Bouw omgevingsvergunningen not
   re-probed; the thin-metadata caveat may still hold for those.)
+  - **NB — where each field actually lands** (verified over the full 10,503-record landing): the
+    **geometry, activiteit, title address, and abstract live in the SRU record**, but the
+    **zaaknummer (`OVERHEIDop.referentienummer`) is ONLY in the `metadata.xml` sidecar** —
+    `0/10,503` SRU records carry it. The ingest therefore lands **both** artifacts verbatim per
+    publication (`koop/<id>.xml` + `koop/<id>.metadata.xml`); the sidecar is the sole landed
+    zaaknummer source the load stage dedups on. The RD point is a coarse `Gebiedsmarkering` (often a
+    neighbourhood centroid — 92 records can share one point), so the load resolves the **title
+    address first**, the point as a buurt floor.
 - **The kap publication body is a stub** (Spike A, `spikes/spike-a/`): an *aanvraag* or
   *besluit* notice carries activity + address (+ count/zaaknummer for a besluit) and **no
   permit conditions and no replant termijn** — the besluit itself is "per e-mail" only, not

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,10 +39,18 @@ func readFixture(t *testing.T, name string) []byte {
 func fakeSRUGetter(t *testing.T, calls *[]string, pagesByStart map[string][]byte) shared.HTTPGetFunc {
 	t.Helper()
 	return func(_ context.Context, rawURL string) (io.ReadCloser, error) {
-		*calls = append(*calls, rawURL)
-
 		u, err := url.Parse(rawURL)
 		require.NoError(t, err)
+
+		// This SRU-focused fake does not serve metadata.xml sidecar requests (exercised
+		// separately in metadata_test.go). Return not-found so Ingest's non-fatal path lands the
+		// record without the sidecar, and do NOT record the call — SRU-paging assertions stay
+		// about SRU requests only.
+		if strings.HasSuffix(u.Path, "/metadata.xml") {
+			return nil, fmt.Errorf("fakeSRUGetter: metadata sidecar not served")
+		}
+
+		*calls = append(*calls, rawURL)
 		start := u.Query().Get("startRecord")
 
 		page, ok := pagesByStart[start]

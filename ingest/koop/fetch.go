@@ -61,7 +61,15 @@ func Ingest(ctx context.Context, store *shared.RawStore, httpGet shared.HTTPGetF
 		if _, err := time.Parse("2006-01-02", rec.Available); err == nil && rec.Available > maxAvailable {
 			maxAvailable = rec.Available
 		}
-		return landRecord(store, rec, sourceURL, fetchedAt)
+		changed, err := landRecord(store, rec, sourceURL, fetchedAt)
+		if err != nil {
+			return err
+		}
+		// Land the metadata.xml sidecar alongside the SRU record — the authoritative (and only
+		// landed) source of the zaaknummer (OVERHEIDop.referentienummer), which is absent from the
+		// SRU record. Fetched only when the record was (re)landed or the sidecar is not yet present,
+		// so an unchanged re-run does no redundant sidecar fetches; a missing sidecar is non-fatal.
+		return landMetadata(ctx, store, httpGet, rec.Identifier, fetchedAt, changed)
 	})
 	if err != nil {
 		return fmt.Errorf("koop: harvest: %w", err)
@@ -83,32 +91,36 @@ func Ingest(ctx context.Context, store *shared.RawStore, httpGet shared.HTTPGetF
 // payloads like "gmb-../../etc/passwd" — is skipped, not landed) or it is already landed with
 // identical content (D4 no-op skip). A landed record whose content hash has changed is re-landed,
 // which overwrites the artifact bytes and appends a new provenance record.
-func landRecord(store *shared.RawStore, rec shared.SRURecord, sourceURL string, fetchedAt time.Time) error {
+//
+// changed reports whether the artifact bytes were (re)written this call — true on a first landing
+// or a content change, false on a skip (invalid identifier, or already landed with identical
+// content). The caller uses it to decide whether to (re)fetch the record's metadata sidecar.
+func landRecord(store *shared.RawStore, rec shared.SRURecord, sourceURL string, fetchedAt time.Time) (changed bool, err error) {
 	if !validIdentifier.MatchString(rec.Identifier) {
 		slog.Warn("koop: skipping record with invalid identifier", "identifier", rec.Identifier)
-		return nil
+		return false, nil
 	}
 
 	name := "koop/" + rec.Identifier + ".xml"
 
 	landed, err := store.Landed(name)
 	if err != nil {
-		return fmt.Errorf("koop: check landed %q: %w", name, err)
+		return false, fmt.Errorf("koop: check landed %q: %w", name, err)
 	}
 	if landed {
 		unchanged, err := contentUnchanged(store, name, rec.InnerXML)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if unchanged {
-			return nil
+			return false, nil
 		}
 	}
 
 	if _, err := store.Land(name, bytes.NewReader(rec.InnerXML), sourceURL, fetchedAt); err != nil {
-		return fmt.Errorf("koop: land %q: %w", name, err)
+		return false, fmt.Errorf("koop: land %q: %w", name, err)
 	}
-	return nil
+	return true, nil
 }
 
 // contentUnchanged reports whether newContent's sha256 matches the already-landed artifact

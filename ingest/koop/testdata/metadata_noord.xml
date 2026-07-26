@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Realistic KOOP metadata.xml sidecar (shape verified live against
+     zoek.officielebekendmakingen.nl/<id>/metadata.xml). Carries the zaaknummer
+     (OVERHEIDop.referentienummer, prefix Z….-N… = stadsdeel Noord) that is absent
+     from the SRU record. Shared with the P13 load/koop parser tests. -->
+<metadata_gegevens>
+  <metadata name="DC.identifier" scheme="" content="gmb-2022-291126"/>
+  <metadata name="DC.title" content="Besluit omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Örehof 8 1024BB Amsterdam"/>
+  <metadata name="DC.type" scheme="overheid:Informatietype" content="omgevingsvergunning"/>
+  <metadata name="DC.creator" scheme="overheid:Gemeente" content="gemeente Amsterdam"/>
+  <metadata name="DCTERMS.available" scheme="" content="2022-05-31"/>
+  <metadata name="OVERHEIDop.referentienummer" scheme="" content="Z2022-N002608"/>
+  <metadata name="OVERHEIDop.activiteit" scheme="OVERHEIDop.ActiviteitOmgevingsvergunning" content="kappen"/>
+  <metadata name="OVERHEIDop.gebiedsmarkering" scheme="OVERHEIDop.locatietype" content="Punt"/>
+  <metadata name="OVERHEIDop.geometrieLabel" scheme="" content="Gebiedsmarkering"/>
+</metadata_gegevens>
