@@ -53,7 +53,12 @@ func Ingest(ctx context.Context, store *shared.RawStore, httpGet shared.HTTPGetF
 
 	maxAvailable := hwm
 	numberOfRecords, err := shared.FetchSRUAll(ctx, httpGet, SRUEndpoint, query, func(rec shared.SRURecord) error {
-		if rec.Available > maxAvailable {
+		// rec.Available is an external field: only let it advance the persisted high-water
+		// mark once it's confirmed to parse as a valid "YYYY-MM-DD" date. A malformed
+		// dt.available must not poison the durable cursor (koop/_cursor.json), which the next
+		// run's queryLowerBound/time.Parse depends on being well-formed; the record itself
+		// still lands normally as long as its identifier is valid.
+		if _, err := time.Parse("2006-01-02", rec.Available); err == nil && rec.Available > maxAvailable {
 			maxAvailable = rec.Available
 		}
 		return landRecord(store, rec, sourceURL, fetchedAt)
