@@ -11,12 +11,22 @@ import (
 )
 
 // Landed artifact names load/bomen expects ingest/bomen to have already landed under the shared
-// raw store (bronze) via shared.RawStore.LandVersion — the seam between the two packages. They
-// double as the DSO API's own _embedded key (docs/DATA_SOURCES.md §2a), since ingest/bomen lands
-// each dataset's own name.
+// raw store (bronze) via shared.RawStore.LandVersion — the seam between the two packages. These
+// values must match ingest/bomen.Artifact* exactly (load/bomen deliberately does not import
+// ingest/bomen for them — see load/geo's own "re-declare matching-value consts" pattern — but
+// contract_test.go guards the two from drifting apart).
 const (
-	ArtifactKapenherplant = "kapenherplant"
-	ArtifactStamgegevens  = "stamgegevens"
+	artifactKapenherplant = "bomen_kapenherplant"
+	artifactStamgegevens  = "bomen_stamgegevens"
+)
+
+// embedKey* are the Datapunt bomen DSO API's own _embedded keys (docs/DATA_SOURCES.md §2a) — the
+// key each landed page's HAL envelope nests its dataset's rows under. Distinct from the landing
+// artifact name above: the artifact is how/where the data is stored on disk, the embed key is a
+// property of the source API's response shape.
+const (
+	embedKeyKapenherplant = "kapenherplant"
+	embedKeyStamgegevens  = "stamgegevens"
 )
 
 // Config configures a bomen Load run.
@@ -46,11 +56,11 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, cfg C
 		return err
 	}
 
-	kapRows, err := readLandedRows(store, ArtifactKapenherplant, ArtifactKapenherplant)
+	kapRows, err := readLandedRows(store, artifactKapenherplant, embedKeyKapenherplant)
 	if err != nil {
 		return fmt.Errorf("bomen: load: %w", err)
 	}
-	stamRows, err := readLandedRows(store, ArtifactStamgegevens, ArtifactStamgegevens)
+	stamRows, err := readLandedRows(store, artifactStamgegevens, embedKeyStamgegevens)
 	if err != nil {
 		return fmt.Errorf("bomen: load: %w", err)
 	}
