@@ -134,7 +134,8 @@ func TestResolvePoint(t *testing.T) {
 // Note: readLandedRows takes the artifact name as a plain string, so this test lands under a
 // literal name matching ingest/bomen's pinned ArtifactStamgegevens ("bomen_stamgegevens") value
 // rather than importing ingest/bomen, avoiding a needless cross-package dependency for a test
-// fixture.
+// fixture (contract_test.go is the one test file that imports ingest/bomen, specifically to guard
+// this literal against drifting from the real value).
 const testStamgegevensArtifact = "bomen_stamgegevens"
 
 // TestReadLandedRows_AcrossPages covers the happy path: a versioned artifact landed as two

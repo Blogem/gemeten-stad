@@ -156,11 +156,13 @@ func fixtureKapenherplantV2() []map[string]any {
 }
 
 // seed lands both kapenherplant and stamgegevens rows as one new version each, mirroring how
-// ingest/bomen lands both datasets independently.
+// ingest/bomen lands both datasets independently. It uses the same artifact/embed-key constants
+// load.go's Load itself reads through (artifactKapenherplant/embedKeyKapenherplant and their
+// stamgegevens counterparts), so this test exercises the real ingest<->load landing contract.
 func seed(t *testing.T, store *shared.RawStore, kapRows, stamRows []map[string]any, fetchedAt time.Time) {
 	t.Helper()
-	landPage(t, store, ArtifactKapenherplant, ArtifactKapenherplant, kapRows, fetchedAt)
-	landPage(t, store, ArtifactStamgegevens, ArtifactStamgegevens, stamRows, fetchedAt)
+	landPage(t, store, artifactKapenherplant, embedKeyKapenherplant, kapRows, fetchedAt)
+	landPage(t, store, artifactStamgegevens, embedKeyStamgegevens, stamRows, fetchedAt)
 }
 
 // countRowsWhere counts table's rows matching where (or all rows, if where is empty).
@@ -280,9 +282,9 @@ func TestBomenLoad_EndToEnd(t *testing.T) {
 	t.Run("new version: kap-c soft-deleted, kap-a refreshed, kap-b unaffected", func(t *testing.T) {
 		t2 := t1.Add(24 * time.Hour)
 		kapV2 := fixtureKapenherplantV2()
-		landPage(t, store, ArtifactKapenherplant, ArtifactKapenherplant, kapV2, t2)
+		landPage(t, store, artifactKapenherplant, embedKeyKapenherplant, kapV2, t2)
 		// stamgegevens is unchanged: land the same content again (dedupes, no new version).
-		landPage(t, store, ArtifactStamgegevens, ArtifactStamgegevens, stamV1, t2)
+		landPage(t, store, artifactStamgegevens, embedKeyStamgegevens, stamV1, t2)
 
 		loadTime := time.Now().UTC()
 		require.NoError(t, Load(ctx, pool, store, Config{Reset: false}))
