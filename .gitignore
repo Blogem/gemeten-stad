@@ -9,6 +9,9 @@ deploy/compose/.env
 # Go build output
 /bin/
 
+# Raw landing store (bronze) — the multi-GB BAG extract + landed geo sources
+/data/
+
 # Python
 .venv/
 __pycache__/
