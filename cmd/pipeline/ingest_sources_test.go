@@ -25,7 +25,7 @@ func TestSelectSources(t *testing.T) {
 		{
 			name:      "no args selects all sources in registration order",
 			args:      nil,
-			wantNames: []string{"bag", "gebieden", "bomen"},
+			wantNames: []string{"bag", "gebieden", "bomen", "koop"},
 		},
 		{
 			name:      "single known source: bag",
@@ -43,26 +43,31 @@ func TestSelectSources(t *testing.T) {
 			wantNames: []string{"bomen"},
 		},
 		{
+			name:      "single known source: koop",
+			args:      []string{"koop"},
+			wantNames: []string{"koop"},
+		},
+		{
 			name:      "multiple known sources preserve given order",
 			args:      []string{"gebieden", "bag"},
 			wantNames: []string{"gebieden", "bag"},
 		},
 		{
-			name:      "all three sources reordered preserve given order",
-			args:      []string{"bomen", "bag", "gebieden"},
-			wantNames: []string{"bomen", "bag", "gebieden"},
+			name:      "all sources reordered preserve given order",
+			args:      []string{"koop", "bomen", "bag", "gebieden"},
+			wantNames: []string{"koop", "bomen", "bag", "gebieden"},
 		},
 		{
 			name:      "unknown source errors listing valid names",
 			args:      []string{"nope"},
 			wantErr:   true,
-			errMsgAll: []string{"bag", "gebieden", "bomen"},
+			errMsgAll: []string{"bag", "gebieden", "bomen", "koop"},
 		},
 		{
 			name:      "unknown mixed with known source still errors with no names",
 			args:      []string{"bag", "nope"},
 			wantErr:   true,
-			errMsgAll: []string{"bag", "gebieden", "bomen"},
+			errMsgAll: []string{"bag", "gebieden", "bomen", "koop"},
 		},
 	}
 
@@ -86,14 +91,14 @@ func TestSelectSources(t *testing.T) {
 }
 
 // TestSelectSources_RegistryShape asserts the ingest registry exposes exactly
-// the names bag, gebieden, and bomen, in that order, via the public
+// the names bag, gebieden, bomen, and koop, in that order, via the public
 // selectSources(nil) contract rather than reaching into unexported registry
 // internals.
 func TestSelectSources_RegistryShape(t *testing.T) {
 	names, err := selectSources(nil)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"bag", "gebieden", "bomen"}, names)
+	assert.Equal(t, []string{"bag", "gebieden", "bomen", "koop"}, names)
 }
 
 // TestIngestCmd_UnknownSourceFailsFast exercises the ingest subcommand
