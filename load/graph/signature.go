@@ -253,25 +253,80 @@ SELECT ?s ?vf WHERE {
 
 	validFrom := make(map[iri]string, len(result.Results.Bindings))
 	for _, b := range result.Results.Bindings {
-		validFrom[iri(b.S.Value)] = literalTerm(b.Vf.Value, b.Vf.Datatype)
+		term, err := literalTerm(b.Vf.Value, b.Vf.Datatype)
+		if err != nil {
+			return nil, fmt.Errorf("graph: read staging gs:validFrom: %w", err)
+		}
+		validFrom[iri(b.S.Value)] = term
 	}
 	return validFrom, nil
 }
 
+// literalEscaper escapes a literal's lexical value for safe embedding inside a double-quoted
+// SPARQL string literal ("...") in a single left-to-right, non-overlapping pass (the
+// strings.Replacer guarantee): backslash is escaped FIRST in that same pass, so the backslash
+// introduced by escaping a quote is never itself re-escaped, and a value ending in a bare
+// backslash can no longer swallow the literal's closing quote (the injection this replaces: a
+// value ending in `\` used to produce `"...\"` — an unterminated string — from the old
+// `"` -> `\"`-only escaper, which never touched `\` at all). Control characters that would
+// otherwise break the term across lines (or, inside a VALUES clause, prematurely end the token)
+// are escaped too.
+var literalEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`"`, `\"`,
+	"\n", `\n`,
+	"\r", `\r`,
+	"\t", `\t`,
+)
+
 // literalTerm reconstructs a SPARQL-embeddable typed-literal term ("value"^^<datatype>, or a plain
 // "value" if datatype is empty) from a SPARQL 1.1 JSON results binding, so a value read back from
 // the store can be re-embedded verbatim into a later SPARQL Update's VALUES clause (used to carry
-// the candidate's gs:validFrom into the close update's gs:validTo stamp).
-func literalTerm(value, datatype string) string {
-	escaped := strings.ReplaceAll(value, `"`, `\"`)
+// the candidate's gs:validFrom into the close update's gs:validTo stamp). The lexical value is
+// escaped via literalEscaper; a non-empty datatype IRI is validated with assertSafeIRI (the same
+// injection class as an unvalidated subject IRI — see assertSafeIRI) and surfaced as an error
+// rather than silently embedded or dropped.
+func literalTerm(value, datatype string) (string, error) {
+	escaped := literalEscaper.Replace(value)
 	if datatype == "" {
-		return `"` + escaped + `"`
+		return `"` + escaped + `"`, nil
 	}
-	return `"` + escaped + `"^^<` + datatype + `>`
+	if err := assertSafeIRI(iri(datatype)); err != nil {
+		return "", fmt.Errorf("literal datatype: %w", err)
+	}
+	return `"` + escaped + `"^^<` + datatype + `>`, nil
+}
+
+// disallowedIRIChars are the characters a Turtle/SPARQL IRIREF may never contain unescaped
+// (https://www.w3.org/TR/turtle/#grammar-production-IRIREF): <, >, ", {, }, |, ^, `, and \.
+// assertSafeIRI additionally rejects every control character and space (0x00-0x20) — the IRIREF
+// grammar excludes those as raw bytes too, and no legitimate data:/run: IRI this pipeline mints
+// ever contains one.
+const disallowedIRIChars = "<>\"{}|^`\\"
+
+// assertSafeIRI rejects id if it contains any character not permitted raw inside a Turtle/SPARQL
+// IRIREF. It is the single choke point every iri value must pass before iriValuesList (or any
+// other raw `<...>` embedding, e.g. literalTerm's datatype) re-embeds it into SPARQL text: ids
+// read back from the store (STR(?s) in signatureQuery) are untrusted input — Jena accepts and
+// decodes UCHAR escapes in an inbound Turtle IRIREF, so a stored subject IRI can carry these
+// characters even though this writer never mints one that does. This rejects loudly rather than
+// sanitizing — matching the package's SHACL-gate philosophy of failing closed on a non-conformant
+// candidate instead of best-effort cleanup.
+func assertSafeIRI(id iri) error {
+	for _, r := range string(id) {
+		if r <= 0x20 || strings.ContainsRune(disallowedIRIChars, r) {
+			return fmt.Errorf("graph: unsafe IRI %q: contains disallowed character %U", string(id), r)
+		}
+	}
+	return nil
 }
 
 // iriValuesList renders ids as a SPARQL VALUES-clause token list ("<iri1> <iri2> ..."), shared by
 // every batched query/update in signature.go and write.go that restricts to a specific subject set.
+// Precondition: every id must already have passed assertSafeIRI — this function does not
+// validate, it only renders. The single validation choke point is (*client).upsert, which checks
+// every stagingSigs/liveSigs key (a superset of delta/changed) before any query or update
+// referencing them is ever built.
 func iriValuesList(ids []iri) string {
 	tokens := make([]string, len(ids))
 	for i, id := range ids {

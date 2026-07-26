@@ -94,6 +94,27 @@ func (c *client) upsert(ctx context.Context, runID string, candidate []byte, gen
 		return err
 	}
 
+	// Security gate: every subject IRI in either signature map was read back out of the store
+	// (STR(?s) in signatureQuery) and is about to be re-embedded, unescaped, into `<...>` tokens
+	// by iriValuesList across closePriors/verifyOpenInvariant/copyDeltaAndRecordProvenance/
+	// stagingValidFrom below. The SHACL gate upstream does not constrain IRI/literal character
+	// content, so a conformant-looking candidate can still smuggle a Turtle IRIREF UCHAR payload
+	// that decodes to raw `>`/`}`/`;` sequences able to break out of a VALUES clause and chain
+	// arbitrary SPARQL Update. Validate BEFORE any query or update text is built, and write
+	// NOTHING on failure (no close, no run graph, no provenance) — the same no-partial-writes
+	// guarantee the SHACL gate gives. delta/changed are always subsets of these two maps' keys,
+	// so this single check covers every downstream iriValuesList call in this function.
+	for id := range stagingSigs {
+		if err := assertSafeIRI(id); err != nil {
+			return fmt.Errorf("graph: reject unsafe candidate subject IRI: %w", err)
+		}
+	}
+	for id := range liveSigs {
+		if err := assertSafeIRI(id); err != nil {
+			return fmt.Errorf("graph: reject unsafe stored subject IRI: %w", err)
+		}
+	}
+
 	newIRIs, changed, _, immutableConflict := classify(stagingSigs, liveSigs)
 
 	// D4: an immutable conflict is skip-but-surface — never overwritten, but logged so the
