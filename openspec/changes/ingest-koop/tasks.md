@@ -34,6 +34,6 @@
 
 ## 6. Live-harvest hardening (surfaced by the P11 end-to-end run)
 
-- [ ] 6.1 Fix the SRU parser to read the publication date from `dcterms:available` (local element name `available`), not `dt.available` — the live corpus uses `dcterms:available` in every record, so the cursor high-water mark never advanced. Update the `SRURecord.Available` doc/comments accordingly.
-- [ ] 6.2 Add transient-failure retry with exponential backoff to the shared paged SRU fetch: bounded attempts + base-delay named constants, backoff sleeps routed through the existing test sleep seam, retrying `httpGet`/body-read errors (not deterministic XML parse errors) per page.
-- [ ] 6.3 Correct the SRU test fixtures (shared + koop) to the real KOOP shape (`dcterms:available`); add a shared retry test (fails N times then succeeds → page still yielded; exhausts attempts → error) and a koop test asserting the cursor advances to the max real publication date after a run.
+- [x] 6.1 Fix the SRU parser to read the publication date from `dcterms:available` (local element name `available`), not `dt.available` — the live corpus uses `dcterms:available` in every record, so the cursor high-water mark never advanced. Update the `SRURecord.Available` doc/comments accordingly.
+- [x] 6.2 Add transient-failure retry with exponential backoff to the shared paged SRU fetch: bounded attempts + base-delay named constants, backoff sleeps routed through the existing test sleep seam, retrying `httpGet`/body-read errors (not deterministic XML parse errors) per page.
+- [x] 6.3 Correct the SRU test fixtures (shared + koop) to the real KOOP shape (`dcterms:available`); add a shared retry test (fails N times then succeeds → page still yielded; exhausts attempts → error) and a koop test asserting the cursor advances to the max real publication date after a run.
