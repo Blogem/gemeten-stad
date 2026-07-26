@@ -48,7 +48,7 @@ gs:Place
     a owl:Class ;
     rdfs:label "Place"@en ;
     rdfs:comment
-        "The smallest area an Intervention can be confidently placed in: a BAG object,  a project polygon, a postcode-6, or a buurt (whichever is smallest by area and  clears the confidence threshold — §4). The geometry itself lives in PostGIS;  the graph node is the identity a locatedAt edge resolves to."@en .
+        "The smallest area an Intervention can be confidently placed in: a BAG object, a project polygon, a postcode-6, or a gebieden buurt/wijk (whichever is smallest by area and clears the confidence threshold — §4). A Place is a first-class entity: identity is its code (BAG object id / gebieden code); it MAY carry a common name via rdfs:label and its containing area via gs:within, forming the buurt→wijk→stadsdeel skeleton the audit aggregates over. That skeleton (code + name + gs:within) is projected into the graph from the authoritative gebieden tables — the GEOMETRY itself stays in PostGIS (the value store), never as an RDF literal. Place names/hierarchy are NOT SKOS vocab concepts (a Place is recognized by geometry, not name)."@en .
 
 gs:Project
     a owl:Class ;
@@ -111,6 +111,13 @@ gs:partOfProject
     rdfs:range  gs:Project ;
     rdfs:comment
         "Optional and sparse — present only for interventions belonging to a renewal project.  Its absence is valid (the shapes do not require it)."@en .
+
+gs:within
+    a owl:ObjectProperty , owl:TransitiveProperty ;
+    rdfs:label "within"@en ;
+    rdfs:domain gs:Place ;
+    rdfs:range  gs:Place ;
+    rdfs:comment "Spatial containment between Places: a buurt gs:within a wijk gs:within a stadsdeel. Forms the aggregation skeleton the audit rolls obligations/assessments up (tree → buurt → wijk → stadsdeel, §3) — a graph traversal (SPARQL gs:within+ property path), no cross-store join. Transitive. Seeded from the gebieden tables (ligtinwijkid etc.); the value store keeps the geometry for spatial containment tests, the graph keeps the resolved membership for rollup." .
 
 gs:claims
     a owl:ObjectProperty ;

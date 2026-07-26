@@ -103,7 +103,12 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   `Intervention –locatedAt→ Place` (confidence-annotated edge via P12) `–claims→ Claim`, where the
   Claim is the **herplantplicht triggered by the permit's existence via art. 7** — *no obligation
   count yet* (the count is Phase-2 extraction; §2 says the claim comes from law, not a stated
-  ground). Values + geometry to PostGIS; provenance on every asserted triple. SHACL gate (P12).
+  ground). The resolved `Place` is a `gs:Place` keyed by its code, carrying its common name
+  (`rdfs:label`) and containing area (`gs:within`) from the **gebieden skeleton** — a projection of
+  the P7 gebieden tables (codes + names + buurt→wijk→stadsdeel `gs:within`; geometry stays in
+  PostGIS), seeded once as graph reference data alongside the P12 reference model — so resolved
+  places sit in the aggregation hierarchy (roll-up traversal over `gs:within+` is a Phase-3 UI
+  concern). Values + geometry to PostGIS; provenance on every asserted triple. SHACL gate (P12).
   Idempotent by permit IRI.
 - **Key decisions:** the `Claim` shape without a count (obligation-exists vs obligation-of-N) · how
   `unresolvedLocation` permits are represented (written with the marker + confidence, never as if

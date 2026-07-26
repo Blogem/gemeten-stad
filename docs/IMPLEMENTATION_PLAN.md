@@ -65,6 +65,19 @@ that decide whether the audit is sound before build-out.
   it applies without forcing it everywhere, and other intervention types get *their* own
   edges. A rigid relational schema would need a nullable column or a join table for a
   relation most rows don't have.
+- **`Place` is a first-class entity carrying a name + a containment skeleton — geometry stays
+  in PostGIS.** A `Place`'s identity is its code (BAG object id / gebieden code); the graph
+  also carries its common name (`rdfs:label`) and its containing area (`gs:within`, transitive),
+  forming the buurt→wijk→stadsdeel skeleton. That split follows the hybrid rule precisely: the
+  graph holds the *joinable skeleton* (identity + label + hierarchy), so rolling obligations and
+  assessments up aggregation levels (tree → buurt → wijk → stadsdeel) is a graph traversal (a
+  `gs:within+` property path), not a cross-store join; the *geometry* — the heavy spatial payload
+  — stays in PostGIS, where point-in-polygon resolution and containment tests run. The skeleton is
+  a **projection of the authoritative gebieden tables** (seeded by the load stage), so PostGIS
+  stays the single source of truth and the graph copy cannot drift. Places are deliberately **not**
+  SKOS vocab concepts — a Place is recognized by geometry, not by name, so it needs no NER/grounding
+  entry; the analytics agent additionally gets direct value-store (PostGIS) access for spatial
+  questions the graph should not answer.
 - **Uncertainty is first-class (RDF-star).** The location-resolution edge and the
   permit↔trees audit edge carry a confidence + the evidence they rest on, so the UI can show
   *where we are not sure and how sure we are*. This is a requirement, not a nicety.
