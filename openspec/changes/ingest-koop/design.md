@@ -177,9 +177,11 @@ name set.
   harvest failure: the record is landed verbatim regardless, and P13 handles missing fields with
   its caveats (`unresolvedLocation` etc.). Harvest never drops a record for missing structured
   fields.
-- **Amsterdam-wide corpus larger than the Noord subset** (~2–4k publications vs ~600 Noord) → more
-  raw artifacts landed than P13 will use; accepted per the settled Noord-deferral decision, and
-  bounded by the per-id landing (small XML files) and the date-cursor tail on re-runs.
+- **Amsterdam-wide corpus larger than the Noord subset** (observed on the live 2021→present run:
+  ~10.5k publications — `numberOfRecords`=10522, 10503 gmb records landed after skipping ~19
+  non-`gmb-` ids — vs ~600 Noord) → more raw artifacts landed than P13 will use; accepted per the
+  settled Noord-deferral decision, and bounded by the per-id landing (small XML files) and the
+  date-cursor tail on re-runs.
 - **Endpoint politeness/throttling** → the shared rate limiter caps request rate; paging is
   sequential.
 - **Endpoint instability mid-harvest** (observed on the live corpus: the ~106-page full run
