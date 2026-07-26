@@ -377,9 +377,15 @@ Oxigraph (no native SHACL) and RDF4J (beta RDF-star, flagged RDF-1.2-incompatibl
 their downsides, not their feature lists.
 
 **Phase 1 — deterministic backbone (no LLM).** `ingest koop` (Noord kap permits, incremental
-by publication id) + `load` (resolve location, assemble to graph, values to PostGIS) +
-`load bomen` + `derive` (coverage: permit→registry entry?; fulfilment: progress vs termijn,
-with fund-indeterminate). A working audit from structure alone, with confidences.
+by publication id, Go SRU harvest) + `load koop` (dedup by zaaknummer, resolve location, assemble
+`Intervention`/`Claim` to graph via the SHACL-gated `load/graph` writer, values to PostGIS) +
+`derive` **coverage only** (permit→registry entry? — the Spike-B τ=0.60 place-led `AuditLink` with
+confidence, and "no source found" as a first-class provenanced finding). A working **coverage** audit
+from structure alone, with confidences. **`load bomen` is not a Phase-1 item** — the registry is
+value-store data already loaded in Phase 0 (P7) and never becomes graph entities (§3); `derive` only
+reads it. **Fulfilment (progress) and the permit-count cross-check are deferred to Phase 2**, where
+extraction lands — a fulfilment fraction is only meaningful against an extracted obligation count.
+Decomposed into work items in `PHASE_1_PLAN.md` (P11–P15); prerequisite: **P8 closes in Phase 0**.
 
 **Phase 2 — extraction.** A **three-tier extractor mirroring `msr-graph`** (Spike C, `spikes/spike-c/`),
 scaled so the audit works without the fancy parts but count recovery is near-complete with them:
@@ -399,6 +405,16 @@ scaled so the audit works without the fancy parts but count recovery is near-com
 Plus a **statistical-`nl` mining loop** proposing new species/project altLabels → human confirmation → the
 graph (the SKOS "living vocab" recipe). §5 holds: the floor is Go, **Python owns spaCy**; the LLM binder is a
 new *additive* dependency the evidence earns — NER is central, but the audit core still runs without it.
+
+**Phase 2 also completes the fulfilment axes** — extraction is the enabler, not the whole phase. Phase 1's
+`derive` is coverage-only (`PHASE_1_PLAN.md`); once the extractor supplies the permit's **obligation count**,
+Phase 2 **extends `derive`** to compute the multi-axis fulfilment of §"Fulfilment": the **fulfilment estimate**
+(`none`/`partial(fraction)`/`fulfilled`) from observed registry replant vs the computed obligation, the
+**registry↔permit count cross-check** (the external triangulation that catches under-reporting — registry-side
+felled-vs-replant counting becomes meaningful only against the permit's own stated number), the **caveats**
+(`fundEligibilityUnknown`, `deadlineUnknown`, `weakLink`, `transplantOrigin`), and the **bitemporal
+`Assessment`** open/close as the registry updates. Timeliness stays `deadlineUnknown` by default (Spike A);
+diameter-class equivalence (beleidsregel CVDR697591) turns raw felled counts into the obligation quantity.
 
 **Phase 3 — webapp.** Map of interventions coloured by claim status (fulfilled / partial /
 open / overdue / **indeterminate**) with an evidence + confidence panel; grounded chat;
