@@ -5,13 +5,13 @@
 The system SHALL fetch the full city-wide `kapenherplant` and `stamgegevens` datasets from the
 Amsterdam Datapunt `bomen` API by paging through all rows, and SHALL land each page verbatim (no
 row/column filtering) into the raw landing store together with a provenance record (source URL
-template, fetch timestamp, total row count, content hash).
+template, fetch timestamp, byte size, content hash).
 
 #### Scenario: Full city-wide pull lands both datasets
 
 - **WHEN** an ingest run executes for `kapenherplant` and `stamgegevens`
 - **THEN** every page of both datasets is landed verbatim in the raw store
-- **AND** a provenance record is written recording the source URL template, fetch timestamp, row count, and content hash
+- **AND** a provenance record is written recording the source URL template, fetch timestamp, byte size, and content hash
 
 #### Scenario: No row or column filtering at ingest time
 

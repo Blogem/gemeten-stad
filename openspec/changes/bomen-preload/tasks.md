@@ -8,7 +8,7 @@
 
 - [x] 2.1 Implement paged JSON fetch of `kapenherplant` from `api.data.amsterdam.nl/v1/bomen/kapenherplant/` (`_pageSize`/`page=`), landing each page verbatim into the raw store; no `[isnull]` query filter and no `geometrie[within]` spatial query against this endpoint.
 - [x] 2.2 Implement paged JSON fetch of `stamgegevens` the same way.
-- [x] 2.3 Write one provenance record per ingest run per dataset (source URL template incl. page size, fetch timestamp, total row count, content hash over the concatenated pages).
+- [x] 2.3 Write one provenance record per landed version per dataset (source URL template incl. page size, fetch timestamp, byte size, content hash over the concatenated pages).
 - [x] 2.4 Implement refresh as an idempotent full re-page (land a new dated snapshot); skip re-fetching an already-landed, unchanged snapshot.
 
 ## 3. Bomen load into PostGIS (`load/bomen`)
@@ -39,7 +39,7 @@ reserved-name guard, `GS_TEST_DATABASE_URL`; they run under the existing `task t
 
 **Integration (automatic, in CI — no live API call):**
 
-- [x] 5.4 Add a checked-in real-shaped subset of both registries (a handful of `stamgegevens` rows, one reachable only via `boomNieuwId`; `kapenherplant` rows spanning a `boomId` hit, a `boomNieuwId` fallback, a genuinely unresolved case, and a null-lifecycle-date row) as SQL/`COPY` seed data; load it into `*_staging` tables in a fresh `internal/testdb` schema.
+- [x] 5.4 Add a real-shaped subset of both registries (a handful of `stamgegevens` rows, one reachable only via `boomNieuwId`; `kapenherplant` rows spanning a `boomId` hit, a `boomNieuwId` fallback, a genuinely unresolved case, and a null-lifecycle-date row), landed through the real `shared.RawStore.LandVersion` bronze seam in a fresh `internal/testdb` schema — exercising the actual ingest→load boundary, not a direct `*_staging` SQL seed.
 - [x] 5.5 Exercise the real load code end to end on the subset: upsert (new-row insert, re-run is a no-op, an absent row is soft-deleted with `source_deleted_at`) → join resolution (all three `resolvedVia` outcomes) → row-count assertions.
 
 **Full-corpus (manual/opt-in — real API pull):**
