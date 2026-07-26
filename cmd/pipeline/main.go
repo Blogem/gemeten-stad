@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -21,6 +22,51 @@ import (
 	"github.com/Blogem/gemeten-stad/ingest/shared"
 	"github.com/Blogem/gemeten-stad/load/geo"
 )
+
+// ingestSource pairs a registered ingest source name with its ingester
+// function. ingestRegistry below fixes the registration order that "run all
+// sources" follows.
+type ingestSource struct {
+	name string
+	fn   func(context.Context, *shared.RawStore) error
+}
+
+// ingestRegistry is the single, ordered source of truth for ingest sources:
+// name → ingester. BAG runs before gebieden/CBS when all sources are ingested.
+var ingestRegistry = []ingestSource{
+	{name: "bag", fn: func(ctx context.Context, store *shared.RawStore) error {
+		return bag.Ingest(ctx, store, nil)
+	}},
+	{name: "gebieden", fn: func(ctx context.Context, store *shared.RawStore) error {
+		return gebieden.Ingest(ctx, store, gebiedenHTTPGet)
+	}},
+}
+
+// selectSources resolves requested source names against the registry. Empty args -> all names in
+// registration order. Named args -> those names, in the given order. An unknown name -> error
+// listing the valid names (and nothing selected).
+func selectSources(args []string) (names []string, err error) {
+	if len(args) == 0 {
+		for _, s := range ingestRegistry {
+			names = append(names, s.name)
+		}
+		return names, nil
+	}
+
+	known := make(map[string]bool, len(ingestRegistry))
+	validNames := make([]string, 0, len(ingestRegistry))
+	for _, s := range ingestRegistry {
+		known[s.name] = true
+		validNames = append(validNames, s.name)
+	}
+
+	for _, arg := range args {
+		if !known[arg] {
+			return nil, fmt.Errorf("unknown ingest source %q (valid: %s)", arg, strings.Join(validNames, ", "))
+		}
+	}
+	return args, nil
+}
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
@@ -53,29 +99,41 @@ func newStageCmd(name, short string) *cobra.Command {
 }
 
 // newIngestCmd lands raw source data verbatim + provenance (bronze): the BAG
-// LV extract and the Amsterdam gebieden / CBS boundary geometries.
+// LV extract and the Amsterdam gebieden / CBS boundary geometries. With no
+// arguments it ingests all registered sources; named arguments ingest only
+// those sources, in the given order.
 func newIngestCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "ingest",
+		Use:   "ingest [source ...]",
 		Short: "Land raw source data verbatim + provenance (bronze)",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runIngest(cmd.Context())
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runIngest(cmd.Context(), args)
 		},
 	}
 }
 
-func runIngest(ctx context.Context) error {
+func runIngest(ctx context.Context, args []string) error {
+	names, err := selectSources(args)
+	if err != nil {
+		return err
+	}
+
 	rawPath, err := shared.RawDataPath(os.Getenv)
 	if err != nil {
 		return fmt.Errorf("resolve raw data path: %w", err)
 	}
 	store := shared.NewRawStore(rawPath)
 
-	if err := bag.Ingest(ctx, store, nil); err != nil {
-		return fmt.Errorf("ingest bag: %w", err)
+	sources := make(map[string]ingestSource, len(ingestRegistry))
+	for _, s := range ingestRegistry {
+		sources[s.name] = s
 	}
-	if err := gebieden.Ingest(ctx, store, gebiedenHTTPGet); err != nil {
-		return fmt.Errorf("ingest gebieden: %w", err)
+
+	for _, name := range names {
+		if err := sources[name].fn(ctx, store); err != nil {
+			return fmt.Errorf("ingest %s: %w", name, err)
+		}
 	}
 	return nil
 }

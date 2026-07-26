@@ -9,14 +9,19 @@ design; this file is the how-to.
 Two `pipeline` subcommands, run on the host (not through compose — see the env knobs below):
 
 ```
-pipeline ingest        # bronze: land raw sources verbatim + provenance
-pipeline load [--reset]  # silver: stage via ogr2ogr, upsert, index, gate
+pipeline ingest [source ...]  # bronze: land raw sources verbatim + provenance
+pipeline load [--reset]       # silver: stage via ogr2ogr, upsert, index, gate
 ```
 
 - **`pipeline ingest`** downloads the national BAG *LV 2.0 Extract* from the PDOK atom feed, the
   whole-city `gebieden` buurt/wijk polygons (Datapunt GeoJSON), and the CBS "wijken en buurten" WFS
   reference, and lands all three verbatim under `GS_RAW_DATA_PATH` with a provenance sidecar.
   Idempotent: a source already landed is skipped, not re-fetched.
+  - `pipeline ingest` with no arguments ingests all registered sources, in registration order.
+  - `pipeline ingest bag` ingests only the BAG source — schedule this monthly.
+  - `pipeline ingest gebieden` ingests only the `gebieden`/CBS boundaries — schedule this weekly.
+  - An unknown source name exits non-zero with an error listing the valid source names, without
+    ingesting anything.
 - **`pipeline load`** stages each source into PostGIS via the `gdal` sidecar's `ogr2ogr`
   (`lvbag` for BAG, GeoJSON/WFS for the polygons) into `*_staging` tables, then upserts staging into
   the target tables keyed by voorkomen identity (`identificatie` + `begingeldigheid` +
