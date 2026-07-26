@@ -97,11 +97,13 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   fully-unchanged re-run writes no new data. **The writer takes turtle bytes it is given** — the
   `{| … |}` confidence-annotation *construction* lives with the callers (P12b, P13, P14), not here;
   `load/graph` stays Postgres-free (doc.go: "candidates arrive already shaped").
+- **Settled:** a **no-op run leaves no trace** — a run that writes no new or changed data mints no
+  `run:load-<ts>` graph and no `prov:Activity`. PROV records transaction time only for runs that
+  actually changed the graph, so re-running is a true no-op end to end (matches P11/P13/P15's "second
+  run is a no-op").
 - **Key decisions:** change-detection granularity (per-entity subgraph diff vs delete-insert by IRI)
-  · how upsert coexists with the run-stamped named-graph model (does a no-op run mint an empty run
-  graph + `prov:Activity`, or nothing? — a no-op should leave no trace) · batching. (The
-  pre-commit-vs-post-commit SHACL question is already answered by the shipped primitive: it validates
-  a merged scratch graph and writes only on conform.)
+  · batching. (The pre-commit-vs-post-commit SHACL question is already answered by the shipped
+  primitive: it validates a merged scratch graph and writes only on conform.)
 - **Done when:** re-running `load` on unchanged input is a true no-op (no new triples, no new run
   graph); a changed tracked field opens a new version and closes the prior's `validTo` without
   touching history; a malformed candidate is still rejected without partial writes (regression on the
