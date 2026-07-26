@@ -154,18 +154,35 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   the count used here is the **registry** count, never a permit-text count. Store the `AuditLink`
   with the **granularity used**, the confidence, the evidence it rests on, and
   `prov:wasDerivedFrom` the permit + registry rows (§3 — derived and *stored*, not on-the-fly).
+  - **Model prerequisites carried over from P8 (do these FIRST — P8 shipped `gs:AuditLink` as a
+    bare class and does NOT model how to attach or gate it, because P8 writes no AuditLinks):**
+    (a) **TBox additions** — object properties attaching an `AuditLink` to the spine (to its
+    permit-side `Intervention` and its registry-side `Observation`); only `gs:testedAgainst`
+    (Claim→Observation) exists today. (b) **`AuditLinkShape` in `shapes.ttl`** — a confidence/
+    caveat-presence gate mirroring `InterventionShape`'s, so a half-broken derived link is rejected
+    (D2 puts confidence+evidence on `locatedAt` AND `AuditLink`; today only `locatedAt` is gated, so
+    derive output passes the gate vacuously). **These two are coupled by one decision:** whether
+    `AuditLink` is a **reified node** (`gs:confidence`/`gs:evidence` as plain properties on the node
+    → core-SHACL `sh:minCount` presence check; the class declaration and §4's "the AuditLink
+    *stores*…" point this way) OR an **annotated edge** (a `gs:auditLink` property carrying the
+    `{| … |}` form → a `sh:sparql` presence check like `locatedAt`). Settle it collaboratively at
+    P14 design time (as the P8 model decisions were), then add the edges + shape to `ontology/`.
   Anchor any elapsed-time reasoning on `kapmaatregelDatumUitgevoerd` (felling), never the
   batch-assigned permit dates (Spike A). **Bucket matched vs unmatched** and keep pending separate.
   **Explicitly NOT in P14:** the fulfilment estimate (`none`/`partial`/`fulfilled`), timeliness
   beyond `deadlineUnknown`, and the permit-count cross-check — all Phase 2.
 - **Key decisions:** the exact candidate-generation query (buurt + window) and the τ=0.60 scoring
-  function port from spike-b · `AuditLink` storage shape (graph edge with RDF-star confidence per §3,
-  values/geometry to PostGIS) · how the "no source found" finding is represented so the Phase-3 UI
-  can render it as first-class.
+  function port from spike-b · **`AuditLink` form — reified node vs annotated edge (see Model
+  prerequisites above); this one call drives both the TBox attachment edges and the
+  `AuditLinkShape`** · values/geometry to PostGIS · how the "no source found" finding is represented
+  so the Phase-3 UI can render it as first-class.
 - **Done when:** `derive` links the Noord corpus at ≈ Spike B rates (permit→registry ~90% place+time)
   with per-link confidence; unmatched permits surface as grounded findings, not silent gaps;
-  re-running is a no-op and supersedes prior links by run (PROV). Unit tests on the scoring/candidate
-  logic against spike-b's labeled cases; integration test over a seeded permit + registry subset.
+  re-running is a no-op and supersedes prior links by run (PROV); **an `AuditLink` missing its
+  confidence/evidence is rejected by the new `AuditLinkShape` (not written)** — the gate now covers
+  derive output, not just `locatedAt`. Unit tests on the scoring/candidate logic against spike-b's
+  labeled cases; integration test over a seeded permit + registry subset (incl. a malformed-link
+  reject case).
 - **Depends on:** P13 (permits in graph), P7 (`kapenherplant`/`stamgegevens` in PostGIS), P12 (graph
   writer). Reference: `spikes/spike-b/`, `IMPLEMENTATION_PLAN.md` §4/§8.
 
