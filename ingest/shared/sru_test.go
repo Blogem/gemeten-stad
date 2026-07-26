@@ -68,21 +68,26 @@ func TestSRURequestURL(t *testing.T) {
 
 // -- Exported constants (D5 / Resolved Questions) ----------------------------
 
-// TestSRUConstants pins the two named tuning constants the design settled on:
-// a 100-record page size (matching the proven spike-b harvest) and a ~200ms
-// (~5 req/s) inter-request interval for polite sequential paging.
+// TestSRUConstants pins the named tuning constants the design settled on: a
+// 100-record page size (matching the proven spike-b harvest), a ~200ms (~5
+// req/s) inter-request interval for polite sequential paging, and the P11
+// live-harvest retry tuning (5 attempts, 1s exponential backoff base) that
+// keeps a single transient httpGet/read failure from aborting a page fetch.
 func TestSRUConstants(t *testing.T) {
 	assert.Equal(t, 100, SRUPageSize)
 	assert.Equal(t, 200*time.Millisecond, SRURateInterval)
+	assert.Equal(t, 5, SRUMaxAttempts)
+	assert.Equal(t, 1*time.Second, SRURetryBaseDelay)
 }
 
 // -- ParseSRUResponse ---------------------------------------------------------
 //
 // Covers "Results are paged to exhaustion" (numberOfRecords must be read
 // correctly) and "SRU plumbing lives in the shared ingest package" (per-record
-// verbatim extraction + the two cursor fields, dcterms:identifier / dt.available,
+// verbatim extraction + the two cursor fields, dcterms:identifier / dcterms:available,
 // read regardless of which XML namespace prefix or URI a given record happens to
-// use for them).
+// use for them -- matched by local element name only: "identifier" and
+// "available", NOT "dt.available").
 
 func TestParseSRUResponse_ParsesEnvelopeAndRecords(t *testing.T) {
 	body := readSRUFixture(t, "sru_response_two_records.xml")
@@ -105,7 +110,7 @@ func TestParseSRUResponse_ParsesEnvelopeAndRecords(t *testing.T) {
 	assert.Equal(t, "gmb-2022-291127", second.Identifier,
 		"identifier must be parsed from <alt:identifier> (a namespace unrelated to dcterms) by local name, not a pinned namespace URI")
 	assert.Equal(t, "2022-06-16", second.Available,
-		"dt.available must be parsed from <alt:dt.available> by local name, not a pinned namespace URI")
+		"available must be parsed from <alt:available> (local name \"available\", not \"dt.available\") by local name, not a pinned namespace URI")
 	assert.NotEmpty(t, second.InnerXML)
 	assert.Contains(t, string(second.InnerXML), "gmb-2022-291127")
 }
@@ -221,7 +226,7 @@ func TestFetchSRUAll_SinglePageWhenResultFitsOnePage(t *testing.T) {
                 <dcterms:identifier>gmb-2022-200001</dcterms:identifier>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-03-01</overheidwetgeving:dt.available>
+                <dcterms:available>2022-03-01</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -278,4 +283,104 @@ func TestFetchSRUAll_YieldErrorStopsPaging(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Len(t, calls, 1, "must not fetch the second page once yield has returned an error on the first")
+}
+
+// -- FetchSRUAll retry behavior -------------------------------------------------
+//
+// Covers the P11 live-harvest fix: a single flaky httpGet/body-read failure on
+// a page must be retried (with exponential backoff via the sruSleep seam, per
+// SRURetryBaseDelay << (n-1)) up to SRUMaxAttempts before giving up, so one
+// transient network blip doesn't abort an otherwise-successful harvest run.
+// An XML parse error is a distinct failure mode (a malformed response body,
+// not a transient transport error) and is deliberately NOT retried -- these
+// tests only exercise the httpGet/body-read failure path.
+
+// flakyHTTPGet returns transportErr for the first failCount calls (tracked via
+// *calls) and serves page for every call after that.
+func flakyHTTPGet(calls *int, failCount int, page []byte, transportErr error) HTTPGetFunc {
+	return func(_ context.Context, _ string) (io.ReadCloser, error) {
+		*calls++
+		if *calls <= failCount {
+			return nil, transportErr
+		}
+		return io.NopCloser(bytes.NewReader(page)), nil
+	}
+}
+
+// singlePageAvailableFixture is a minimal one-record, one-page SRU response
+// (numberOfRecords matches the single carried record, so FetchSRUAll doesn't
+// need a second page) used purely to prove the retry-then-succeed path yields
+// the record once the flaky getter finally returns a good response.
+const singlePageAvailableFixture = `<?xml version="1.0" encoding="UTF-8"?>
+<srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:gzd="http://standaarden.overheid.nl/sru">
+  <srw:version>2.0</srw:version>
+  <srw:numberOfRecords>1</srw:numberOfRecords>
+  <srw:records>
+    <srw:record>
+      <srw:recordData>
+        <gzd:gzd>
+          <dcterms:identifier>gmb-2022-500001</dcterms:identifier>
+          <dcterms:available>2022-07-01</dcterms:available>
+        </gzd:gzd>
+      </srw:recordData>
+    </srw:record>
+  </srw:records>
+</srw:searchRetrieveResponse>`
+
+// TestFetchSRUAll_RetriesTransientFailures guards against an implementation
+// that gives up on the first httpGet/read error: with a getter that fails
+// twice (well under SRUMaxAttempts=5) and then succeeds, FetchSRUAll must
+// still yield the page's record and return no error.
+func TestFetchSRUAll_RetriesTransientFailures(t *testing.T) {
+	origSleep := sruSleep
+	sruSleep = func(time.Duration) {}
+	defer func() { sruSleep = origSleep }()
+
+	var calls int
+	const failCount = 2 // < SRUMaxAttempts
+	httpGet := flakyHTTPGet(&calls, failCount, []byte(singlePageAvailableFixture),
+		fmt.Errorf("transient: connection reset"))
+
+	var yielded []SRURecord
+	numberOfRecords, err := FetchSRUAll(context.Background(), httpGet,
+		"https://repository.overheid.nl/sru",
+		`(dt.creator any "Amsterdam")`,
+		func(r SRURecord) error {
+			yielded = append(yielded, r)
+			return nil
+		})
+
+	require.NoError(t, err, "FetchSRUAll must succeed once a retry within SRUMaxAttempts gets a good response")
+	assert.Equal(t, 1, numberOfRecords)
+	require.Len(t, yielded, 1, "the record from the eventually-successful attempt must still be yielded")
+	assert.Equal(t, "gmb-2022-500001", yielded[0].Identifier)
+	assert.Equal(t, failCount+1, calls,
+		"httpGet must be called exactly until the first success: %d failures + 1 success", failCount)
+}
+
+// TestFetchSRUAll_ExhaustsRetriesAndReturnsError guards against an
+// implementation that retries forever (or not at all) rather than giving up
+// after exactly SRUMaxAttempts failed attempts and surfacing the last error.
+func TestFetchSRUAll_ExhaustsRetriesAndReturnsError(t *testing.T) {
+	origSleep := sruSleep
+	sruSleep = func(time.Duration) {}
+	defer func() { sruSleep = origSleep }()
+
+	var calls int
+	wantErr := fmt.Errorf("transient: connection reset")
+	// failCount == SRUMaxAttempts: every attempt fails, so the getter never
+	// serves a page -- proving FetchSRUAll gives up after SRUMaxAttempts
+	// attempts rather than retrying indefinitely.
+	httpGet := flakyHTTPGet(&calls, SRUMaxAttempts, nil, wantErr)
+
+	_, err := FetchSRUAll(context.Background(), httpGet,
+		"https://repository.overheid.nl/sru",
+		`(dt.creator any "Amsterdam")`,
+		func(SRURecord) error { return nil })
+
+	require.Error(t, err, "FetchSRUAll must return an error once every attempt for a page has failed")
+	assert.Equal(t, SRUMaxAttempts, calls,
+		"httpGet must be attempted exactly SRUMaxAttempts times before giving up")
 }

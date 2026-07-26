@@ -27,7 +27,7 @@ Ingest.
                 <dcterms:title>Verleend: kapvergunning Nieuwendammerdijk 1, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-04-01</overheidwetgeving:dt.available>
+                <dcterms:available>2022-04-01</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -47,7 +47,7 @@ Ingest.
                 <dcterms:title>Record with a missing identifier</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-04-02</overheidwetgeving:dt.available>
+                <dcterms:available>2022-04-02</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -67,7 +67,7 @@ Ingest.
                 <dcterms:title>Record with a path-traversal identifier</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-04-03</overheidwetgeving:dt.available>
+                <dcterms:available>2022-04-03</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>

@@ -8,10 +8,14 @@ records happen to be on this page (real KOOP responses page at maximumRecords,
 so a single page rarely holds the whole result set).
 
 The two <record> elements deliberately use UNRELATED XML namespace URIs (not just
-different prefixes bound to the same URI) for their <identifier> and <dt.available>
+different prefixes bound to the same URI) for their <identifier> and <available>
 elements, mirroring how real KOOP responses vary recordSchema/namespace declarations
 across records. A parser that pins a specific namespace URI would fail on one of
-the two records; the shared SRU parser must match on local element name only.
+the two records; the shared SRU parser must match on local element name only. The
+second record additionally uses a non-dcterms prefix (alt:available) to prove the
+publication-date element is matched by local name "available", independent of which
+namespace prefix or URI happens to be bound to it on the wire (real KOOP carries it
+as dcterms:available).
 -->
 <srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
     xmlns:dcterms="http://purl.org/dc/terms/"
@@ -32,7 +36,7 @@ the two records; the shared SRU parser must match on local element name only.
                 <dcterms:title>Verleend: kapvergunning Waddenweg 12, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-06-15</overheidwetgeving:dt.available>
+                <dcterms:available>2022-06-15</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -52,7 +56,7 @@ the two records; the shared SRU parser must match on local element name only.
                 <alt:title>Aanvraag: kapvergunning Waddenweg 14, Amsterdam-Noord</alt:title>
               </alt:owmskern>
               <alt:owmsmantel>
-                <alt:dt.available>2022-06-16</alt:dt.available>
+                <alt:available>2022-06-16</alt:available>
               </alt:owmsmantel>
             </alt:meta>
           </different:originalData>

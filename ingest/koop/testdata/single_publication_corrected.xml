@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Fixture for the "changed publication is re-landed" test (4.4, design D4): the
-SAME publication identifier (gmb-2022-900001) and dt.available as
+SAME publication identifier (gmb-2022-900001) and dcterms:available as
 single_publication.xml, but with different content: a corrected title and an
 added remark, simulating an upstream correction. Landing this after
 single_publication.xml has already been landed must overwrite the artifact
@@ -27,7 +27,7 @@ bytes and APPEND a second provenance line, not replace the first.
                 <dcterms:title>Verleend: kapvergunning Twiskeweg 9, Amsterdam-Noord (rectificatie)</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-05-01</overheidwetgeving:dt.available>
+                <dcterms:available>2022-05-01</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
             <overheidop:openbaarmaking>

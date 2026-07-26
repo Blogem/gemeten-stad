@@ -25,7 +25,7 @@ call. Paired with paging_page2.xml (startRecord=3).
                 <dcterms:title>Verleend: kapvergunning Nieuwendammerdijk 1, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2023-06-01</overheidwetgeving:dt.available>
+                <dcterms:available>2023-06-01</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -45,7 +45,7 @@ call. Paired with paging_page2.xml (startRecord=3).
                 <dcterms:title>Aanvraag: kapvergunning Nieuwendammerdijk 3, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2023-06-02</overheidwetgeving:dt.available>
+                <dcterms:available>2023-06-02</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Fixture for the landing/provenance tests (4.4): a single publication with a
-richer body (an activiteit element beyond just identifier/dt.available) so the
+richer body (an activiteit element beyond just identifier/dcterms:available) so the
 "land verbatim, nothing dropped" scenario has something to actually preserve.
 -->
 <srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
@@ -24,7 +24,7 @@ richer body (an activiteit element beyond just identifier/dt.available) so the
                 <dcterms:title>Verleend: kapvergunning Twiskeweg 9, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-05-01</overheidwetgeving:dt.available>
+                <dcterms:available>2022-05-01</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
             <overheidop:openbaarmaking>

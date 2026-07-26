@@ -22,7 +22,7 @@ Paired with paging_page1.xml.
                 <dcterms:title>Besluit: kapvergunning Nieuwendammerdijk 3, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2023-06-03</overheidwetgeving:dt.available>
+                <dcterms:available>2023-06-03</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>

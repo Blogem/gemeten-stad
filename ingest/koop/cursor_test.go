@@ -46,6 +46,43 @@ func TestIngest_FirstRun_LandsAllAndSetsHighWaterMark(t *testing.T) {
 		"the high-water mark must equal the MAX dt.available landed this run, not the last record processed or the query date")
 }
 
+// -- Cursor advances to the true MAX dcterms:available -----------------------
+//
+// Covers the exact bug the live P11 harvest caught: the real KOOP corpus
+// carries the publication date in dcterms:available (local name "available"),
+// not the fixture-invented "dt.available" the unit tests used to assert
+// against -- so a parser matching the wrong local name would never see any
+// Available value, maxAvailable would stay pinned at the prior high-water
+// mark, and the cursor would never advance even though records were landed.
+// This test drives Ingest over a fixture whose four records carry
+// dcterms:available spanning 2021-05-01 .. 2022-09-30, deliberately OUT of
+// ascending order, and asserts the persisted high-water mark equals the MAX
+// of those dates.
+
+func TestIngest_CursorAdvancesToMaxAvailableAcrossSpreadOfDates(t *testing.T) {
+	store := shared.NewRawStore(t.TempDir())
+
+	fixture := readFixture(t, "cursor_advance_spread.xml")
+	var calls []string
+	httpGet := fakeSRUGetter(t, &calls, map[string][]byte{"1": fixture})
+
+	err := Ingest(context.Background(), store, httpGet)
+	require.NoError(t, err)
+
+	for _, id := range []string{"gmb-2021-500001", "gmb-2022-930001", "gmb-2021-750001", "gmb-2022-120001"} {
+		landed, err := store.Landed("koop/" + id + ".xml")
+		require.NoError(t, err)
+		assert.True(t, landed, "publication %s must be landed", id)
+	}
+
+	hwm, err := readCursor(store)
+	require.NoError(t, err)
+	assert.Equal(t, "2022-09-30", hwm,
+		"the high-water mark must equal the MAX dcterms:available across all landed records (2022-09-30), "+
+			"not the value of the last record processed (2022-01-20) or the first record's date (2021-05-01) -- "+
+			"proving the cursor is actually parsed from dcterms:available and actually advances")
+}
+
 // -- Second run: overlap re-query --------------------------------------------
 //
 // Covers design D3 step 2: each run queries dt.available >= (highWater -

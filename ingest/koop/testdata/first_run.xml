@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Fixture for the incremental-cursor tests (4.3): a clean-volume first run over
-three publications, dt.available strictly ascending (2022-01-10 .. 2022-01-12).
+three publications, dcterms:available strictly ascending (2022-01-10 .. 2022-01-12).
 After landing all three, the harvester's high-water-mark cursor must equal the
-MAX dt.available seen: 2022-01-12.
+MAX dcterms:available seen: 2022-01-12.
 -->
 <srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
     xmlns:dcterms="http://purl.org/dc/terms/"
@@ -24,7 +24,7 @@ MAX dt.available seen: 2022-01-12.
                 <dcterms:title>Verleend: kapvergunning Van der Pekstraat 1, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-01-10</overheidwetgeving:dt.available>
+                <dcterms:available>2022-01-10</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -44,7 +44,7 @@ MAX dt.available seen: 2022-01-12.
                 <dcterms:title>Aanvraag: kapvergunning Van der Pekstraat 3, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-01-11</overheidwetgeving:dt.available>
+                <dcterms:available>2022-01-11</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -64,7 +64,7 @@ MAX dt.available seen: 2022-01-12.
                 <dcterms:title>Besluit: kapvergunning Van der Pekstraat 5, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-01-12</overheidwetgeving:dt.available>
+                <dcterms:available>2022-01-12</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>

@@ -25,7 +25,7 @@ retrieved.
                 <dcterms:title>Verleend: kapvergunning Van der Pekstraat 1, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-01-10</overheidwetgeving:dt.available>
+                <dcterms:available>2022-01-10</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -45,7 +45,7 @@ retrieved.
                 <dcterms:title>Aanvraag: kapvergunning Van der Pekstraat 3, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>2022-01-11</overheidwetgeving:dt.available>
+                <dcterms:available>2022-01-11</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>

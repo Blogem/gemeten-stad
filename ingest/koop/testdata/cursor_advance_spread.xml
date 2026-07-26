@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-Fixture for the incremental-cursor tests (4.3): a second run against the same
-upstream server state as first_run.xml (same 3 already-landed publications,
-gmb-2022-100001..100003, unchanged) PLUS one genuinely new publication,
-gmb-2022-100004 (dcterms:available 2022-01-20, past the prior high-water mark).
-
-Used to assert: (a) the 3 already-landed ids are skipped (no rewrite, no new
-provenance line) even though they are served again inside the overlap window,
-and (b) only gmb-2022-100004 is newly landed, advancing the cursor to
-2022-01-20.
+Fixture for the cursor-advance regression test (the exact bug the live P11
+harvest caught: dcterms:available carries the real KOOP publication date, not
+dt.available; a parser matching the wrong local name never advances the
+cursor). Four publications with dcterms:available deliberately OUT of
+ascending order and spanning a wide range (2021-05-01 .. 2022-09-30), so the
+high-water mark can only be correct if it is computed as the MAX of every
+landed record's dcterms:available, not the value of the last record processed
+or the order records happen to appear on the page.
 -->
 <srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
     xmlns:dcterms="http://purl.org/dc/terms/"
@@ -25,11 +24,11 @@ and (b) only gmb-2022-100004 is newly landed, advancing the cursor to
           <gzd:originalData>
             <overheidwetgeving:meta>
               <overheidwetgeving:owmskern>
-                <dcterms:identifier>gmb-2022-100001</dcterms:identifier>
-                <dcterms:title>Verleend: kapvergunning Van der Pekstraat 1, Amsterdam-Noord</dcterms:title>
+                <dcterms:identifier>gmb-2021-500001</dcterms:identifier>
+                <dcterms:title>Verleend: kapvergunning Meeuwenlaan 1, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <dcterms:available>2022-01-10</dcterms:available>
+                <dcterms:available>2021-05-01</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -45,11 +44,11 @@ and (b) only gmb-2022-100004 is newly landed, advancing the cursor to
           <gzd:originalData>
             <overheidwetgeving:meta>
               <overheidwetgeving:owmskern>
-                <dcterms:identifier>gmb-2022-100002</dcterms:identifier>
-                <dcterms:title>Aanvraag: kapvergunning Van der Pekstraat 3, Amsterdam-Noord</dcterms:title>
+                <dcterms:identifier>gmb-2022-930001</dcterms:identifier>
+                <dcterms:title>Verleend: kapvergunning Meeuwenlaan 3, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <dcterms:available>2022-01-11</dcterms:available>
+                <dcterms:available>2022-09-30</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -65,11 +64,11 @@ and (b) only gmb-2022-100004 is newly landed, advancing the cursor to
           <gzd:originalData>
             <overheidwetgeving:meta>
               <overheidwetgeving:owmskern>
-                <dcterms:identifier>gmb-2022-100003</dcterms:identifier>
-                <dcterms:title>Besluit: kapvergunning Van der Pekstraat 5, Amsterdam-Noord</dcterms:title>
+                <dcterms:identifier>gmb-2021-750001</dcterms:identifier>
+                <dcterms:title>Aanvraag: kapvergunning Meeuwenlaan 5, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <dcterms:available>2022-01-12</dcterms:available>
+                <dcterms:available>2021-11-15</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
@@ -85,8 +84,8 @@ and (b) only gmb-2022-100004 is newly landed, advancing the cursor to
           <gzd:originalData>
             <overheidwetgeving:meta>
               <overheidwetgeving:owmskern>
-                <dcterms:identifier>gmb-2022-100004</dcterms:identifier>
-                <dcterms:title>Verleend: kapvergunning Van der Pekstraat 7, Amsterdam-Noord</dcterms:title>
+                <dcterms:identifier>gmb-2022-120001</dcterms:identifier>
+                <dcterms:title>Besluit: kapvergunning Meeuwenlaan 5, Amsterdam-Noord</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
                 <dcterms:available>2022-01-20</dcterms:available>

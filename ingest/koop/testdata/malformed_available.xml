@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Fixture for the cursor-poisoning-guard test: the record's identifier is
-valid, but its dt.available is not a parseable YYYY-MM-DD date. This
-publication must still land, but its malformed dt.available must NOT become
+valid, but its dcterms:available is not a parseable YYYY-MM-DD date. This
+publication must still land, but its malformed dcterms:available must NOT become
 the persisted high-water mark (a raw string-max would let "onbekend", or any
 garbage lexicographically greater than a date, poison koop/_cursor.json and
 break every subsequent run at queryLowerBound).
@@ -26,7 +26,7 @@ break every subsequent run at queryLowerBound).
                 <dcterms:title>Verleend: kapvergunning met onbekende publicatiedatum</dcterms:title>
               </overheidwetgeving:owmskern>
               <overheidwetgeving:owmsmantel>
-                <overheidwetgeving:dt.available>onbekend</overheidwetgeving:dt.available>
+                <dcterms:available>onbekend</dcterms:available>
               </overheidwetgeving:owmsmantel>
             </overheidwetgeving:meta>
           </gzd:originalData>
