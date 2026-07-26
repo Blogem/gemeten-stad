@@ -20,7 +20,7 @@ type HTTPGetFunc func(ctx context.Context, url string) (io.ReadCloser, error)
 // SRURecord is one <record> from an SRU searchRetrieve response.
 type SRURecord struct {
 	Identifier string // dcterms:identifier, e.g. "gmb-2022-291126"
-	Available  string // dt.available, e.g. "2022-05-01"
+	Available  string // dcterms:available (local name "available"), e.g. "2022-05-01"
 	InnerXML   []byte // verbatim inner XML of the <record> element (for verbatim landing)
 }
 
@@ -54,7 +54,7 @@ func SRURequestURL(endpoint, query string, startRecord, maximumRecords int) stri
 // e.g. srw:/sru:, are ignored) since KOOP's prefixes are not worth binding
 // to. Each record's inner XML is captured verbatim for landing, alongside
 // the two fields the incremental cursor needs: dcterms:identifier and
-// dt.available (both matched by local name within the record).
+// dcterms:available (both matched by local name within the record).
 func ParseSRUResponse(body []byte) (numberOfRecords int, records []SRURecord, err error) {
 	decoder := xml.NewDecoder(bytes.NewReader(body))
 	for {
@@ -102,10 +102,11 @@ func ParseSRUResponse(body []byte) (numberOfRecords int, records []SRURecord, er
 
 // parseSRURecordFields walks a record's inner XML (KOOP nests the actual
 // metadata inside recordData, several levels deep) looking for the
-// identifier and dt.available elements by local element name, ignoring
-// namespace prefixes and nesting depth. Note dt.available's "dt." is part
-// of the wire element's local name (e.g. overheidwetgeving:dt.available),
-// not a namespace prefix — it is matched verbatim as "dt.available".
+// identifier and available elements by local element name, ignoring
+// namespace prefixes and nesting depth. The publication date comes from
+// dcterms:available (matched by local name "available"); "dt.available" is
+// only the CQL query index name used to build the request, not the response
+// element name, so it must not be matched here.
 func parseSRURecordFields(innerXML []byte) (SRURecord, error) {
 	rec := SRURecord{InnerXML: innerXML}
 
@@ -133,7 +134,7 @@ func parseSRURecordFields(innerXML []byte) (SRURecord, error) {
 			if rec.Identifier == "" {
 				rec.Identifier = strings.TrimSpace(text)
 			}
-		case "dt.available":
+		case "available":
 			var text string
 			if err := decoder.DecodeElement(&text, &se); err != nil {
 				return SRURecord{}, fmt.Errorf("shared: parse record available: %w", err)
