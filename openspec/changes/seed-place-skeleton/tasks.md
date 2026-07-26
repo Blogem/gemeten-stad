@@ -41,34 +41,34 @@
 
 ## 4. Pipeline wiring (graph load seeds the skeleton — D4)
 
-- [ ] 4.1 Rewire `runGraphLoad` (`cmd/pipeline/main.go`) to open a Postgres pool
+- [x] 4.1 Rewire `runGraphLoad` (`cmd/pipeline/main.go`) to open a Postgres pool
       (`shared.DatabaseURL` / `shared.ConnectPostgres`, like `runBomenLoad`), call
       `places.BuildCandidate`, and pass the candidate to `loadgraph.Load(ctx, url, candidate, cfg)`
       (replacing the `nil` candidate), so one gated `Load` ensures the reference model and seeds the
       skeleton.
-- [ ] 4.2 Confirm the `loadRegistry` order keeps `geo` before `graph` so the gebieden tables exist
+- [x] 4.2 Confirm the `loadRegistry` order keeps `geo` before `graph` so the gebieden tables exist
       when the graph load reads them; update the `runGraphLoad` doc comment to describe seeding the
       Place skeleton (no longer reference-model-only).
 
 ## 5. Integration tests (isolated gs-test Fuseki + test Postgres — P5 harness)
 
-- [ ] 5.1 Seed-and-verify: with a small gebieden fixture in the isolated test Postgres, seed the
+- [x] 5.1 Seed-and-verify: with a small gebieden fixture in the isolated test Postgres, seed the
       skeleton via `Load`; assert the buurt/wijk Places, their `rdfs:label`s, their buurt→wijk
       `gs:within` edges, and their `gs:active`+`gs:validFrom` annotations are written into a
       `run:load-…` graph with a matching `prov:Activity`.
-- [ ] 5.2 No-op re-seed: seeding the same skeleton twice (only the emitted `gs:validFrom` differs)
+- [x] 5.2 No-op re-seed: seeding the same skeleton twice (only the emitted `gs:validFrom` differs)
       leaves no second `run:load-…` graph, no new `prov:Activity`, and no added triples (rests on
       P12's valid-time-excluded change detection).
-- [ ] 5.3 Deprecation supersede: re-seed after setting a buurt's `source_deleted_at` in the fixture;
+- [x] 5.3 Deprecation supersede: re-seed after setting a buurt's `source_deleted_at` in the fixture;
       assert a new `gs:active false` version carrying its `gs:validFrom`, the prior `gs:active true`
       version closed with a matching `gs:validTo`, exactly one open version, and the prior interval
       retained.
-- [ ] 5.4 Reset: `--reset`/`Config{Reset}` rebuilds the skeleton from the current fixture.
+- [x] 5.4 Reset: `--reset`/`Config{Reset}` rebuilds the skeleton from the current fixture.
 
 ## 6. Validation
 
-- [ ] 6.1 `go build ./...` and `go vet ./load/places/... ./cmd/pipeline/... ./ontology/...` clean.
-- [ ] 6.2 `go test ./load/places/... ./ontology/...` (unit) passes.
-- [ ] 6.3 `go test -tags=integration ./load/places/... ./cmd/pipeline/...` passes against
+- [x] 6.1 `go build ./...` and `go vet ./load/places/... ./cmd/pipeline/... ./ontology/...` clean.
+- [x] 6.2 `go test ./load/places/... ./ontology/...` (unit) passes.
+- [x] 6.3 `go test -tags=integration ./load/places/... ./cmd/pipeline/...` passes against
       `GS_TEST_FUSEKI_URL` + the isolated test Postgres (guarded against production names).
-- [ ] 6.4 `openspec validate seed-place-skeleton --strict` passes.
+- [x] 6.4 `openspec validate seed-place-skeleton --strict` passes.
