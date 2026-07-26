@@ -1,29 +1,29 @@
 ## 1. Ontology term (gs:active)
 
-- [ ] 1.1 Add `gs:active` to `ontology/ontology.ttl` — an `owl:DatatypeProperty` with
+- [x] 1.1 Add `gs:active` to `ontology/ontology.ttl` — an `owl:DatatypeProperty` with
       `rdfs:domain gs:Place`, `rdfs:range xsd:boolean`, `rdfs:label`, and an `rdfs:comment` stating
       active-status is evolving state (RDF-star `gs:validFrom`/`gs:validTo`), distinct from the
       Place's timeless identity (D6).
-- [ ] 1.2 Confirm the ontology still loads clean (embed test / `go test ./ontology/...`) and that a
+- [x] 1.2 Confirm the ontology still loads clean (embed test / `go test ./ontology/...`) and that a
       Place candidate with `gs:active true {| gs:validFrom … |}` conforms against `shapes.ttl` (no
       `PlaceShape`, D3).
 
 ## 2. Turtle projection (pure Go — unit-tested first)
 
-- [ ] 2.1 Add a `load/places` package with row structs for a projected buurt
+- [x] 2.1 Add a `load/places` package with row structs for a projected buurt
       (`identificatie, naam, ligtinwijkid, source_deleted_at`) and wijk
       (`identificatie, naam, source_deleted_at`), and a Place IRI minter keyed on `identificatie`
       under `http://gemetenstad.nl/id/place/` (D1).
-- [ ] 2.2 Implement a pure `renderPlaces(buurten, wijken, loadTS) []byte` that emits Turtle: each
+- [x] 2.2 Implement a pure `renderPlaces(buurten, wijken, loadTS) []byte` that emits Turtle: each
       buurt and wijk (live **and** soft-deleted) as `a gs:Place` with an escaped `rdfs:label`, a
       `gs:active` statement (`true` when `source_deleted_at` is null else `false`) annotated with a
       `gs:validFrom` (`loadTS` when active, the row's `source_deleted_at` when inactive — D5), and,
       for a buurt whose `ligtinwijkid` resolves to a projected wijk, a `gs:within` edge; wijken carry
       no `gs:within`. No geometry, no `gs:confidence`/`gs:evidence`.
-- [ ] 2.3 In `renderPlaces`, for a buurt whose `ligtinwijkid` is null or does not resolve to a
+- [x] 2.3 In `renderPlaces`, for a buurt whose `ligtinwijkid` is null or does not resolve to a
       projected wijk, emit the Place + label + `gs:active` WITHOUT a `gs:within` edge and record it
       for a loud `places: …` warning (D5).
-- [ ] 2.4 Unit tests (table-driven, testify) for `renderPlaces` covering: a live buurt within its
+- [x] 2.4 Unit tests (table-driven, testify) for `renderPlaces` covering: a live buurt within its
       wijk (`gs:active true`, `validFrom = loadTS`); a wijk with no `gs:within`; a soft-deleted row
       (`gs:active false`, `validFrom = source_deleted_at`); a buurt with null `ligtinwijkid` (seeded,
       no edge, warned); a dangling `ligtinwijkid` (seeded, no edge, warned); label escaping; IRI
@@ -31,11 +31,11 @@
 
 ## 3. PostGIS read + candidate assembly
 
-- [ ] 3.1 Add a thin repository read that selects **all** rows (no `source_deleted_at` filter) of
+- [x] 3.1 Add a thin repository read that selects **all** rows (no `source_deleted_at` filter) of
       `gebieden_buurten` (`identificatie, naam, ligtinwijkid, source_deleted_at`) and
       `gebieden_wijken` (`identificatie, naam, source_deleted_at`) into the row structs,
       schema-qualified like `load/geo`.
-- [ ] 3.2 Add `BuildCandidate(ctx, pool, schema) ([]byte, error)` that reads (3.1) then renders
+- [x] 3.2 Add `BuildCandidate(ctx, pool, schema) ([]byte, error)` that reads (3.1) then renders
       (2.2) with the load timestamp, returning the Turtle candidate and logging any
       dangling-containment warnings.
 
