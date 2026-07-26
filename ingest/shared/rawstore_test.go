@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -175,6 +177,55 @@ func TestProvenance_JSONRoundTrip(t *testing.T) {
 	assert.True(t, prov.FetchedAt.Equal(roundTripped.FetchedAt))
 	assert.Equal(t, prov.ByteSize, roundTripped.ByteSize)
 	assert.Equal(t, prov.ContentSHA256, roundTripped.ContentSHA256)
+}
+
+// TestRawStore_Land_RejectsPathEscape covers the path-containment security
+// fix: Land must reject (and write nothing for) a name that resolves outside
+// BasePath, whether via a leading ".." or a nested "prefix/../../" escape,
+// while still allowing legitimate flat and nested names to land normally.
+func TestRawStore_Land_RejectsPathEscape(t *testing.T) {
+	tests := []struct {
+		name       string
+		artifactID string
+		wantErr    bool
+	}{
+		{name: "leading parent traversal", artifactID: "../escape.xml", wantErr: true},
+		{name: "nested double parent traversal", artifactID: "koop/../../escape.xml", wantErr: true},
+		{name: "legitimate flat name", artifactID: "bomen_kapenherplant", wantErr: false},
+		{name: "legitimate nested name", artifactID: "koop/gmb-2022-1.xml", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			store := NewRawStore(dir)
+			content := []byte("payload bytes for path-escape test")
+
+			prov, err := store.Land(tt.artifactID, bytes.NewReader(content), "https://example.org/x", time.Now())
+
+			if tt.wantErr {
+				require.Error(t, err, "Land(%q, ...) must reject a name that resolves outside BasePath", tt.artifactID)
+				assert.Equal(t, Provenance{}, prov, "a rejected Land call must return a zero-value Provenance")
+
+				escaped := filepath.Join(dir, tt.artifactID)
+				_, statErr := os.Stat(escaped)
+				assert.True(t, os.IsNotExist(statErr),
+					"Land must not write any file for escaping name %q, got stat err = %v", tt.artifactID, statErr)
+
+				entries, rdErr := os.ReadDir(dir)
+				require.NoError(t, rdErr)
+				assert.Empty(t, entries, "Land must leave BasePath untouched when it rejects an escaping name")
+				return
+			}
+
+			require.NoError(t, err, "Land(%q, ...) must succeed for a legitimate name", tt.artifactID)
+			assert.Equal(t, sha256Hex(content), prov.ContentSHA256)
+
+			gotBytes, err := os.ReadFile(filepath.Join(dir, tt.artifactID))
+			require.NoError(t, err)
+			assert.Equal(t, content, gotBytes, "the landed artifact bytes must match the content passed to Land")
+		})
+	}
 }
 
 // TestRawDataPath covers acceptance scenario 4: GS_RAW_DATA_PATH is read from
