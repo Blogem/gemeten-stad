@@ -24,6 +24,7 @@ import (
 	"github.com/Blogem/gemeten-stad/ingest/bag"
 	"github.com/Blogem/gemeten-stad/ingest/bomen"
 	"github.com/Blogem/gemeten-stad/ingest/gebieden"
+	koop "github.com/Blogem/gemeten-stad/ingest/koop"
 	"github.com/Blogem/gemeten-stad/ingest/shared"
 	loadbomen "github.com/Blogem/gemeten-stad/load/bomen"
 	"github.com/Blogem/gemeten-stad/load/geo"
@@ -50,6 +51,9 @@ var ingestRegistry = []ingestSource{
 	}},
 	{name: "bomen", fn: func(ctx context.Context, store *shared.RawStore) error {
 		return bomen.Ingest(ctx, store, bomenHTTPGet)
+	}},
+	{name: "koop", fn: func(ctx context.Context, store *shared.RawStore) error {
+		return koop.Ingest(ctx, store, koopHTTPGet)
 	}},
 }
 
@@ -190,6 +194,26 @@ func bomenHTTPGet(ctx context.Context, url string) (io.ReadCloser, error) {
 	}
 	if apiKey := os.Getenv("GS_BOMEN_API_KEY"); apiKey != "" {
 		req.Header.Set("X-Api-Key", apiKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", url, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("get %s: unexpected status %s", url, resp.Status)
+	}
+	return resp.Body, nil
+}
+
+// koopHTTPGet is a real HTTP getter for ingest/koop.Ingest. KOOP's SRU endpoint needs no
+// authentication, so this is a plain unauthenticated GET (unlike bomenHTTPGet, no API-key
+// header is ever sent).
+func koopHTTPGet(ctx context.Context, url string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request for %s: %w", url, err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
