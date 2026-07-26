@@ -17,7 +17,7 @@ func TestEmbeddedArtifactsPresent(t *testing.T) {
 		content []byte
 		markers []string
 	}{
-		{"ontology", Ontology, []string{"gs:Intervention", "gs:locatedAt", "gs:confidence", "gs:within"}},
+		{"ontology", Ontology, []string{"gs:Intervention", "gs:locatedAt", "gs:confidence", "gs:within", "gs:active"}},
 		{"vocab", Vocab, []string{"sch:tree-audit", "skos:ConceptScheme", "act:vellen"}},
 		{"shapes", Shapes, []string{"gs:InterventionShape", "sh:NodeShape", "sh:sparql", "sh:targetClass"}},
 	} {

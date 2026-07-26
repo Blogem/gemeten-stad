@@ -233,6 +233,14 @@ gs:validTo
     rdfs:comment
         "End of the valid-time interval; absent/open while the state is current. Stamping it is  how a state/period node is CLOSED when a successor opens — history is retained, never  overwritten."@en .
 
+gs:active
+    a owl:DatatypeProperty ;
+    rdfs:label "active"@en ;
+    rdfs:domain gs:Place ;
+    rdfs:range  xsd:boolean ;
+    rdfs:comment
+        "Whether a Place is currently a live area in the source gebieden register (true) or a  soft-deleted/deprecated one (false) — a status FLAG, not a value (the geometry stays in  PostGIS). This is EVOLVING STATE, not the Place's timeless identity: the statement is  written via the RDF-star annotation mechanism above, carrying gs:validFrom/gs:validTo  (<< :place gs:active true >> gs:validFrom … ; gs:validTo … ), so an area going inactive  supersedes the prior interval rather than overwriting it. The Place's IRI, rdfs:label,  and gs:within remain stable and timeless across the transition."@en .
+
 # ============================================================================
 # 5. Caveat terms — the controlled set of non-exactness flags (§3, D3; task 1.6)
 # ============================================================================
