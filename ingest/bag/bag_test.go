@@ -7,53 +7,80 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A small, realistic PDOK BAG atom feed sample: one entry carrying an
-// "enclosure" link to the national LV BAG 2.0 Extract zip.
-const sampleFeedXML = `<?xml version="1.0" encoding="UTF-8"?>
+// sampleTopFeedXML is a realistic PDOK top-level atom feed: its entry does not carry a download,
+// it points to a dataset sub-feed. It also carries a feed-level "self" nav link that must be
+// ignored.
+const sampleTopFeedXML = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:lvbag-extract-nl-deliveries</id>
-  <title>BAG Extract Deliveries</title>
-  <updated>2026-07-01T00:00:00Z</updated>
+  <link rel="self" type="application/atom+xml" href="https://service.pdok.nl/kadaster/adressen/atom/v1_0/index.xml"></link>
   <entry>
-    <id>urn:uuid:lvbag-extract-nl-20260701</id>
-    <title>Levering 9999NL.IMBAG.Extract 2026-07-01</title>
-    <updated>2026-07-01T00:00:00Z</updated>
-    <category term="volledig"/>
-    <link rel="enclosure" type="application/octet-stream"
-          href="https://service.pdok.nl/lv/bag/atom/downloads/lvbag-extract-nl.zip"
-          length="3865470000"/>
+    <link href="https://service.pdok.nl/kadaster/bag-adressen/atom/adressen.xml" rel="alternate" type="application/atom+xml" hreflang="nl" title="Adressen ATOM"></link>
   </entry>
 </feed>
 `
 
-// A variant where the entry's link is nested differently but still exposes
-// the same href — atom feeds vary in attribute order across providers.
-const sampleFeedXMLAltOrder = `<?xml version="1.0" encoding="UTF-8"?>
+// sampleSubFeedXML is a realistic PDOK dataset sub-feed: its entry carries the actual .zip
+// download. It also carries feed-level "self"/"up"/"describedby" nav links that must be ignored.
+const sampleSubFeedXML = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
+  <link rel="self" type="application/atom+xml" href="https://service.pdok.nl/kadaster/bag-adressen/atom/adressen.xml"></link>
+  <link rel="up" type="application/atom+xml" href="https://service.pdok.nl/kadaster/adressen/atom/v1_0/index.xml"></link>
+  <link rel="describedby" type="application/atom+xml" href="https://service.pdok.nl/kadaster/bag-adressen/atom/adressen.xml"></link>
   <entry>
-    <link length="3865470000" href="https://service.pdok.nl/lv/bag/atom/downloads/lvbag-extract-nl.zip"
-          type="application/octet-stream" rel="enclosure"/>
+    <link href="https://service.pdok.nl/kadaster/bag-adressen/atom/downloads/lvbag-extract-nl.zip" rel="alternate" type="application/zip" hreflang="nl" length="3610187048" title="Adressen ATOM - lvbag-extract-nl.zip"></link>
   </entry>
 </feed>
 `
+
+// sampleSubFeedXMLAltOrder is a variant where the entry link's attributes are ordered
+// differently but still identifies the download purely by its .zip suffix (no explicit
+// application/zip type) — atom feeds vary in attribute order and completeness across providers.
+const sampleSubFeedXMLAltOrder = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <link length="3610187048" href="https://service.pdok.nl/kadaster/bag-adressen/atom/downloads/lvbag-extract-nl.zip"
+          rel="alternate"/>
+  </entry>
+</feed>
+`
+
+func TestParseAtomFeed_ReturnsSubfeedLink(t *testing.T) {
+	link, isDownload, err := ParseAtomFeed([]byte(sampleTopFeedXML))
+	require.NoError(t, err)
+	assert.False(t, isDownload, "the top feed's entry link is a dataset sub-feed, not a download")
+	assert.Equal(t, "https://service.pdok.nl/kadaster/bag-adressen/atom/adressen.xml", link)
+}
 
 func TestParseAtomFeed_ReturnsDownloadURL(t *testing.T) {
 	tests := []struct {
 		name string
 		xml  string
 	}{
-		{"standard attribute order", sampleFeedXML},
-		{"alternate attribute order", sampleFeedXMLAltOrder},
+		{"application/zip type", sampleSubFeedXML},
+		{"zip suffix, no explicit type", sampleSubFeedXMLAltOrder},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			url, err := ParseAtomFeed([]byte(tt.xml))
+			link, isDownload, err := ParseAtomFeed([]byte(tt.xml))
 			require.NoError(t, err)
-			assert.Equal(t, "https://service.pdok.nl/lv/bag/atom/downloads/lvbag-extract-nl.zip", url)
-			assert.Contains(t, url, ExtractName, "the download URL must point at the extract filename")
+			assert.True(t, isDownload, "the sub-feed's entry link is the actual data download")
+			assert.Equal(t, "https://service.pdok.nl/kadaster/bag-adressen/atom/downloads/lvbag-extract-nl.zip", link)
+			assert.Contains(t, link, ExtractName, "the download URL must point at the extract filename")
 		})
 	}
+}
+
+func TestParseAtomFeed_IgnoresFeedLevelLinks(t *testing.T) {
+	// Only feed-level self/up links, no entry at all: there is nothing to follow.
+	const feedLevelOnlyXML = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <link rel="self" type="application/atom+xml" href="https://service.pdok.nl/kadaster/adressen/atom/v1_0/index.xml"></link>
+  <link rel="up" type="application/atom+xml" href="https://service.pdok.nl/kadaster/adressen/atom/v1_0/index.xml"></link>
+</feed>
+`
+	_, _, err := ParseAtomFeed([]byte(feedLevelOnlyXML))
+	assert.Error(t, err, "feed-level nav links must not be mistaken for entry links")
 }
 
 func TestParseAtomFeed_Errors(t *testing.T) {
@@ -72,7 +99,7 @@ func TestParseAtomFeed_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseAtomFeed(tt.xml)
+			_, _, err := ParseAtomFeed(tt.xml)
 			assert.Error(t, err)
 		})
 	}

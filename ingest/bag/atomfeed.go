@@ -6,11 +6,11 @@ import (
 	"strings"
 )
 
-// atomFeed models just enough of the Atom XML feed format (RFC 4287) to find a download link:
-// a feed carries feed-level links and zero or more entries, each of which may itself carry links.
+// atomFeed models just enough of the Atom XML feed format (RFC 4287) to find a download or
+// sub-feed link. Feed-level navigation links (self/up/describedby) carry no data pointers for
+// PDOK's feeds and are deliberately not modeled here — only <entry> links matter.
 type atomFeed struct {
 	XMLName xml.Name    `xml:"feed"`
-	Links   []atomLink  `xml:"link"`
 	Entries []atomEntry `xml:"entry"`
 }
 
@@ -24,25 +24,36 @@ type atomLink struct {
 	Type string `xml:"type,attr"`
 }
 
-// ParseAtomFeed extracts the extract download URL from the PDOK atom feed XML. Pure — no I/O.
-// The PDOK feed serves exactly one file: it is found as the first link (entry-level links take
-// precedence over feed-level links) whose href points at a .zip file.
-func ParseAtomFeed(feedXML []byte) (string, error) {
+// ParseAtomFeed inspects the <entry> links of a PDOK atom feed. PDOK's BAG feed is two levels
+// deep: the top feed's entry links to a dataset sub-feed (type "application/atom+xml"), and that
+// sub-feed's entry links to the actual data download (type "application/zip", or an href ending
+// in ".zip"). Feed-level self/up/describedby links are ignored.
+//
+// If an entry link is the data download, ParseAtomFeed returns (href, true, nil). If an entry
+// link points to a dataset sub-feed instead, it returns (href, false, nil) so the caller can
+// follow one more level. It errors if neither is found among the entry links.
+func ParseAtomFeed(feedXML []byte) (link string, isDownload bool, err error) {
 	var feed atomFeed
 	if err := xml.Unmarshal(feedXML, &feed); err != nil {
-		return "", fmt.Errorf("bag: parse atom feed: %w", err)
+		return "", false, fmt.Errorf("bag: parse atom feed: %w", err)
 	}
 
-	var links []atomLink
+	var subfeedHref string
 	for _, entry := range feed.Entries {
-		links = append(links, entry.Links...)
-	}
-	links = append(links, feed.Links...)
-
-	for _, link := range links {
-		if link.Href != "" && strings.HasSuffix(strings.ToLower(link.Href), ".zip") {
-			return link.Href, nil
+		for _, l := range entry.Links {
+			if l.Href == "" {
+				continue
+			}
+			if l.Type == "application/zip" || strings.HasSuffix(strings.ToLower(l.Href), ".zip") {
+				return l.Href, true, nil
+			}
+			if subfeedHref == "" && l.Type == "application/atom+xml" {
+				subfeedHref = l.Href
+			}
 		}
 	}
-	return "", fmt.Errorf("bag: no .zip download link found in atom feed")
+	if subfeedHref != "" {
+		return subfeedHref, false, nil
+	}
+	return "", false, fmt.Errorf("bag: no .zip download or dataset sub-feed link found among atom feed entries")
 }
