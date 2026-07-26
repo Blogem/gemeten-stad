@@ -52,15 +52,18 @@ provided dump files instead"`). So the fetch is chosen per dataset by size:
 
 - **`kapenherplant`** (35,202 rows ≈ 36 pages at `_pageSize=1000`) stays on **paged JSON** — under
   the cap, and it has no geometry so JSON rows are the natural shape.
-- **`stamgegevens`** (323,728 rows ≫ 100 pages) uses the **GeoJSON export** (`?_format=geojson`),
-  which is **not** page-capped (verified: `page=101 → 200`) and returns geometry as GeoJSON in
-  EPSG:4326 — matching `load/bomen`'s `geometry(Point,4326)` + `ST_GeomFromGeoJSON` with no
-  reprojection. (CSV was rejected: its geometry is `SRID=28992;POINT(...)` EWKT in RD, which would
-  force EWKT parsing + reprojection.) The export is followed via `_links.next.href` while present.
+- **`stamgegevens`** (323,728 rows ≫ 100 pages) uses the **GeoJSON export** in a **single unpaged
+  request** (`?_format=geojson`). Every *paginated* representation — JSON, or geojson with
+  `_pageSize`/`page=` — is capped at page 100; only the unpaged export returns the whole
+  FeatureCollection (~210 MB) in one response with no cap. Its geometry is GeoJSON in EPSG:4326,
+  matching `load/bomen`'s `geometry(Point,4326)` + `ST_GeomFromGeoJSON` with no reprojection. (CSV
+  was rejected: its geometry is `SRID=28992;POINT(...)` EWKT in RD, forcing EWKT parsing +
+  reprojection.) The ~210 MB body is **streamed straight into the landing store** (never buffered),
+  and ~24 features with a null geometry are stored as SQL NULL.
 
-Both land **verbatim** (one compacted JSON value per JSONL line); `load/bomen`'s `readLandedRows`
-auto-detects the two landed shapes (`_embedded` page vs GeoJSON `FeatureCollection`), so bronze
-stays verbatim and the downstream row shape is uniform.
+Both land **verbatim**; `load/bomen`'s `readLandedRows` reads the landed artifact with a streaming
+`json.Decoder` (no line-length cap) that auto-detects the two shapes (`_embedded` page vs GeoJSON
+`FeatureCollection`), so bronze stays verbatim and the downstream row shape is uniform.
 
 ### D2 — Raw landing: versioned, keep-all-versions via the shared `RawStore`
 
