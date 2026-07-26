@@ -70,9 +70,12 @@ func (s *RawStore) Landed(name string) (bool, error) {
 // provenance record. Provenance is HISTORY-PRESERVING: a refresh appends a new dated record,
 // never erasing prior provenance. The artifact bytes themselves may be overwritten (latest
 // snapshot), but provenance is retained. Returns the Provenance just written.
+//
+// name may be prefixed (e.g. "koop/gmb-2022-291126.xml"), in which case the prefix's parent
+// directory is created as needed.
 func (s *RawStore) Land(name string, r io.Reader, sourceURL string, fetchedAt time.Time) (Provenance, error) {
-	if err := os.MkdirAll(s.BasePath, 0o755); err != nil {
-		return Provenance{}, fmt.Errorf("shared: create raw store dir %q: %w", s.BasePath, err)
+	if err := os.MkdirAll(filepath.Dir(s.artifactPath(name)), 0o755); err != nil {
+		return Provenance{}, fmt.Errorf("shared: create raw store dir for %q: %w", name, err)
 	}
 
 	dst, err := os.Create(s.artifactPath(name))
