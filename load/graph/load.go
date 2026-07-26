@@ -34,6 +34,11 @@ type Config struct {
 //
 // It returns a non-nil error — the caller should exit non-zero — if any step, including SHACL
 // non-conformance, fails.
+//
+// Load is NOT safe for concurrent calls against the same dataset: the reference-model and
+// provenance graphs are fixed names and the per-run scratch/run graphs key off a timestamp, so
+// two Loads racing within one clock tick could collide. The pipeline calls it sequentially; a
+// future parallel caller must serialize per dataset (or mint collision-proof run IDs first).
 func Load(ctx context.Context, fusekiURL string, candidate []byte, cfg Config) error {
 	c, err := newClient(fusekiURL, os.Getenv)
 	if err != nil {

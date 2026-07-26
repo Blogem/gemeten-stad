@@ -20,9 +20,13 @@ var conformsPattern = regexp.MustCompile(`sh:conforms\s+(true|false)\b`)
 // an IRI, never "[").
 var resultBlockPattern = regexp.MustCompile(`sh:result\s*\[`)
 
-var focusNodePattern = regexp.MustCompile(`sh:focusNode\s+([^\s;.]+)`)
+// focusNodePattern captures the focus node token — a prefixed name (data:i) or a full <IRI>.
+// It excludes only whitespace and ';' (NOT '.', which appears inside IRIs like gemetenstad.nl).
+var focusNodePattern = regexp.MustCompile(`sh:focusNode\s+([^\s;]+)`)
 
-var resultMessagePattern = regexp.MustCompile(`sh:resultMessage\s+"([^"]*)"`)
+// resultMessagePattern captures the (Turtle-escaped) message string, tolerating escaped quotes
+// (\") inside it via the `(?:[^"\\]|\\.)*` body.
+var resultMessagePattern = regexp.MustCompile(`sh:resultMessage\s+"((?:[^"\\]|\\.)*)"`)
 
 // parseConforms parses a Turtle SHACL validation report (as returned by Fuseki's /shacl endpoint)
 // and returns whether it conforms, plus — for a non-conforming report — a detail string built from
@@ -64,9 +68,9 @@ func parseConforms(report []byte) (conforms bool, detail string, err error) {
 
 // reportSnippet bounds how much of a malformed report an error message quotes.
 func reportSnippet(report []byte) string {
-	const max = 512
-	if len(report) > max {
-		return string(report[:max]) + "..."
+	const maxLen = 512
+	if len(report) > maxLen {
+		return string(report[:maxLen]) + "..."
 	}
 	return string(report)
 }
@@ -77,7 +81,9 @@ func reportSnippet(report []byte) string {
 // required — cross-graph SHACL validation cannot see concepts living in a different graph).
 func (c *client) validate(ctx context.Context, candidate []byte, scratchGraph string) (conforms bool, detail string, err error) {
 	defer func() {
-		if dropErr := c.dropGraph(ctx, scratchGraph); dropErr != nil && err == nil {
+		// Clean up with a context detached from cancellation/deadline so a timed-out validate
+		// still drops its scratch graph (WithoutCancel keeps ctx values, drops its Done).
+		if dropErr := c.dropGraph(context.WithoutCancel(ctx), scratchGraph); dropErr != nil && err == nil {
 			err = fmt.Errorf("graph: validate: clean up scratch graph %s: %w", scratchGraph, dropErr)
 		}
 	}()
@@ -88,10 +94,9 @@ func (c *client) validate(ctx context.Context, candidate []byte, scratchGraph st
 	if err := c.postGraph(ctx, scratchGraph, ontology.Vocab); err != nil {
 		return false, "", fmt.Errorf("graph: validate: load vocab into scratch graph: %w", err)
 	}
-	if len(candidate) > 0 {
-		if err := c.postGraph(ctx, scratchGraph, candidate); err != nil {
-			return false, "", fmt.Errorf("graph: validate: load candidate into scratch graph: %w", err)
-		}
+	// candidate is always non-empty here (Load returns early on an empty candidate).
+	if err := c.postGraph(ctx, scratchGraph, candidate); err != nil {
+		return false, "", fmt.Errorf("graph: validate: load candidate into scratch graph: %w", err)
 	}
 
 	report, err := c.shaclValidate(ctx, scratchGraph, ontology.Shapes)

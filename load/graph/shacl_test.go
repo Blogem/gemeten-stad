@@ -77,6 +77,26 @@ func TestParseConforms(t *testing.T) {
 			detailHas:    []string{"data:i", "data:j", "no gs:confidence annotation"},
 		},
 		{
+			name: "full-IRI focus node is captured whole (not truncated at a dot)",
+			report: `PREFIX sh: <http://www.w3.org/ns/shacl#>
+[ a sh:ValidationReport ; sh:conforms false ;
+  sh:result [ a sh:ValidationResult ;
+    sh:focusNode <http://gemetenstad.nl/id/intv-it> ;
+    sh:resultMessage "An Intervention must be locatedAt at least one Place." ] ] .`,
+			wantConforms: false,
+			detailHas:    []string{"<http://gemetenstad.nl/id/intv-it>"},
+		},
+		{
+			name: "escaped quotes in the message are not truncated",
+			report: `PREFIX sh: <http://www.w3.org/ns/shacl#>
+[ a sh:ValidationReport ; sh:conforms false ;
+  sh:result [ a sh:ValidationResult ;
+    sh:focusNode data:i ;
+    sh:resultMessage "value must be \"vellen\" or a known concept" ] ] .`,
+			wantConforms: false,
+			detailHas:    []string{`value must be \"vellen\" or a known concept`},
+		},
+		{
 			name:    "empty report is an error",
 			report:  "",
 			wantErr: true,
