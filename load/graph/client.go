@@ -99,18 +99,60 @@ func (c *client) postGraph(ctx context.Context, graphIRI string, turtle []byte) 
 	return err
 }
 
-// dropGraph removes graphIRI entirely via SPARQL Update. DROP SILENT is a no-op — not an error —
-// if the graph does not exist, so cleanup (scratch graphs) and Reset (prior run graphs) never fail
-// on an absent graph.
-func (c *client) dropGraph(ctx context.Context, graphIRI string) error {
-	update := "DROP SILENT GRAPH <" + graphIRI + ">"
-	req, err := c.newRequest(ctx, http.MethodPost, "/update", strings.NewReader("update="+url.QueryEscape(update)))
+// update executes a SPARQL Update against the dataset's /update endpoint — the primitive behind
+// dropGraph and, in write.go, the SCD2 close/copy operations (design.md D6): anything the Graph
+// Store protocol (putGraph/postGraph) can't express because it needs a WHERE pattern rather than a
+// whole-graph replace/merge.
+func (c *client) update(ctx context.Context, sparqlUpdate, action string) error {
+	req, err := c.newRequest(ctx, http.MethodPost, "/update", strings.NewReader("update="+url.QueryEscape(sparqlUpdate)))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	_, err = c.do(req, "DROP GRAPH "+graphIRI)
+	_, err = c.do(req, action)
 	return err
+}
+
+// dropGraph removes graphIRI entirely via SPARQL Update. DROP SILENT is a no-op — not an error —
+// if the graph does not exist, so cleanup (scratch/staging graphs) and Reset (prior run graphs)
+// never fail on an absent graph.
+func (c *client) dropGraph(ctx context.Context, graphIRI string) error {
+	return c.update(ctx, "DROP SILENT GRAPH <"+graphIRI+">", "DROP GRAPH "+graphIRI)
+}
+
+// selectColumn runs a SPARQL SELECT and returns every value bound to variable varName across all
+// solutions, in result order — a small generic reader shared by the signature extraction (2.2/2.3)
+// and the SCD2 open-version invariant check (write.go), which both consume the SPARQL 1.1 JSON
+// results format.
+func (c *client) selectColumn(ctx context.Context, query, varName string) ([]string, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "/sparql?query="+url.QueryEscape(query), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/sparql-results+json")
+	body, err := c.do(req, "SPARQL SELECT")
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Results struct {
+			Bindings []map[string]struct {
+				Value string `json:"value"`
+			} `json:"bindings"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("graph: SPARQL SELECT: parse SPARQL JSON results: %w", err)
+	}
+
+	var values []string
+	for _, b := range result.Results.Bindings {
+		if v, ok := b[varName]; ok {
+			values = append(values, v.Value)
+		}
+	}
+	return values, nil
 }
 
 // shaclValidate posts shapes against graphIRI's current content (the Fuseki /shacl endpoint —
