@@ -130,12 +130,22 @@ sources:
   `maximumRecords`, url-encoded `query`);
 - a paged fetch that reads `numberOfRecords`, iterates `startRecord` in `maximumRecords` steps
   until exhausted, and yields each `<record>`'s **verbatim inner XML** plus the parsed fields the
-  cursor needs (`dcterms:identifier`, `dt.available`);
-- a modest **rate limiter** (fixed inter-request interval) so sequential paging stays polite.
+  cursor needs (the publication identifier and publication date);
+- a modest **rate limiter** (fixed inter-request interval) so sequential paging stays polite;
+- **transient-failure retry with exponential backoff** around each page fetch (bounded attempts,
+  named constants), because the KOOP endpoint intermittently drops connections mid-harvest
+  (connection/handshake timeouts, EOF) — a single transient failure must not abort a 100+ page run.
 
 Parsing uses `encoding/xml` for the envelope (`numberOfRecords`, records) capturing each record's
 `,innerxml` for verbatim landing, plus the two cursor fields — not regex (the spike used stdlib
 regex; Go's `encoding/xml` is the idiomatic, robust choice here).
+
+**Response element names (vs. query index names).** The cursor fields are read by XML *local
+element name*: the identifier from `dcterms:identifier` (local name `identifier`) and the
+publication date from **`dcterms:available`** (local name `available`). Note the query filters on
+the CQL *index* `dt.available>=`, but the returned record carries the value in `dcterms:available`,
+not a `dt.available` element — the two names must not be conflated (verified against the live KOOP
+corpus: every record uses `dcterms:available`).
 
 *Rationale:* the plan explicitly says to reuse `ingest/shared` and "extend it where the geo sources
 didn't exercise SRU". SRU paging (`numberOfRecords` + `startRecord`) is a distinct shape from the
@@ -170,6 +180,11 @@ name set.
   bounded by the per-id landing (small XML files) and the date-cursor tail on re-runs.
 - **Endpoint politeness/throttling** → the shared rate limiter caps request rate; paging is
   sequential.
+- **Endpoint instability mid-harvest** (observed on the live corpus: the ~106-page full run
+  intermittently fails with connection/handshake timeouts or EOF on a random page) → the shared SRU
+  fetch retries each page with bounded exponential backoff. A run still aborts if a single page
+  exhausts all retry attempts; because landing is id-idempotent, simply re-running resumes (already
+  landed ids are skipped). Retry attempt count and base delay are named constants, tunable in P15.
 
 ## Migration Plan
 

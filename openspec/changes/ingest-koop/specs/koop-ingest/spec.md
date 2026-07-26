@@ -84,9 +84,9 @@ upstream content SHALL be a no-op (no new artifact and no altered provenance).
 The system SHALL place the reusable SRU mechanics in the shared ingest package (`ingest/shared`),
 not private to the KOOP source, so future SRU-based sources reuse them. These mechanics MUST cover
 `searchRetrieve` URL/query construction, `numberOfRecords` parsing, `startRecord`/`maximumRecords`
-paging, per-record verbatim extraction, and request rate-limiting. Network access MUST be via an
-injected HTTP getter (as the other ingest sources do) so the harvest is testable without live
-network calls.
+paging, per-record verbatim extraction, request rate-limiting, and transient-failure retry with
+exponential backoff. Network access MUST be via an injected HTTP getter (as the other ingest sources
+do) so the harvest is testable without live network calls.
 
 #### Scenario: SRU paging is exercised through the shared package
 
@@ -98,6 +98,12 @@ network calls.
 - **WHEN** a test exercises the harvester
 - **THEN** it supplies a fake HTTP getter returning recorded SRU responses
 - **AND** the harvester completes without any live network request
+
+#### Scenario: Transient SRU fetch failures are retried with backoff
+
+- **WHEN** a page fetch fails with a transient network error (connection/handshake timeout, EOF)
+- **THEN** the shared SRU client retries the fetch with exponential backoff, up to a bounded number of attempts
+- **AND** it fails the run only if every attempt for that page is exhausted
 
 ### Requirement: `koop` is a registered pipeline ingest source
 
