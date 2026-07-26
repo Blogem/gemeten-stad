@@ -211,7 +211,7 @@ sp:abies a skos:Concept ;
 sp:acer a skos:Concept ;
     skos:inScheme sch:tree-audit ;
     skos:prefLabel "esdoorn"@nl ;
-    skos:altLabel "Acer" , "esdoorns"@nl , "esdoorn"@nl ;
+    skos:altLabel "Acer" , "esdoorns"@nl ;
     skos:notation "Esdoorn (Acer)" .
 
 sp:aesculus a skos:Concept ;

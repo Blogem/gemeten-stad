@@ -346,9 +346,11 @@ def species():
         body = [f'sp:{g["slug"]} a skos:Concept ;',
                 f'    skos:inScheme sch:tree-audit ;',
                 f'    skos:prefLabel {pref_ttl}']
+        # dedup, and drop any altLabel identical to the prefLabel (e.g. esdoorn/Acer)
+        alt = [a for a in dict.fromkeys(alt) if a != pref_ttl]
         if alt:
             body[-1] += ' ;'
-            body.append('    skos:altLabel ' + " , ".join(dict.fromkeys(alt)))
+            body.append('    skos:altLabel ' + " , ".join(alt))
         # source notation(s): the raw soortnaamTop string(s) = identity from the data
         body[-1] += ' ;'
         body.append('    skos:notation ' + " , ".join(lit(n) for n in sorted(g["notations"])) + ' .')
