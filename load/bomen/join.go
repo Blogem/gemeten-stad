@@ -30,14 +30,14 @@ type kapenherplantJoinRow struct {
 // transaction so the pass is atomic. It runs over every kapenherplant row on every load (not just
 // newly-changed rows), because a stamgegevens-only refresh can newly resolve a
 // previously-unresolved kapenherplant row.
-func resolveJoin(ctx context.Context, pool *pgxpool.Pool) error {
+func resolveJoin(ctx context.Context, pool *pgxpool.Pool, schema string) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("bomen: resolve join: begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	stamIDs, err := queryStamgegevensIDs(ctx, tx)
+	stamIDs, err := queryStamgegevensIDs(ctx, tx, schema)
 	if err != nil {
 		return fmt.Errorf("bomen: resolve join: read stamgegevens ids: %w", err)
 	}
@@ -46,14 +46,14 @@ func resolveJoin(ctx context.Context, pool *pgxpool.Pool) error {
 		stamIDSet[id] = struct{}{}
 	}
 
-	kapRows, err := queryKapenherplantJoinRows(ctx, tx)
+	kapRows, err := queryKapenherplantJoinRows(ctx, tx, schema)
 	if err != nil {
 		return fmt.Errorf("bomen: resolve join: read kapenherplant rows: %w", err)
 	}
 
 	for _, row := range kapRows {
 		resolvedID, via := resolvePoint(row.boomID, row.boomNieuwID, stamIDSet)
-		if err := writeResolution(ctx, tx, row.id, resolvedID, via); err != nil {
+		if err := writeResolution(ctx, tx, schema, row.id, resolvedID, via); err != nil {
 			return fmt.Errorf("bomen: resolve join: write resolution for %s: %w", row.id, err)
 		}
 	}
@@ -64,8 +64,8 @@ func resolveJoin(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-func queryStamgegevensIDs(ctx context.Context, conn txExecer) ([]string, error) {
-	rows, err := conn.Query(ctx, fmt.Sprintf(`SELECT id FROM %s`, stamgegevensTable))
+func queryStamgegevensIDs(ctx context.Context, conn txExecer, schema string) ([]string, error) {
+	rows, err := conn.Query(ctx, fmt.Sprintf(`SELECT id FROM %s`, qualify(schema, stamgegevensTable)))
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +82,8 @@ func queryStamgegevensIDs(ctx context.Context, conn txExecer) ([]string, error) 
 	return out, rows.Err()
 }
 
-func queryKapenherplantJoinRows(ctx context.Context, conn txExecer) ([]kapenherplantJoinRow, error) {
-	sql := fmt.Sprintf(`SELECT id, coalesce("boomId", ''), coalesce("boomNieuwId", '') FROM %s`, kapenherplantTable)
+func queryKapenherplantJoinRows(ctx context.Context, conn txExecer, schema string) ([]kapenherplantJoinRow, error) {
+	sql := fmt.Sprintf(`SELECT id, coalesce("boomId", ''), coalesce("boomNieuwId", '') FROM %s`, qualify(schema, kapenherplantTable))
 	rows, err := conn.Query(ctx, sql)
 	if err != nil {
 		return nil, err
@@ -104,16 +104,16 @@ func queryKapenherplantJoinRows(ctx context.Context, conn txExecer) ([]kapenherp
 // writeResolution stamps resolvedGeom/resolvedVia onto one kapenherplant row. An unresolved row
 // still gets its resolvedVia written (and resolvedGeom left/set NULL) — never skipped
 // (specs/bomen-load/spec.md).
-func writeResolution(ctx context.Context, conn txExecer, kapID, resolvedStamID, via string) error {
+func writeResolution(ctx context.Context, conn txExecer, schema, kapID, resolvedStamID, via string) error {
 	if resolvedStamID == "" {
-		sql := fmt.Sprintf(`UPDATE %s SET "resolvedGeom" = NULL, "resolvedVia" = $1 WHERE id = $2`, kapenherplantTable)
+		sql := fmt.Sprintf(`UPDATE %s SET "resolvedGeom" = NULL, "resolvedVia" = $1 WHERE id = $2`, qualify(schema, kapenherplantTable))
 		_, err := conn.Exec(ctx, sql, via, kapID)
 		return err
 	}
 
 	sql := fmt.Sprintf(`
 UPDATE %s AS k SET "resolvedGeom" = s.geometrie, "resolvedVia" = $1
-FROM %s AS s WHERE k.id = $2 AND s.id = $3`, kapenherplantTable, stamgegevensTable)
+FROM %s AS s WHERE k.id = $2 AND s.id = $3`, qualify(schema, kapenherplantTable), qualify(schema, stamgegevensTable))
 	_, err := conn.Exec(ctx, sql, via, kapID, resolvedStamID)
 	return err
 }

@@ -97,15 +97,17 @@ var stamgegevensStagingColumns = []stageColumn{
 // keyed by the source's own field names — into kapenherplant_staging, replacing whatever was
 // staged there before: the staging table always reflects exactly the latest export, so upsertAll
 // can diff against it via the MERGE's own NOT MATCHED BY SOURCE clause.
-func stageKapenherplant(ctx context.Context, pool *pgxpool.Pool, rows []map[string]any) error {
-	return stageRows(ctx, pool, kapenherplantStagingTable, kapenherplantStagingColumns, rows)
+func stageKapenherplant(ctx context.Context, pool *pgxpool.Pool, schema string, rows []map[string]any) error {
+	return stageRows(ctx, pool, qualify(schema, kapenherplantStagingTable), kapenherplantStagingColumns, rows)
 }
 
 // stageStamgegevens is stageKapenherplant's stamgegevens counterpart.
-func stageStamgegevens(ctx context.Context, pool *pgxpool.Pool, rows []map[string]any) error {
-	return stageRows(ctx, pool, stamgegevensStagingTable, stamgegevensStagingColumns, rows)
+func stageStamgegevens(ctx context.Context, pool *pgxpool.Pool, schema string, rows []map[string]any) error {
+	return stageRows(ctx, pool, qualify(schema, stamgegevensStagingTable), stamgegevensStagingColumns, rows)
 }
 
+// stageRows loads rows into stagingTable, an already schema-qualified identifier (see qualify) —
+// callers never pass a bare table name.
 func stageRows(ctx context.Context, pool *pgxpool.Pool, stagingTable string, columns []stageColumn, rows []map[string]any) error {
 	truncateSQL := fmt.Sprintf(`TRUNCATE TABLE %s`, stagingTable)
 	if _, err := pool.Exec(ctx, truncateSQL); err != nil {

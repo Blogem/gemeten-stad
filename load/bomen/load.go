@@ -46,13 +46,22 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, cfg C
 		return err
 	}
 
+	// Resolve the schema this load operates in once, and thread it into every table op below, so
+	// an unqualified table name can never fall through search_path into another schema (e.g. the
+	// integration harness's search_path=<test schema>,public must never let this load reach
+	// public's real tables).
+	schema, err := loadSchema(ctx, pool)
+	if err != nil {
+		return fmt.Errorf("bomen: load: %w", err)
+	}
+
 	if cfg.Reset {
-		if err := dropTargets(ctx, pool); err != nil {
+		if err := dropTargets(ctx, pool, schema); err != nil {
 			return err
 		}
 	}
 
-	if err := ensureSchema(ctx, pool); err != nil {
+	if err := ensureSchema(ctx, pool, schema); err != nil {
 		return err
 	}
 
@@ -65,31 +74,31 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, cfg C
 		return fmt.Errorf("bomen: load: %w", err)
 	}
 
-	if err := stageKapenherplant(ctx, pool, kapRows); err != nil {
+	if err := stageKapenherplant(ctx, pool, schema, kapRows); err != nil {
 		return fmt.Errorf("bomen: load: %w", err)
 	}
-	if err := stageStamgegevens(ctx, pool, stamRows); err != nil {
+	if err := stageStamgegevens(ctx, pool, schema, stamRows); err != nil {
 		return fmt.Errorf("bomen: load: %w", err)
 	}
 
 	loadTS := time.Now().UTC()
-	if err := upsertAll(ctx, pool, loadTS); err != nil {
+	if err := upsertAll(ctx, pool, schema, loadTS); err != nil {
 		return fmt.Errorf("bomen: load: %w", err)
 	}
 
-	if err := resolveJoin(ctx, pool); err != nil {
+	if err := resolveJoin(ctx, pool, schema); err != nil {
 		return fmt.Errorf("bomen: load: %w", err)
 	}
 
-	return logRowCounts(ctx, pool)
+	return logRowCounts(ctx, pool, schema)
 }
 
 // logRowCounts logs the resulting kapenherplant/stamgegevens target row counts after a load. The
 // full-city targets are 35,202 kapenherplant / 323,728 stamgegevens rows (design.md), but this
 // logs whatever count the current data actually produced — never a hardcoded expectation.
-func logRowCounts(ctx context.Context, pool *pgxpool.Pool) error {
+func logRowCounts(ctx context.Context, pool *pgxpool.Pool, schema string) error {
 	for _, table := range targetTables {
-		count, err := countRows(ctx, pool, table)
+		count, err := countRows(ctx, pool, schema, table)
 		if err != nil {
 			return fmt.Errorf("bomen: log row count for %s: %w", table, err)
 		}
@@ -98,9 +107,9 @@ func logRowCounts(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-func countRows(ctx context.Context, pool *pgxpool.Pool, table string) (int, error) {
+func countRows(ctx context.Context, pool *pgxpool.Pool, schema, table string) (int, error) {
 	var count int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+qualify(schema, table)).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil

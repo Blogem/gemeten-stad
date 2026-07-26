@@ -83,7 +83,7 @@ var upsertSpecs = []upsertSpec{
 //
 // A matched row that is unchanged and not soft-deleted satisfies none of the MATCHED clauses, so
 // it is left untouched — the no-op requirement for a re-run against the same export holds.
-func mergeSQL(spec upsertSpec) string {
+func mergeSQL(schema string, spec upsertSpec) string {
 	keySet := make(map[string]struct{}, len(spec.keys))
 	for _, k := range spec.keys {
 		keySet[k] = struct{}{}
@@ -121,7 +121,8 @@ func mergeSQL(spec upsertSpec) string {
 	}
 	refreshSets = append(refreshSets, "source_deleted_at = NULL")
 
-	source := spec.target + "_staging"
+	target := qualify(schema, spec.target)
+	source := qualify(schema, spec.target+"_staging")
 
 	return fmt.Sprintf(`
 MERGE INTO %s AS t
@@ -135,13 +136,13 @@ WHEN NOT MATCHED THEN
   INSERT (%s) VALUES (%s)
 WHEN NOT MATCHED BY SOURCE AND t.source_deleted_at IS NULL THEN
   UPDATE SET source_deleted_at = $1;
-`, spec.target, source, strings.Join(on, " AND "), strings.Join(refreshSets, ", "), strings.Join(names, ", "), strings.Join(values, ", "))
+`, target, source, strings.Join(on, " AND "), strings.Join(refreshSets, ", "), strings.Join(names, ", "), strings.Join(values, ", "))
 }
 
 // upsertAll runs every upsertSpec's MERGE in a single transaction against one load timestamp, so
 // the whole reload is atomic: either both targets reconcile against their staging snapshot, or
 // neither does.
-func upsertAll(ctx context.Context, pool *pgxpool.Pool, loadTS time.Time) error {
+func upsertAll(ctx context.Context, pool *pgxpool.Pool, schema string, loadTS time.Time) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("bomen: upsert: begin transaction: %w", err)
@@ -149,7 +150,7 @@ func upsertAll(ctx context.Context, pool *pgxpool.Pool, loadTS time.Time) error 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	for _, spec := range upsertSpecs {
-		if _, err := tx.Exec(ctx, mergeSQL(spec), loadTS); err != nil {
+		if _, err := tx.Exec(ctx, mergeSQL(schema, spec), loadTS); err != nil {
 			return fmt.Errorf("bomen: upsert %s: %w", spec.target, err)
 		}
 	}
