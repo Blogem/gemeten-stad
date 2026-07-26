@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Fixture for the incremental-cursor tests (4.3): a second run against the same
+upstream server state as first_run.xml (same 3 already-landed publications,
+gmb-2022-100001..100003, unchanged) PLUS one genuinely new publication,
+gmb-2022-100004 (dt.available 2022-01-20, past the prior high-water mark).
+
+Used to assert: (a) the 3 already-landed ids are skipped (no rewrite, no new
+provenance line) even though they are served again inside the overlap window,
+and (b) only gmb-2022-100004 is newly landed, advancing the cursor to
+2022-01-20.
+-->
+<srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:overheidwetgeving="http://standaarden.overheid.nl/owms/terms/"
+    xmlns:gzd="http://standaarden.overheid.nl/sru">
+  <srw:version>2.0</srw:version>
+  <srw:numberOfRecords>4</srw:numberOfRecords>
+  <srw:records>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-100001</dcterms:identifier>
+                <dcterms:title>Verleend: kapvergunning Van der Pekstraat 1, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-01-10</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>1</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-100002</dcterms:identifier>
+                <dcterms:title>Aanvraag: kapvergunning Van der Pekstraat 3, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-01-11</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>2</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-100003</dcterms:identifier>
+                <dcterms:title>Besluit: kapvergunning Van der Pekstraat 5, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-01-12</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>3</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-100004</dcterms:identifier>
+                <dcterms:title>Verleend: kapvergunning Van der Pekstraat 7, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-01-20</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>4</srw:recordPosition>
+    </srw:record>
+  </srw:records>
+</srw:searchRetrieveResponse>

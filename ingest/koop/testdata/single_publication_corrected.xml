@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Fixture for the "changed publication is re-landed" test (4.4, design D4): the
+SAME publication identifier (gmb-2022-900001) and dt.available as
+single_publication.xml, but with different content: a corrected title and an
+added remark, simulating an upstream correction. Landing this after
+single_publication.xml has already been landed must overwrite the artifact
+bytes and APPEND a second provenance line, not replace the first.
+-->
+<srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:overheidwetgeving="http://standaarden.overheid.nl/owms/terms/"
+    xmlns:overheidop="http://standaarden.overheid.nl/openbaarmaking/terms/"
+    xmlns:gzd="http://standaarden.overheid.nl/sru">
+  <srw:version>2.0</srw:version>
+  <srw:numberOfRecords>1</srw:numberOfRecords>
+  <srw:records>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-900001</dcterms:identifier>
+                <dcterms:title>Verleend: kapvergunning Twiskeweg 9, Amsterdam-Noord (rectificatie)</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-05-01</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+            <overheidop:openbaarmaking>
+              <overheidop:activiteit>kappen</overheidop:activiteit>
+              <overheidop:referentienummer>Z2022-00777</overheidop:referentienummer>
+              <overheidop:opmerking>Rectificatie: adres gecorrigeerd</overheidop:opmerking>
+            </overheidop:openbaarmaking>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>1</srw:recordPosition>
+    </srw:record>
+  </srw:records>
+</srw:searchRetrieveResponse>

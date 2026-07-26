@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Fixture for the end-to-end integration test (4.5): both an aanvraag and a
+besluit publication for the SAME zaaknummer (Z2023-00042), under two distinct
+gmb identifiers. Both must be harvested and landed; no aanvraag/besluit
+dedup is applied at harvest time (that is P13's job).
+-->
+<srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:overheidwetgeving="http://standaarden.overheid.nl/owms/terms/"
+    xmlns:overheidop="http://standaarden.overheid.nl/openbaarmaking/terms/"
+    xmlns:gzd="http://standaarden.overheid.nl/sru">
+  <srw:version>2.0</srw:version>
+  <srw:numberOfRecords>2</srw:numberOfRecords>
+  <srw:records>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2023-700001</dcterms:identifier>
+                <dcterms:title>Aanvraag: kapvergunning Waddenweg 20, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2023-04-01</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+            <overheidop:openbaarmaking>
+              <overheidop:activiteit>kappen</overheidop:activiteit>
+              <overheidop:referentienummer>Z2023-00042</overheidop:referentienummer>
+            </overheidop:openbaarmaking>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>1</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2023-700002</dcterms:identifier>
+                <dcterms:title>Verleend: kapvergunning Waddenweg 20, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2023-04-10</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+            <overheidop:openbaarmaking>
+              <overheidop:activiteit>kappen</overheidop:activiteit>
+              <overheidop:referentienummer>Z2023-00042</overheidop:referentienummer>
+            </overheidop:openbaarmaking>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>2</srw:recordPosition>
+    </srw:record>
+  </srw:records>
+</srw:searchRetrieveResponse>

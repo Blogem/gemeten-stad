@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Fixture for the incremental-cursor tests (4.3): a clean-volume first run over
+three publications, dt.available strictly ascending (2022-01-10 .. 2022-01-12).
+After landing all three, the harvester's high-water-mark cursor must equal the
+MAX dt.available seen: 2022-01-12.
+-->
+<srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:overheidwetgeving="http://standaarden.overheid.nl/owms/terms/"
+    xmlns:gzd="http://standaarden.overheid.nl/sru">
+  <srw:version>2.0</srw:version>
+  <srw:numberOfRecords>3</srw:numberOfRecords>
+  <srw:records>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-100001</dcterms:identifier>
+                <dcterms:title>Verleend: kapvergunning Van der Pekstraat 1, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-01-10</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>1</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-100002</dcterms:identifier>
+                <dcterms:title>Aanvraag: kapvergunning Van der Pekstraat 3, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-01-11</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>2</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-100003</dcterms:identifier>
+                <dcterms:title>Besluit: kapvergunning Van der Pekstraat 5, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-01-12</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>3</srw:recordPosition>
+    </srw:record>
+  </srw:records>
+</srw:searchRetrieveResponse>

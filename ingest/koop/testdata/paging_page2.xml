@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Page 2 (startRecord=3) of the fake 3-record SRU result set, the terminal page.
+Paired with paging_page1.xml.
+-->
+<srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:overheidwetgeving="http://standaarden.overheid.nl/owms/terms/"
+    xmlns:gzd="http://standaarden.overheid.nl/sru">
+  <srw:version>2.0</srw:version>
+  <srw:numberOfRecords>3</srw:numberOfRecords>
+  <srw:records>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2023-800003</dcterms:identifier>
+                <dcterms:title>Besluit: kapvergunning Nieuwendammerdijk 3, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2023-06-03</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>1</srw:recordPosition>
+    </srw:record>
+  </srw:records>
+</srw:searchRetrieveResponse>
