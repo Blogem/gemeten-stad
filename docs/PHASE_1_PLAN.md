@@ -39,8 +39,9 @@ item, not a Phase-1 work item.
 
 - **Wave A — independent starts (need only P8 + the Phase-0 stores):** P11 `ingest koop` (Go SRU
   harvest) · P12 `load/graph` (the Fuseki writer). No dependency between them.
-- **Wave B — assembly (needs A + `location/`):** P13 `load koop` — consumes the harvested permits,
-  the graph writer, and the existing resolver.
+- **Wave B — assembly (needs A + `location/`):** P12b seed the gebieden `Place` skeleton (needs P12
+  + the P7 gebieden tables), then P13 `load koop` — consumes the harvested permits, the graph writer,
+  the resolver, and the seeded Place skeleton.
 - **Wave C — the audit (needs the graph populated + P7 tables):** P14 `derive` coverage.
 - **Wave D — the gate:** P15 end-to-end thread on the real Noord corpus.
 
@@ -91,6 +92,28 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   test against the isolated Fuseki dataset (`GS_TEST_FUSEKI_URL`).
 - **Depends on:** **P8** (ontology + shapes), P2 (Fuseki), P5 (`internal/testdb`).
 
+## P12b · Seed the gebieden `Place` skeleton into the graph
+
+- **Goal:** Project the Amsterdam gebieden hierarchy from PostGIS into the graph as the `gs:Place`
+  reference skeleton, so every resolved permit location already sits in a complete
+  buurt→wijk hierarchy the audit aggregates over.
+- **Entails:** read the loaded `gebieden_buurten` + `gebieden_wijken` tables (P7, PostGIS) and emit
+  one `gs:Place` per area — identity = code, `rdfs:label` = naam, `gs:within` = its containing area
+  (buurt → wijk via `ligtinwijkid`). Write the skeleton through the P12 graph writer as reference
+  data, idempotent by code. **Decision: seed ALL ~630 areas** (518 buurten + 110 wijken), not only
+  the places some permit happens to resolve to — so the coverage audit can report *"0 interventions
+  in buurt X"* as a first-class, provenanced finding and roll-up covers areas with no activity. The
+  **geometry stays in PostGIS**; only code + name + `gs:within` go to the graph. **Owner:** a small
+  bridge step that reads PostGIS (like `load geo`/`load bomen`) and hands the projected turtle to the
+  `load/graph` writer — `load/graph` itself stays Postgres-free (it writes turtle it is given).
+- **Key decisions:** the wijk→stadsdeel level is **deferred** — only buurt + wijk tables are loaded
+  (stadsdeel is derivable from the code prefix later; v1 audits a single stadsdeel, Noord) · the
+  skeleton is written as reference data and passes SHACL trivially (no shape targets `gs:Place`).
+- **Done when:** all ~630 gebieden areas exist as `gs:Place` with a name + `gs:within` parent; a
+  `gs:within+` property path rolls a buurt up to its wijk; re-running is a no-op (idempotent by code).
+- **Depends on:** P8 (`gs:Place`/`gs:within` model), P12 (graph writer), P7/`load geo` (gebieden in
+  PostGIS).
+
 ## P13 · `load koop` — assemble permits to graph + PostGIS
 
 - **Goal:** The silver step for permits: map → dedup → resolve location → assemble the
@@ -105,10 +128,9 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   count yet* (the count is Phase-2 extraction; §2 says the claim comes from law, not a stated
   ground). The resolved `Place` is a `gs:Place` keyed by its code, carrying its common name
   (`rdfs:label`) and containing area (`gs:within`) from the **gebieden skeleton** — a projection of
-  the P7 gebieden tables (codes + names + buurt→wijk→stadsdeel `gs:within`; geometry stays in
-  PostGIS), seeded once as graph reference data alongside the P12 reference model — so resolved
-  places sit in the aggregation hierarchy (roll-up traversal over `gs:within+` is a Phase-3 UI
-  concern). Values + geometry to PostGIS; provenance on every asserted triple. SHACL gate (P12).
+  the P7 gebieden tables (codes + names + buurt→wijk `gs:within`; geometry stays in PostGIS),
+  seeded once by **P12b** — so resolved places already sit in the aggregation hierarchy (roll-up
+  traversal over `gs:within+` is a Phase-3 UI concern). Values + geometry to PostGIS; provenance on every asserted triple. SHACL gate (P12).
   Idempotent by permit IRI.
 - **Key decisions:** the `Claim` shape without a count (obligation-exists vs obligation-of-N) · how
   `unresolvedLocation` permits are represented (written with the marker + confidence, never as if
