@@ -133,8 +133,10 @@ sources:
   cursor needs (the publication identifier and publication date);
 - a modest **rate limiter** (fixed inter-request interval) so sequential paging stays polite;
 - **transient-failure retry with exponential backoff** around each page fetch (bounded attempts,
-  named constants), because the KOOP endpoint intermittently drops connections mid-harvest
-  (connection/handshake timeouts, EOF) — a single transient failure must not abort a 100+ page run.
+  capped per-attempt delay, named constants), because the KOOP endpoint intermittently drops
+  connections mid-harvest (connection/handshake timeouts, EOF, dial i/o timeouts) — a single
+  transient failure must not abort a 100+ page run. Each retry is **logged** (attempt number,
+  backoff delay, startRecord, error) so a flaky harvest is observable rather than silent.
 
 Parsing uses `encoding/xml` for the envelope (`numberOfRecords`, records) capturing each record's
 `,innerxml` for verbatim landing, plus the two cursor fields — not regex (the spike used stdlib
@@ -181,10 +183,13 @@ name set.
 - **Endpoint politeness/throttling** → the shared rate limiter caps request rate; paging is
   sequential.
 - **Endpoint instability mid-harvest** (observed on the live corpus: the ~106-page full run
-  intermittently fails with connection/handshake timeouts or EOF on a random page) → the shared SRU
-  fetch retries each page with bounded exponential backoff. A run still aborts if a single page
-  exhausts all retry attempts; because landing is id-idempotent, simply re-running resumes (already
-  landed ids are skipped). Retry attempt count and base delay are named constants, tunable in P15.
+  intermittently fails with connection/handshake timeouts, EOF, or dial i/o timeouts on a random
+  page) → the shared SRU fetch retries each page with bounded exponential backoff, capping the
+  per-attempt delay, and logs every retry (attempt, delay, startRecord, error) so the flakiness is
+  observable. A run still aborts if a single page exhausts all retry attempts; because landing is
+  id-idempotent, simply re-running resumes (already landed ids are skipped). Retry attempt count,
+  base delay, and the per-attempt cap are named constants (defaults: 8 attempts, 1s base doubling to
+  a 30s cap), tunable in P15.
 
 ## Migration Plan
 
