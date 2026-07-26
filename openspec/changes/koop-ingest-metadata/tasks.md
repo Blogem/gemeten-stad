@@ -8,6 +8,9 @@
       sidecar fetches.
 - [x] 1.3 Make a missing/failed sidecar non-fatal: land the SRU record regardless and record the
       absence (provenance note or empty-marker), never dropping the publication.
+- [x] 1.4 Rate-limit + retry the sidecar fetch (D5): pace at `metadataRateInterval`, retry transient
+      transport errors with capped backoff (`metadataMaxAttempts`), and distinguish a genuine 404
+      (`shared.ErrNotFound`, skip) from a transient reset (retry; leave unlanded for a later run).
 
 ## 2. Tests
 

@@ -3,6 +3,7 @@ package koop
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,21 @@ import (
 // The sidecar carries OVERHEIDop.referentienummer (the zaaknummer), OVERHEIDop.activiteit, and
 // OVERHEIDop.gebiedsmarkering — the zaaknummer being absent from the SRU record P11 lands.
 const metadataBaseURL = "https://zoek.officielebekendmakingen.nl/"
+
+// Rate-limit + retry policy for the metadata.xml sidecar fetch. A full backfill issues one fetch
+// per publication (~10k), and the host resets connections (EOF / unexpected EOF) under rapid-fire
+// load, so fetches are paced by metadataRateInterval and each is retried with capped exponential
+// backoff — mirroring ingest/shared's SRU-page policy. A genuine 404 (shared.ErrNotFound) is NOT
+// retried; only transient transport failures are.
+const (
+	metadataRateInterval   = 200 * time.Millisecond
+	metadataMaxAttempts    = 8
+	metadataRetryBaseDelay = 1 * time.Second
+	metadataMaxRetryDelay  = 20 * time.Second
+)
+
+// metadataSleep is a seam over time.Sleep so tests can drive the pacing/backoff without waiting.
+var metadataSleep = func(d time.Duration) { time.Sleep(d) }
 
 // metadataURL builds the metadata.xml sidecar URL for a publication id, e.g.
 // "https://zoek.officielebekendmakingen.nl/gmb-2022-291126/metadata.xml".
@@ -29,15 +45,66 @@ func metadataArtifactName(id string) string {
 	return "koop/" + id + ".metadata.xml"
 }
 
+// metadataRetryBackoff computes the capped exponential backoff after a failed attempt n (1-based):
+// min(metadataRetryBaseDelay<<(n-1), metadataMaxRetryDelay). Mirrors shared.sruRetryBackoff.
+func metadataRetryBackoff(attempt int) time.Duration {
+	delay := metadataRetryBaseDelay
+	for i := 1; i < attempt; i++ {
+		if delay >= metadataMaxRetryDelay {
+			return metadataMaxRetryDelay
+		}
+		delay *= 2
+	}
+	if delay > metadataMaxRetryDelay {
+		return metadataMaxRetryDelay
+	}
+	return delay
+}
+
+// fetchMetadata fetches url, retrying transient transport failures with capped backoff. It returns
+// (body, found, err): found==false with a nil err means the sidecar is definitively absent (HTTP
+// 404, shared.ErrNotFound) — not retried; a non-nil err means every attempt failed transiently.
+func fetchMetadata(ctx context.Context, httpGet shared.HTTPGetFunc, url string) (body []byte, found bool, err error) {
+	var lastErr error
+	for attempt := 1; attempt <= metadataMaxAttempts; attempt++ {
+		rc, getErr := httpGet(ctx, url)
+		if getErr != nil {
+			if errors.Is(getErr, shared.ErrNotFound) {
+				return nil, false, nil
+			}
+			lastErr = getErr
+		} else {
+			b, readErr := io.ReadAll(rc)
+			closeErr := rc.Close()
+			switch {
+			case readErr != nil:
+				lastErr = readErr
+			case closeErr != nil:
+				lastErr = closeErr
+			default:
+				return b, true, nil
+			}
+		}
+		if attempt < metadataMaxAttempts {
+			delay := metadataRetryBackoff(attempt)
+			slog.Warn("koop: metadata sidecar fetch failed; retrying",
+				"url", url, "attempt", attempt, "maxAttempts", metadataMaxAttempts, "backoff", delay, "error", lastErr)
+			metadataSleep(delay)
+		}
+	}
+	return nil, false, fmt.Errorf("koop: fetch metadata %s after %d attempts: %w", url, metadataMaxAttempts, lastErr)
+}
+
 // landMetadata fetches and lands publication id's metadata.xml sidecar verbatim (D1), keyed by id.
 // It is gated on need (D2): the sidecar is fetched only when the SRU record was (re)landed this run
 // (recordChanged) or the sidecar is not yet present — so an unchanged re-run performs no redundant
 // sidecar fetch, while a sidecar that failed to land on an earlier run is retried on the next.
 //
-// A missing/unavailable sidecar is non-fatal (D3): some older ids return none, and the SRU record
-// has already been landed regardless, so the absence is logged and skipped rather than failing the
-// harvest or dropping the publication. An invalid identifier is skipped defensively (it never
-// reaches URL/path construction) — landRecord has already logged it.
+// Fetches are paced by metadataRateInterval and retried on transient errors (fetchMetadata). None
+// of the outcomes is fatal to the harvest (D3): a definitive 404 is logged and skipped; a sidecar
+// still failing after every retry is logged and left unlanded (so the next run retries it) rather
+// than aborting the ~10k-publication backfill. An invalid identifier is skipped defensively (it
+// never reaches URL/path construction) — landRecord has already logged it.
 func landMetadata(ctx context.Context, store *shared.RawStore, httpGet shared.HTTPGetFunc, id string, fetchedAt time.Time, recordChanged bool) error {
 	if !validIdentifier.MatchString(id) {
 		return nil
@@ -53,21 +120,20 @@ func landMetadata(ctx context.Context, store *shared.RawStore, httpGet shared.HT
 		return nil
 	}
 
+	metadataSleep(metadataRateInterval)
+
 	url := metadataURL(id)
-	rc, err := httpGet(ctx, url)
+	body, found, err := fetchMetadata(ctx, httpGet, url)
 	if err != nil {
-		// Non-fatal: the SRU record is already landed; record the absence and move on (D3).
-		slog.Warn("koop: metadata sidecar unavailable; landing record without it", "id", id, "err", err)
+		// Transient failure after every retry: non-fatal — the sidecar stays unlanded, so a later
+		// run retries it (the SRU record is already landed regardless).
+		slog.Warn("koop: metadata sidecar unavailable after retries; will retry on a later run", "id", id, "error", err)
 		return nil
 	}
-	body, readErr := io.ReadAll(rc)
-	closeErr := rc.Close()
-	if readErr != nil {
-		slog.Warn("koop: read metadata sidecar failed; landing record without it", "id", id, "err", readErr)
+	if !found {
+		// Definitive 404: this publication has no metadata sidecar (D3). Skip, don't fail.
+		slog.Info("koop: publication has no metadata sidecar", "id", id)
 		return nil
-	}
-	if closeErr != nil {
-		return fmt.Errorf("koop: close metadata body for %q: %w", id, closeErr)
 	}
 	if len(body) == 0 {
 		slog.Warn("koop: empty metadata sidecar; landing record without it", "id", id)

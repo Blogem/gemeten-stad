@@ -50,6 +50,19 @@ Use `https://zoek.officielebekendmakingen.nl/<id>/metadata.xml` (the documented 
 `DATA_SOURCES.md` §1). *Alternative:* the `repository.overheid.nl` FRBR path — heavier (full
 document); the zoek metadata URL is the minimal authoritative source for the fields P13 needs.
 
+### D5 — Rate-limit + retry the sidecar fetch; distinguish 404 from transient (added during apply)
+A full backfill issues ~10k individual sidecar fetches, and the host **resets connections under
+rapid-fire load** (observed live: `EOF` / `unexpected EOF`, escalating to an IP-level block). So the
+fetch is **paced** (`metadataRateInterval`, 200 ms, matching `shared.SRURateInterval`) and each is
+**retried with capped exponential backoff** (`metadataMaxAttempts`=8, 1 s→20 s — mirroring the SRU
+page policy). Crucially, a transient reset MUST NOT be mistaken for absence: an HTTP 404 is surfaced
+as `shared.ErrNotFound` (skip, no retry), while any transport error is retried; a sidecar still
+failing after every attempt is left **unlanded** (non-fatal) so a later run retries it. *Alternative
+rejected:* treating every error as "sidecar absent" (the first implementation) — it silently dropped
+the zaaknummer for every throttled record, defeating the change's purpose. *Alternative deferred:*
+making the pace env-configurable — kept the 200 ms default (consistent with SRU); revisit only if a
+paced run still throttles.
+
 ## Risks / Trade-offs
 
 - **[Doubled fetch volume on backfill]** ~10.5k extra small requests on a clean volume. → Reuse the

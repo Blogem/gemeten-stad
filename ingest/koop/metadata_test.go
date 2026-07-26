@@ -27,16 +27,22 @@ func TestMetadataURLAndArtifactName(t *testing.T) {
 	assert.NotEqual(t, "koop/"+id+".xml", metadataArtifactName(id))
 }
 
+// TestMain neutralises the pacing/backoff sleeps so the retry tests run instantly.
+func TestMain(m *testing.M) {
+	metadataSleep = func(time.Duration) {}
+	os.Exit(m.Run())
+}
+
 // fakeMetadataGetter serves body for any metadata.xml URL and records every requested URL. When
-// body is nil it returns a not-found error (a 404-like unavailable sidecar). A non-metadata URL is
-// an unexpected call and fails the test.
+// body is nil it returns a definitive 404 (shared.ErrNotFound — a genuinely absent sidecar, not
+// retried). A non-metadata URL is an unexpected call and fails the test.
 func fakeMetadataGetter(t *testing.T, calls *[]string, body []byte) shared.HTTPGetFunc {
 	t.Helper()
 	return func(_ context.Context, rawURL string) (io.ReadCloser, error) {
 		*calls = append(*calls, rawURL)
 		require.Contains(t, rawURL, "/metadata.xml", "only metadata sidecar fetches are expected here")
 		if body == nil {
-			return nil, fmt.Errorf("get %s: unexpected status 404 Not Found", rawURL)
+			return nil, fmt.Errorf("get %s: %w", rawURL, shared.ErrNotFound)
 		}
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
@@ -91,6 +97,47 @@ func TestLandMetadata_EmptySidecarIsNonFatal(t *testing.T) {
 	landed, err := store.Landed(metadataArtifactName(id))
 	require.NoError(t, err)
 	assert.False(t, landed, "an empty sidecar body is not landed")
+}
+
+// -- Transient errors are retried, not mistaken for absence (task 2.2) ---------
+
+// flakyGetter fails the first failN calls with a transient (non-404) error, then serves body.
+func flakyGetter(failN int, body []byte) shared.HTTPGetFunc {
+	var n int
+	return func(_ context.Context, rawURL string) (io.ReadCloser, error) {
+		n++
+		if n <= failN {
+			return nil, fmt.Errorf("get %s: EOF", rawURL) // a transient reset, NOT shared.ErrNotFound
+		}
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+}
+
+func TestLandMetadata_RetriesTransientErrorThenLands(t *testing.T) {
+	fixture := readFixture(t, "metadata_noord.xml")
+	store := shared.NewRawStore(t.TempDir())
+	const id = "gmb-2022-291126"
+
+	// Two connection resets, then success — must land, not be dropped as "absent".
+	require.NoError(t, landMetadata(context.Background(), store, flakyGetter(2, fixture), id, time.Now(), true))
+
+	got, err := os.ReadFile(filepath.Join(store.BasePath, metadataArtifactName(id)))
+	require.NoError(t, err)
+	assert.Equal(t, string(fixture), string(got), "a sidecar that succeeds after retries must be landed")
+}
+
+func TestLandMetadata_PersistentTransientErrorIsNonFatalAndUnlanded(t *testing.T) {
+	store := shared.NewRawStore(t.TempDir())
+	const id = "gmb-2022-291126"
+
+	// Every attempt fails transiently: non-fatal (no error), but the sidecar is NOT landed — so a
+	// later run will retry it (it stays unlanded, unlike a genuine 404 which is also unlanded but
+	// simply has no sidecar to fetch).
+	require.NoError(t, landMetadata(context.Background(), store, flakyGetter(1000, nil), id, time.Now(), true))
+
+	landed, err := store.Landed(metadataArtifactName(id))
+	require.NoError(t, err)
+	assert.False(t, landed, "a sidecar that never succeeds is left unlanded, not half-written")
 }
 
 // -- Idempotent / gated on need (task 2.2) ------------------------------------

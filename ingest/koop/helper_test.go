@@ -43,11 +43,11 @@ func fakeSRUGetter(t *testing.T, calls *[]string, pagesByStart map[string][]byte
 		require.NoError(t, err)
 
 		// This SRU-focused fake does not serve metadata.xml sidecar requests (exercised
-		// separately in metadata_test.go). Return not-found so Ingest's non-fatal path lands the
-		// record without the sidecar, and do NOT record the call — SRU-paging assertions stay
-		// about SRU requests only.
+		// separately in metadata_test.go). Return a definitive 404 (not retried) so Ingest's
+		// non-fatal path lands the record without the sidecar, and do NOT record the call — SRU-
+		// paging assertions stay about SRU requests only.
 		if strings.HasSuffix(u.Path, "/metadata.xml") {
-			return nil, fmt.Errorf("fakeSRUGetter: metadata sidecar not served")
+			return nil, fmt.Errorf("%s: %w", rawURL, shared.ErrNotFound)
 		}
 
 		*calls = append(*calls, rawURL)

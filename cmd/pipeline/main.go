@@ -221,6 +221,12 @@ func koopHTTPGet(ctx context.Context, url string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", url, err)
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		// A definitive absence (e.g. a publication with no metadata.xml sidecar), distinct from a
+		// transient transport error: callers skip it rather than retrying (shared.ErrNotFound).
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("get %s: %w", url, shared.ErrNotFound)
+	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
 		return nil, fmt.Errorf("get %s: unexpected status %s", url, resp.Status)
