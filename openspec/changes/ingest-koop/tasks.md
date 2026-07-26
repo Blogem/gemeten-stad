@@ -28,6 +28,6 @@
 
 ## 5. Validation
 
-- [ ] 5.1 `go build ./...` and `go vet ./...` pass.
-- [ ] 5.2 `go test ./ingest/koop/... ./ingest/shared/... ./cmd/pipeline/...` pass.
-- [ ] 5.3 `openspec validate ingest-koop --strict` passes.
+- [x] 5.1 `go build ./...` and `go vet ./...` pass.
+- [x] 5.2 `go test ./ingest/koop/... ./ingest/shared/... ./cmd/pipeline/...` pass.
+- [x] 5.3 `openspec validate ingest-koop --strict` passes.
