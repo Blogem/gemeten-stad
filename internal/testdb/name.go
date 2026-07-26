@@ -35,3 +35,15 @@ func NewDatasetName() (string, error) {
 	}
 	return "test-" + suffix, nil
 }
+
+// NewDatabaseName returns a randomly-suffixed Postgres database name for one isolated test run,
+// e.g. "testdb_a1b2c3d4". Distinct from NewSchemaName: pg_dump/pg_restore (P9 dump/restore)
+// operate at whole-database granularity, so a test exercising them needs a dedicated throwaway
+// database, not just a schema within the shared one.
+func NewDatabaseName() (string, error) {
+	suffix, err := randomSuffix(4)
+	if err != nil {
+		return "", err
+	}
+	return "testdb_" + suffix, nil
+}

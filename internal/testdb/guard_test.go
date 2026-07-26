@@ -44,3 +44,10 @@ func TestNewSchemaAndDatasetNamesAreIsolated(t *testing.T) {
 	require.NoError(t, AssertNotProduction(schemaName, datasetName),
 		"a freshly generated name must never be rejected by the guard")
 }
+
+func TestNewDatabaseNameIsIsolated(t *testing.T) {
+	dbName, err := NewDatabaseName()
+	require.NoError(t, err)
+	require.NoError(t, AssertNotProduction(dbName, ""),
+		"a freshly generated database name must never be rejected by the guard")
+}
