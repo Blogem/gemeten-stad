@@ -10,13 +10,6 @@ import (
 	"github.com/Blogem/gemeten-stad/ingest/shared"
 )
 
-// dsoPage is the minimal Datapunt bomen DSO API HAL envelope shape needed to pull a page's row
-// array back out of a landed page body: the rows live under _embedded[<dataset name>]
-// (docs/DATA_SOURCES.md §2a). This is the paged-JSON landed line shape (kapenherplant).
-type dsoPage struct {
-	Embedded map[string]json.RawMessage `json:"_embedded"`
-}
-
 // geoJSONPage is the minimal GeoJSON FeatureCollection shape a landed geojson export line takes
 // (stamgegevens, DATA_SOURCES.md §2a): each feature's flat properties plus its own geometry.
 type geoJSONPage struct {
