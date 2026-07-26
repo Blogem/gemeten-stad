@@ -189,5 +189,11 @@ func geoJSONText(v any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal geometry field: %w", err)
 	}
-	return string(b), nil
+	// A missing/null/empty geometry becomes SQL NULL, not the string "null"/"{}" — some source
+	// rows have no point (e.g. 24 of the ~324k stamgegevens features), and a typed-nil map decoded
+	// from a GeoJSON feature's null geometry marshals to "null", which ST_GeomFromGeoJSON rejects.
+	if s := string(b); s != "null" && s != "{}" {
+		return s, nil
+	}
+	return nil, nil
 }

@@ -212,3 +212,36 @@ func TestReadLandedRows_FeatureCollection(t *testing.T) {
 	assert.Equal(t, "A02", rows[1]["gbdBuurtId"])
 	assert.Equal(t, "Quercus", rows[1]["soortnaam"])
 }
+
+// -- 6. geoJSONText null handling -----------------------------------------------
+
+// TestGeoJSONText_NullGeometry guards the fix for the live full-corpus failure: ~24 of the ~324k
+// stamgegevens features have a null geometry, which decodes into a typed-nil map[string]any. Stored
+// in an any-typed row value it is a NON-nil interface, so a bare `v == nil` check misses it and
+// json.Marshal produces "null" — which ST_GeomFromGeoJSON rejects ("invalid GeoJSON
+// representation"). geoJSONText must map null/empty geometry to SQL NULL, not the string "null".
+func TestGeoJSONText_NullGeometry(t *testing.T) {
+	valid := map[string]any{"type": "Point", "coordinates": []any{4.9, 52.3}}
+
+	tests := []struct {
+		name    string
+		in      any
+		wantNil bool
+	}{
+		{"valid point marshals to json text", valid, false},
+		{"untyped nil is NULL", nil, true},
+		{"typed-nil map is NULL (the live bug)", map[string]any(nil), true},
+		{"empty object is NULL", map[string]any{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := geoJSONText(tt.in)
+			require.NoError(t, err)
+			if tt.wantNil {
+				assert.Nil(t, got, "null/empty geometry must bind SQL NULL, never the string \"null\"/\"{}\"")
+			} else {
+				assert.Equal(t, `{"coordinates":[4.9,52.3],"type":"Point"}`, got)
+			}
+		})
+	}
+}

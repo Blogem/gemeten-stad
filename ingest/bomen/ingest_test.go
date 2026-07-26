@@ -69,14 +69,11 @@ func TestDefaultPageSize(t *testing.T) {
 
 // Fake page bodies. kapenherplant is served across two HAL-style pages: page 1 carries
 // _links.next.href pointing at page 2, which itself has no next link and so ends paging.
-// stamgegevens is now served as the DSO geojson export: a GeoJSON FeatureCollection whose
-// features carry `properties` (the flat row fields) plus a GeoJSON `geometry`, paged via
-// `_format=geojson&_pageSize=<DefaultPageSize>` (same _pageSize convention as the paged-JSON
-// fetch). Unlike kapenherplant's HAL envelope, the DSO geojson export's `_links` is an ARRAY of
-// `{href, rel, type}` objects: a non-final page carries an element with `rel:"next"`; the final
-// page has no such element (only `rel:"self"`, or an empty array). stamgegevensGeoJSONSingle is
-// the single-page case; the stamgegevensGeoJSONPage1/2 pair covers the follow-next case, where
-// page 1's `rel:"next"` array element is followed verbatim to page 2.
+// stamgegevens is served as the DSO geojson export: a single GeoJSON FeatureCollection whose
+// features carry `properties` (the flat row fields) plus a GeoJSON `geometry`, fetched in ONE
+// unpaged `?_format=geojson` request. Paginating the export (`_pageSize`/`page=`) would hit the
+// DSO's hard 100-page cap, which stamgegevens (>100 pages) exceeds; the unpaged export returns the
+// whole collection in one response with no cap, so there is no next-link to follow.
 const (
 	kapenherplantPage1 = `{"_embedded":{"kapenherplant":[{"boomId":"1"},{"boomId":"2"}]},"_links":{"next":{"href":"https://fake.example/bomen/kapenherplant-next-page"}}}`
 	kapenherplantPage2 = `{"_embedded":{"kapenherplant":[{"boomId":"3"}]}}`
@@ -86,15 +83,7 @@ const (
 		`{"type":"Feature","id":"boom-2","geometry":{"type":"Point","coordinates":[4.9,52.3]},"properties":{"id":"boom-2","gbdBuurtId":"A02","soortnaam":"Berk"}}` +
 		`],"_links":[{"href":"https://fake.example/bomen/stamgegevens/?_format=geojson&_pageSize=1000","rel":"self","type":"application/geo+json"}]}`
 
-	stamgegevensGeoJSONPage1 = `{"type":"FeatureCollection","features":[` +
-		`{"type":"Feature","id":"boom-1","geometry":{"type":"Point","coordinates":[4.9,52.3]},"properties":{"id":"boom-1","gbdBuurtId":"A01","soortnaam":"Tilia"}}` +
-		`],"_links":[{"href":"https://fake.example/bomen/stamgegevens/?_format=geojson&_pageSize=1000&page=2","rel":"next","type":"application/geo+json"}]}`
-	stamgegevensGeoJSONPage2 = `{"type":"FeatureCollection","features":[` +
-		`{"type":"Feature","id":"boom-2","geometry":{"type":"Point","coordinates":[4.9,52.3]},"properties":{"id":"boom-2","gbdBuurtId":"A02","soortnaam":"Berk"}}` +
-		`],"_links":[{"href":"https://fake.example/bomen/stamgegevens/?_format=geojson&_pageSize=1000&page=2","rel":"self","type":"application/geo+json"}]}`
-
 	kapenherplantNextURL = "https://fake.example/bomen/kapenherplant-next-page"
-	stamgegevensNextURL  = "https://fake.example/bomen/stamgegevens/?_format=geojson&_pageSize=1000&page=2"
 )
 
 // fakePagedHTTPGet dispatches by URL content rather than exact match for first-page requests
@@ -113,28 +102,6 @@ func fakePagedHTTPGet(calls *[]string) func(ctx context.Context, url string) (io
 			return io.NopCloser(strings.NewReader(kapenherplantPage1)), nil
 		case strings.Contains(url, "stamgegevens"):
 			return io.NopCloser(strings.NewReader(stamgegevensGeoJSONSingle)), nil
-		default:
-			return nil, fmt.Errorf("unexpected URL %q", url)
-		}
-	}
-}
-
-// fakeGeoJSONFollowNextHTTPGet is fakePagedHTTPGet's stamgegevens-follow-next counterpart:
-// kapenherplant is served the same two HAL pages, but stamgegevens is now split across two
-// geojson responses, following page 1's array-shaped `_links` element with `rel:"next"` to fetch
-// page 2 (whose own `_links` carries no `rel:"next"` element, ending pagination).
-func fakeGeoJSONFollowNextHTTPGet(calls *[]string) func(ctx context.Context, url string) (io.ReadCloser, error) {
-	return func(_ context.Context, url string) (io.ReadCloser, error) {
-		*calls = append(*calls, url)
-		switch {
-		case url == kapenherplantNextURL:
-			return io.NopCloser(strings.NewReader(kapenherplantPage2)), nil
-		case strings.Contains(url, "kapenherplant"):
-			return io.NopCloser(strings.NewReader(kapenherplantPage1)), nil
-		case url == stamgegevensNextURL:
-			return io.NopCloser(strings.NewReader(stamgegevensGeoJSONPage2)), nil
-		case strings.Contains(url, "stamgegevens"):
-			return io.NopCloser(strings.NewReader(stamgegevensGeoJSONPage1)), nil
 		default:
 			return nil, fmt.Errorf("unexpected URL %q", url)
 		}
@@ -223,26 +190,8 @@ func TestIngest_LandsBothArtifactsAcrossPages(t *testing.T) {
 	}
 	require.NotEmpty(t, stamgegevensCall, "expected a fetched URL for stamgegevens")
 	assert.Contains(t, stamgegevensCall, "_format=geojson", "stamgegevens must be fetched via the DSO geojson export")
-	assert.Contains(t, stamgegevensCall, "_pageSize=", "stamgegevens' geojson export is paged via _pageSize, same convention as kapenherplant's paged JSON")
-}
-
-// TestIngest_StamgegevensGeoJSONFollowsNextLink covers the geojson pagination case: a
-// stamgegevens export split across two geojson responses (page 1's array-shaped `_links` element
-// with `rel:"next"` pointing at page 2) must have both responses fetched and both landed as
-// separate JSONL lines, verbatim.
-func TestIngest_StamgegevensGeoJSONFollowsNextLink(t *testing.T) {
-	store := shared.NewRawStore(t.TempDir())
-	var calls []string
-
-	err := Ingest(context.Background(), store, fakeGeoJSONFollowNextHTTPGet(&calls))
-	require.NoError(t, err)
-
-	stamgegevensLines := readLandedJSONLLines(t, store, ArtifactStamgegevens)
-	require.Len(t, stamgegevensLines, 2, "one JSONL line per fetched stamgegevens geojson response")
-	assert.Equal(t, stamgegevensGeoJSONPage1, stamgegevensLines[0], "page 1 must be landed verbatim, not re-encoded")
-	assert.Equal(t, stamgegevensGeoJSONPage2, stamgegevensLines[1], "page 2 must be landed verbatim, not re-encoded")
-
-	assert.Contains(t, calls, stamgegevensNextURL, "Ingest must follow stamgegevens' rel:\"next\" _links array element to fetch the second geojson response")
+	assert.NotContains(t, stamgegevensCall, "_pageSize", "the unpaged geojson export must NOT set _pageSize (paginating hits the DSO 100-page cap)")
+	assert.NotContains(t, stamgegevensCall, "page=", "the unpaged geojson export must NOT set page=")
 }
 
 // TestDatasetFormats pins each sub-dataset's ingest format: stamgegevens now ingests via the DSO

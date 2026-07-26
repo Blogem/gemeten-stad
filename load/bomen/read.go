@@ -1,21 +1,18 @@
 package bomen
 
 import (
-	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/Blogem/gemeten-stad/ingest/shared"
 )
 
-// geoJSONPage is the minimal GeoJSON FeatureCollection shape a landed geojson export line takes
-// (stamgegevens, DATA_SOURCES.md §2a): each feature's flat properties plus its own geometry.
-type geoJSONPage struct {
-	Features []geoJSONFeature `json:"features"`
-}
-
+// geoJSONFeature is the minimal GeoJSON feature shape a landed geojson export takes (stamgegevens,
+// DATA_SOURCES.md §2a): each feature's flat properties plus its own geometry.
 type geoJSONFeature struct {
 	Properties map[string]any `json:"properties"`
 	Geometry   map[string]any `json:"geometry"`
@@ -43,22 +40,22 @@ func readLandedRows(store *shared.RawStore, artifact, embedKey string) ([]map[st
 	}
 	defer func() { _ = f.Close() }()
 
+	// A landed artifact is a stream of one or more concatenated JSON values (a JSON value per
+	// paged-JSON page for kapenherplant, or a single large FeatureCollection for the stamgegevens
+	// geojson export — which can be ~210MB). A streaming json.Decoder reads value-by-value with no
+	// line-length limit, so it handles both without buffering a whole line.
 	var rows []map[string]any
-	scanner := bufio.NewScanner(f)
-	// Pages can be large (hundreds of rows each); grow past bufio.Scanner's 64KiB default.
-	scanner.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-
+	dec := json.NewDecoder(f)
+	for {
 		var envelope struct {
 			Embedded map[string]json.RawMessage `json:"_embedded"`
-			Features json.RawMessage            `json:"features"`
+			Features []geoJSONFeature           `json:"features"`
 		}
-		if err := json.Unmarshal(line, &envelope); err != nil {
-			return nil, fmt.Errorf("bomen: decode landed line for %s: %w", artifact, err)
+		if err := dec.Decode(&envelope); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("bomen: decode landed value for %s: %w", artifact, err)
 		}
 
 		switch {
@@ -74,11 +71,7 @@ func readLandedRows(store *shared.RawStore, artifact, embedKey string) ([]map[st
 			rows = append(rows, pageRows...)
 
 		case envelope.Features != nil:
-			var page geoJSONPage
-			if err := json.Unmarshal(line, &page); err != nil {
-				return nil, fmt.Errorf("bomen: decode landed geojson page for %s: %w", artifact, err)
-			}
-			for _, feature := range page.Features {
+			for _, feature := range envelope.Features {
 				row := make(map[string]any, len(feature.Properties)+1)
 				for k, v := range feature.Properties {
 					row[k] = v
@@ -88,11 +81,8 @@ func readLandedRows(store *shared.RawStore, artifact, embedKey string) ([]map[st
 			}
 
 		default:
-			return nil, fmt.Errorf("bomen: landed line for %s has neither _embedded nor features", artifact)
+			return nil, fmt.Errorf("bomen: landed value for %s has neither _embedded nor features", artifact)
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("bomen: scan landed %s: %w", artifact, err)
 	}
 	return rows, nil
 }

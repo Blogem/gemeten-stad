@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"time"
 
 	"github.com/Blogem/gemeten-stad/ingest/shared"
@@ -26,33 +25,6 @@ type nextLinkEnvelope struct {
 			Href string `json:"href"`
 		} `json:"next"`
 	} `json:"_links"`
-}
-
-// geoJSONLinksEnvelope is the minimal shape this package needs from a DSO
-// GeoJSON export response. Unlike the paged-JSON representation's _links
-// object, the GeoJSON export's _links is an ARRAY of {href, rel, ...} link
-// objects; the next page (if any) is the element whose Rel is "next".
-type geoJSONLinksEnvelope struct {
-	Links []struct {
-		Href string `json:"href"`
-		Rel  string `json:"rel"`
-	} `json:"_links"`
-}
-
-// geoJSONNextLink extracts the next-page URL from a landed GeoJSON export
-// response body, per geoJSONLinksEnvelope's array shape. It returns "" when
-// there is no "next" link (the last page).
-func geoJSONNextLink(body []byte) (string, error) {
-	var env geoJSONLinksEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		return "", fmt.Errorf("bomen: decode geojson links: %w", err)
-	}
-	for _, link := range env.Links {
-		if link.Rel == "next" {
-			return link.Href, nil
-		}
-	}
-	return "", nil
 }
 
 // Ingest fetches both bomen sub-datasets (kapenherplant, stamgegevens) in
@@ -119,31 +91,23 @@ func ingestPagedJSON(ctx context.Context, store *shared.RawStore, httpGet httpGe
 	return nil
 }
 
-// ingestGeoJSON fetches dataset's `?_format=geojson` export page by page
-// (`_pageSize` bounds each response — the full unpaged export is ~210MB, too
-// large to buffer or land as one line), following each response's own
-// _links "next"-rel entry until exhausted. Unlike the paged-JSON
-// representation, the GeoJSON export is not page-capped at page 100. Each
-// page's response body is accumulated as one JSONL line, then the
-// accumulated run is landed as a single new version of dataset.Artifact.
+// ingestGeoJSON fetches dataset's `?_format=geojson` export in a SINGLE
+// unpaged request and streams the response straight into the versioned store.
+// The DSO paginated representations (JSON or GeoJSON with `_pageSize`) are
+// hard-capped at page 100 (`403 "Page number cannot exceed 100 ... download a
+// dump file"`), which `stamgegevens` (>100 pages) exceeds; the unpaged GeoJSON
+// export instead returns the whole FeatureCollection as one (large) response
+// with no page cap. It is streamed directly to LandVersion (not buffered) so
+// the ~210MB body never sits in memory, and landed verbatim.
 func ingestGeoJSON(ctx context.Context, store *shared.RawStore, httpGet httpGetFunc, dataset Dataset) error {
-	var buf bytes.Buffer
-
-	url := dataset.BaseURL + "?_format=geojson&_pageSize=" + strconv.Itoa(DefaultPageSize)
-	for url != "" {
-		body, nextURL, err := fetchGeoJSONPage(ctx, httpGet, url)
-		if err != nil {
-			return err
-		}
-		if err := json.Compact(&buf, body); err != nil {
-			return fmt.Errorf("bomen: compact geojson body from %s: %w", url, err)
-		}
-		buf.WriteByte('\n')
-		url = nextURL
+	url := dataset.BaseURL + "?_format=geojson"
+	rc, err := httpGet(ctx, url)
+	if err != nil {
+		return fmt.Errorf("bomen: fetch %s: %w", url, err)
 	}
+	defer func() { _ = rc.Close() }()
 
-	sourceURL := dataset.BaseURL + "?_format=geojson"
-	if _, err := store.LandVersion(dataset.Artifact, &buf, sourceURL, time.Now()); err != nil {
+	if _, err := store.LandVersion(dataset.Artifact, rc, url, time.Now()); err != nil {
 		return fmt.Errorf("bomen: land %q: %w", dataset.Artifact, err)
 	}
 	return nil
@@ -168,26 +132,4 @@ func fetchPage(ctx context.Context, httpGet httpGetFunc, url string) (body []byt
 		return nil, "", fmt.Errorf("bomen: decode page from %s: %w", url, err)
 	}
 	return body, env.Links.Next.Href, nil
-}
-
-// fetchGeoJSONPage fetches a single GeoJSON export page at url, returning its
-// raw body verbatim alongside the next page's URL (empty when this was the
-// last page), per the GeoJSON export's array-shaped _links (geoJSONNextLink).
-func fetchGeoJSONPage(ctx context.Context, httpGet httpGetFunc, url string) (body []byte, nextURL string, err error) {
-	rc, err := httpGet(ctx, url)
-	if err != nil {
-		return nil, "", fmt.Errorf("bomen: fetch %s: %w", url, err)
-	}
-	defer func() { _ = rc.Close() }()
-
-	body, err = io.ReadAll(rc)
-	if err != nil {
-		return nil, "", fmt.Errorf("bomen: read body from %s: %w", url, err)
-	}
-
-	nextURL, err = geoJSONNextLink(body)
-	if err != nil {
-		return nil, "", fmt.Errorf("bomen: %w (from %s)", err, url)
-	}
-	return body, nextURL, nil
 }
