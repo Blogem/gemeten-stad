@@ -8,11 +8,17 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"time"
 
 	"github.com/Blogem/gemeten-stad/ingest/shared"
 )
+
+// validIdentifier is the strict shape of a KOOP gmb (Gemeenteblad) identifier, e.g.
+// "gmb-2022-291126". Anchored and restricted to digits/hyphens so a hostile
+// dcterms:identifier (e.g. containing "/" or "..") can never be used to build a path that
+// escapes the intended koop/ landing prefix.
+var validIdentifier = regexp.MustCompile(`^gmb-\d{4}-\d+$`)
 
 // Ingest harvests Amsterdam kap/verplant omgevingsvergunningen into store: it reads the
 // persisted dt.available high-water mark (defaulting to DefaultSinceDate on a clean volume),
@@ -66,12 +72,15 @@ func Ingest(ctx context.Context, store *shared.RawStore, httpGet shared.HTTPGetF
 	return nil
 }
 
-// landRecord lands rec verbatim under a koop/ prefix (D2), unless it is missing a usable
-// identifier (defensive, mirrors spike-b's gid check) or is already landed with identical
-// content (D4 no-op skip). A landed record whose content hash has changed is re-landed, which
-// overwrites the artifact bytes and appends a new provenance record.
+// landRecord lands rec verbatim under a koop/ prefix (D2), unless its identifier does not match
+// the strict gmb-<year>-<number> shape (defensive: rec.Identifier is external input and is used
+// to build a landing path, so anything not matching validIdentifier — including path-traversal
+// payloads like "gmb-../../etc/passwd" — is skipped, not landed) or it is already landed with
+// identical content (D4 no-op skip). A landed record whose content hash has changed is re-landed,
+// which overwrites the artifact bytes and appends a new provenance record.
 func landRecord(store *shared.RawStore, rec shared.SRURecord, sourceURL string, fetchedAt time.Time) error {
-	if rec.Identifier == "" || !strings.HasPrefix(rec.Identifier, "gmb-") {
+	if !validIdentifier.MatchString(rec.Identifier) {
+		slog.Warn("koop: skipping record with invalid identifier", "identifier", rec.Identifier)
 		return nil
 	}
 
