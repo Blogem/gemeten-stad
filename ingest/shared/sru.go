@@ -101,9 +101,11 @@ func ParseSRUResponse(body []byte) (numberOfRecords int, records []SRURecord, er
 }
 
 // parseSRURecordFields walks a record's inner XML (KOOP nests the actual
-// metadata inside recordData, several levels deep) looking for
-// dcterms:identifier and dt.available by local element name, ignoring
-// namespace prefixes and nesting depth.
+// metadata inside recordData, several levels deep) looking for the
+// identifier and dt.available elements by local element name, ignoring
+// namespace prefixes and nesting depth. Note dt.available's "dt." is part
+// of the wire element's local name (e.g. overheidwetgeving:dt.available),
+// not a namespace prefix — it is matched verbatim as "dt.available".
 func parseSRURecordFields(innerXML []byte) (SRURecord, error) {
 	rec := SRURecord{InnerXML: innerXML}
 
@@ -131,7 +133,7 @@ func parseSRURecordFields(innerXML []byte) (SRURecord, error) {
 			if rec.Identifier == "" {
 				rec.Identifier = strings.TrimSpace(text)
 			}
-		case "available":
+		case "dt.available":
 			var text string
 			if err := decoder.DecodeElement(&text, &se); err != nil {
 				return SRURecord{}, fmt.Errorf("shared: parse record available: %w", err)
@@ -146,11 +148,13 @@ func parseSRURecordFields(innerXML []byte) (SRURecord, error) {
 
 // FetchSRUAll pages endpoint for query to exhaustion, invoking yield for
 // each record encountered. It fetches startRecord=1 first, reads
-// numberOfRecords from that page, then keeps advancing startRecord by
-// SRUPageSize until every record has been yielded. Pages are rate-limited by
-// SRURateInterval (no delay before the first request). If yield returns an
-// error, paging stops immediately and that error is returned. Returns the
-// numberOfRecords reported by the endpoint.
+// numberOfRecords from that page, then keeps advancing startRecord by the
+// number of records the previous page actually returned (not the requested
+// page size, so a short/partial page is handled correctly) until every
+// record has been yielded. Pages are rate-limited by SRURateInterval (no
+// delay before the first request). If yield returns an error, paging stops
+// immediately and that error is returned. Returns the numberOfRecords
+// reported by the endpoint.
 func FetchSRUAll(ctx context.Context, httpGet HTTPGetFunc, endpoint, query string, yield func(SRURecord) error) (numberOfRecords int, err error) {
 	if httpGet == nil {
 		return 0, fmt.Errorf("shared: httpGet must not be nil")
@@ -190,8 +194,11 @@ func FetchSRUAll(ctx context.Context, httpGet HTTPGetFunc, endpoint, query strin
 			}
 		}
 
-		startRecord += SRUPageSize
-		if len(records) == 0 || startRecord > numberOfRecords {
+		if len(records) == 0 {
+			break
+		}
+		startRecord += len(records)
+		if startRecord > numberOfRecords {
 			break
 		}
 	}
