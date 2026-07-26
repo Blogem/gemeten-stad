@@ -138,7 +138,9 @@ DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is 
   full-corpus reproduction of the exact Spike D rates (69/15, 90%/100%) against the real extract are
   documented in `deploy/compose/README.md`; the full-corpus run is currently gated on a known dev
   limitation (the `raw-data` volume is not yet bridged to `GS_RAW_DATA_PATH`), noted there as a
-  deploy follow-up. `spikes/spike-d/` has been removed — its behaviour now lives in these packages.
+  deploy follow-up. `spikes/spike-d/` is retained as the empirical record (its findings), like the
+  other spikes; its *behaviour* now lives in these packages, so the spike is no longer the source of
+  truth, only the evidence.
 - **Depends on:** P1, P3.
 
 ## P7 · Preload kapenherplant + stamgegevens · **DONE**

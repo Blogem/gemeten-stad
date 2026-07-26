@@ -101,5 +101,5 @@ stack including `gdal`. Not run in default CI — run by hand when validating a 
 4. `pipeline load geo --reset` — runs the actual `ogr2ogr`/`lvbag` load against the real extract.
 5. Assert the Spike D sanity numbers: **69 Noord buurten / 15 Noord wijken**, a single SRID
    **28992**, and the **90% address-precision / 100% point-in-polygon** resolution distribution
-   (see `docs/DATA_SOURCES.md` §8 for the reference figures and methodology — the throwaway spike
-   that established them has since been retired in favor of these packages).
+   (see `docs/DATA_SOURCES.md` §8 for the reference figures and methodology, and `spikes/spike-d/`
+   for the original empirical write-up these packages promoted into production).

@@ -1,0 +1,4 @@
+# Large / regenerable artifacts — kept on the local filesystem as the spike's
+# landing cache (so a ~3.6 GB re-download and the all-NL parse never repeat),
+# but never committed. The Docker pgdata volume lives outside the tree.
+data/

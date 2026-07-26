@@ -4,8 +4,8 @@
 # geometry) and Apache Jena Fuseki (the RDF graph) — plus the server itself and an
 # idle GDAL sidecar that P6's BAG/geo load drives with `compose exec`.
 #
-# The db and fuseki service shapes were validated in spikes/spike-e (and the now-retired
-# spike-d, promoted into ingest/load in P6). Data lives on named volumes so a loaded stack survives
+# The db and fuseki service shapes were validated in spikes/spike-d and spikes/spike-e; spike-d's
+# geo-load behaviour was promoted into ingest/load in P6. Data lives on named volumes so a loaded stack survives
 # `compose down` — the same volumes the future `pipeline dump` (P9) round-trips.
 #
 # Config is env-driven: copy .env.example to .env, or rely on the ${VAR:-default}
