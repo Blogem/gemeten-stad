@@ -1,14 +1,14 @@
 ## 1. Change detection (pure Go — unit-tested first)
 
-- [ ] 1.1 Define an `entitySignature` type keyed by subject IRI holding its valid-time-agnostic
+- [x] 1.1 Define an `entitySignature` type keyed by subject IRI holding its valid-time-agnostic
       content (sorted `(predicate, object)` rows + RDF-star annotation rows), and a helper that
       marks an entity evolving iff a `gs:validFrom` is asserted for it (D4).
-- [ ] 1.2 Implement `classify(candidate, live map[iri]entitySignature)` returning distinct buckets
+- [x] 1.2 Implement `classify(candidate, live map[iri]entitySignature)` returning distinct buckets
       `new, changed, unchanged, immutableConflict []iri` as a pure function: absent in live → new;
       equal signature → unchanged; differing signature on an evolving entity → changed; differing
       signature on an immutable entity → immutableConflict (skip-but-surface, not folded into
       unchanged) (D4).
-- [ ] 1.3 Unit tests (table-driven, testify) for `classify` covering: new IRI, unchanged re-run,
+- [x] 1.3 Unit tests (table-driven, testify) for `classify` covering: new IRI, unchanged re-run,
       changed evolving edge (place change and confidence-only change), immutable re-assert skipped,
       immutable-conflict bucketed separately, and valid-time-only difference classified as unchanged.
 
