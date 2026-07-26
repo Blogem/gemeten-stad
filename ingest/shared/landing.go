@@ -54,6 +54,16 @@ func (s *RawStore) provenancePath(name string) string {
 	return s.artifactPath(name) + ".prov.jsonl"
 }
 
+// checkContained verifies that name's resolved artifact path stays within BasePath, returning a
+// wrapped error if it does not (e.g. name contains "../" segments that escape BasePath).
+func (s *RawStore) checkContained(name string) error {
+	rel, err := filepath.Rel(s.BasePath, s.artifactPath(name))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("shared: artifact name %q escapes base path", name)
+	}
+	return nil
+}
+
 // Landed reports whether an artifact named `name` is already present in the store.
 func (s *RawStore) Landed(name string) (bool, error) {
 	_, err := os.Stat(s.artifactPath(name))
@@ -73,7 +83,15 @@ func (s *RawStore) Landed(name string) (bool, error) {
 //
 // name may be prefixed (e.g. "koop/gmb-2022-291126.xml"), in which case the prefix's parent
 // directory is created as needed.
+//
+// Defense-in-depth: name's resolved artifact path is verified to stay within BasePath before
+// anything is written, so a malformed/hostile name (e.g. containing "../") can never land
+// outside the store, regardless of what upstream validation a given source performs.
 func (s *RawStore) Land(name string, r io.Reader, sourceURL string, fetchedAt time.Time) (Provenance, error) {
+	if err := s.checkContained(name); err != nil {
+		return Provenance{}, err
+	}
+
 	if err := os.MkdirAll(filepath.Dir(s.artifactPath(name)), 0o755); err != nil {
 		return Provenance{}, fmt.Errorf("shared: create raw store dir for %q: %w", name, err)
 	}
