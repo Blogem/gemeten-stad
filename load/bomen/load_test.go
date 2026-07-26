@@ -31,7 +31,9 @@ func TestMergeSQL_FixtureSpec(t *testing.T) {
 	normalized := strings.Join(strings.Fields(sql), " ")
 
 	assert.Contains(t, normalized, "MERGE INTO bomen_test_target")
-	assert.Contains(t, normalized, "t.id = s.id", "must be keyed on id")
+	assert.Contains(t, normalized, `t."id" = s."id"`, "must be keyed on id (identifiers are quoted)")
+	assert.Contains(t, normalized, "WHEN MATCHED AND t.raw IS DISTINCT FROM s.raw", "changed rows must be refreshed")
+	assert.Contains(t, normalized, "WHEN MATCHED AND t.source_deleted_at IS NOT NULL", "a reappearing soft-deleted row must be un-soft-deleted")
 	assert.Contains(t, normalized, "WHEN NOT MATCHED THEN")
 	assert.Contains(t, normalized, "WHEN NOT MATCHED BY SOURCE")
 	assert.Contains(t, normalized, "source_deleted_at")
@@ -39,8 +41,9 @@ func TestMergeSQL_FixtureSpec(t *testing.T) {
 }
 
 // TestMergeSQL_UpsertSpecs asserts every pinned upsertSpecs entry produces a MERGE statement
-// satisfying the same contract: keyed on id, upserting new rows, and soft-deleting rows that
-// disappear from staging via source_deleted_at.
+// satisfying the same contract: keyed on id, refreshing changed rows, un-soft-deleting rows
+// that reappear, inserting new rows, and soft-deleting rows that disappear from staging via
+// source_deleted_at.
 func TestMergeSQL_UpsertSpecs(t *testing.T) {
 	require.NotEmpty(t, upsertSpecs, "upsertSpecs must describe at least one target table")
 
@@ -52,7 +55,9 @@ func TestMergeSQL_UpsertSpecs(t *testing.T) {
 			assert.Contains(t, spec.keys, "id", "bomen upsert specs are keyed on the resolved id")
 			assert.Contains(t, normalized, "MERGE")
 			assert.Contains(t, normalized, spec.target)
-			assert.Contains(t, normalized, "t.id = s.id")
+			assert.Contains(t, normalized, `t."id" = s."id"`, "must be keyed on id (identifiers are quoted)")
+			assert.Contains(t, normalized, "WHEN MATCHED AND t.raw IS DISTINCT FROM s.raw", "changed rows must be refreshed")
+			assert.Contains(t, normalized, "WHEN MATCHED AND t.source_deleted_at IS NOT NULL", "a reappearing soft-deleted row must be un-soft-deleted")
 			assert.Contains(t, normalized, "WHEN NOT MATCHED")
 			assert.Contains(t, normalized, "WHEN NOT MATCHED BY SOURCE")
 			assert.Contains(t, normalized, "source_deleted_at")
