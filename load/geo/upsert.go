@@ -30,14 +30,16 @@ type upsertSpec struct {
 }
 
 // upsertSpecs is the pinned load/geo <-> location resolver table contract: the BAG family keyed
-// by voorkomen identity (identificatie, begingeldigheid, tijdstipregistratie), and the
+// by voorkomen identity (identificatie, voorkomenidentificatie) — the real BAG voorkomen key,
+// since a correction can share begingeldigheid AND tijdstipregistratie across voorkomens — and the
 // gebieden/CBS family keyed by identificatie alone.
 var upsertSpecs = []upsertSpec{
 	{
 		target: "bag_openbareruimte",
-		keys:   []string{"identificatie", "begingeldigheid", "tijdstipregistratie"},
+		keys:   []string{"identificatie", "voorkomenidentificatie"},
 		cols: []column{
 			{"identificatie", ""},
+			{"voorkomenidentificatie", "integer"},
 			{"naam", ""},
 			{"begingeldigheid", "date"},
 			{"eindgeldigheid", "date"},
@@ -48,9 +50,10 @@ var upsertSpecs = []upsertSpec{
 	},
 	{
 		target: "bag_nummeraanduiding",
-		keys:   []string{"identificatie", "begingeldigheid", "tijdstipregistratie"},
+		keys:   []string{"identificatie", "voorkomenidentificatie"},
 		cols: []column{
 			{"identificatie", ""},
+			{"voorkomenidentificatie", "integer"},
 			{"postcode", ""},
 			{"huisnummer", "integer"},
 			{"openbareruimteref", ""},
@@ -63,9 +66,10 @@ var upsertSpecs = []upsertSpec{
 	},
 	{
 		target: "bag_verblijfsobject",
-		keys:   []string{"identificatie", "begingeldigheid", "tijdstipregistratie"},
+		keys:   []string{"identificatie", "voorkomenidentificatie"},
 		cols: []column{
 			{"identificatie", ""},
+			{"voorkomenidentificatie", "integer"},
 			{"hoofdadresnummeraanduidingref", ""},
 			{"begingeldigheid", "date"},
 			{"eindgeldigheid", "date"},
@@ -77,9 +81,10 @@ var upsertSpecs = []upsertSpec{
 	},
 	{
 		target: "bag_ligplaats",
-		keys:   []string{"identificatie", "begingeldigheid", "tijdstipregistratie"},
+		keys:   []string{"identificatie", "voorkomenidentificatie"},
 		cols: []column{
 			{"identificatie", ""},
+			{"voorkomenidentificatie", "integer"},
 			{"hoofdadresnummeraanduidingref", ""},
 			{"begingeldigheid", "date"},
 			{"eindgeldigheid", "date"},
@@ -91,9 +96,10 @@ var upsertSpecs = []upsertSpec{
 	},
 	{
 		target: "bag_standplaats",
-		keys:   []string{"identificatie", "begingeldigheid", "tijdstipregistratie"},
+		keys:   []string{"identificatie", "voorkomenidentificatie"},
 		cols: []column{
 			{"identificatie", ""},
+			{"voorkomenidentificatie", "integer"},
 			{"hoofdadresnummeraanduidingref", ""},
 			{"begingeldigheid", "date"},
 			{"eindgeldigheid", "date"},

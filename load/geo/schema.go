@@ -48,39 +48,44 @@ func dropTargets(ctx context.Context, pool *pgxpool.Pool) error {
 
 // ensureSchema creates the target tables (CREATE TABLE IF NOT EXISTS) if they are not already
 // present. Column names/types match the pinned load/geo <-> location resolver contract; the
-// voorkomen identity (identificatie, begingeldigheid, tijdstipregistratie) is the BAG upsert key,
-// identificatie alone is the gebieden/CBS upsert key. source_deleted_at is nullable soft-delete
-// provenance — set only when a target row goes absent from a reload, never a resolver filter.
+// voorkomen identity (identificatie, voorkomenidentificatie) is the BAG upsert key — the real BAG
+// voorkomen key, because a correction can produce two voorkomens sharing begingeldigheid AND
+// tijdstipregistratie, distinguished only by voorkomenidentificatie. identificatie alone is the
+// gebieden/CBS upsert key. source_deleted_at is nullable soft-delete provenance — set only when a
+// target row goes absent from a reload, never a resolver filter.
 func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	const stmt = `
 CREATE TABLE IF NOT EXISTS bag_openbareruimte (
-    identificatie        text        NOT NULL,
-    naam                 text,
-    begingeldigheid      date        NOT NULL,
-    eindgeldigheid       date,
-    eindregistratie      timestamptz,
-    tijdstipregistratie  timestamptz NOT NULL,
-    status               text,
-    source_deleted_at    timestamptz,
-    PRIMARY KEY (identificatie, begingeldigheid, tijdstipregistratie)
+    identificatie          text        NOT NULL,
+    voorkomenidentificatie integer     NOT NULL,
+    naam                   text,
+    begingeldigheid        date        NOT NULL,
+    eindgeldigheid         date,
+    eindregistratie        timestamptz,
+    tijdstipregistratie    timestamptz NOT NULL,
+    status                 text,
+    source_deleted_at      timestamptz,
+    PRIMARY KEY (identificatie, voorkomenidentificatie)
 );
 
 CREATE TABLE IF NOT EXISTS bag_nummeraanduiding (
-    identificatie        text        NOT NULL,
-    postcode             text,
-    huisnummer           integer,
-    openbareruimteref    text,
-    begingeldigheid      date        NOT NULL,
-    eindgeldigheid       date,
-    eindregistratie      timestamptz,
-    tijdstipregistratie  timestamptz NOT NULL,
-    status               text,
-    source_deleted_at    timestamptz,
-    PRIMARY KEY (identificatie, begingeldigheid, tijdstipregistratie)
+    identificatie          text        NOT NULL,
+    voorkomenidentificatie integer     NOT NULL,
+    postcode               text,
+    huisnummer             integer,
+    openbareruimteref      text,
+    begingeldigheid        date        NOT NULL,
+    eindgeldigheid         date,
+    eindregistratie        timestamptz,
+    tijdstipregistratie    timestamptz NOT NULL,
+    status                 text,
+    source_deleted_at      timestamptz,
+    PRIMARY KEY (identificatie, voorkomenidentificatie)
 );
 
 CREATE TABLE IF NOT EXISTS bag_verblijfsobject (
     identificatie                   text        NOT NULL,
+    voorkomenidentificatie          integer     NOT NULL,
     hoofdadresnummeraanduidingref   text,
     begingeldigheid                 date        NOT NULL,
     eindgeldigheid                  date,
@@ -89,11 +94,12 @@ CREATE TABLE IF NOT EXISTS bag_verblijfsobject (
     status                          text,
     geom                            geometry(Geometry, 28992),
     source_deleted_at               timestamptz,
-    PRIMARY KEY (identificatie, begingeldigheid, tijdstipregistratie)
+    PRIMARY KEY (identificatie, voorkomenidentificatie)
 );
 
 CREATE TABLE IF NOT EXISTS bag_ligplaats (
     identificatie                   text        NOT NULL,
+    voorkomenidentificatie          integer     NOT NULL,
     hoofdadresnummeraanduidingref   text,
     begingeldigheid                 date        NOT NULL,
     eindgeldigheid                  date,
@@ -102,11 +108,12 @@ CREATE TABLE IF NOT EXISTS bag_ligplaats (
     status                          text,
     geom                            geometry(Geometry, 28992),
     source_deleted_at               timestamptz,
-    PRIMARY KEY (identificatie, begingeldigheid, tijdstipregistratie)
+    PRIMARY KEY (identificatie, voorkomenidentificatie)
 );
 
 CREATE TABLE IF NOT EXISTS bag_standplaats (
     identificatie                   text        NOT NULL,
+    voorkomenidentificatie          integer     NOT NULL,
     hoofdadresnummeraanduidingref   text,
     begingeldigheid                 date        NOT NULL,
     eindgeldigheid                  date,
@@ -115,7 +122,7 @@ CREATE TABLE IF NOT EXISTS bag_standplaats (
     status                          text,
     geom                            geometry(Geometry, 28992),
     source_deleted_at               timestamptz,
-    PRIMARY KEY (identificatie, begingeldigheid, tijdstipregistratie)
+    PRIMARY KEY (identificatie, voorkomenidentificatie)
 );
 
 CREATE TABLE IF NOT EXISTS gebieden_buurten (

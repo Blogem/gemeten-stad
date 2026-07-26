@@ -41,7 +41,9 @@ All loaded geometry SHALL share SRID 28992.
 
 A refresh SHALL NOT physically delete previously loaded rows. The load SHALL stage the new extract
 and **upsert** into the target tables keyed by the voorkomen identity (object `identificatie` +
-`begingeldigheid` + `tijdstipregistratie`): new voorkomens are inserted, and a previously loaded
+`voorkomenidentificatie`, the real BAG voorkomen key — a correction can produce two voorkomens
+sharing `begingeldigheid` and `tijdstipregistratie`, distinguished only by `voorkomenidentificatie`):
+new voorkomens are inserted, and a previously loaded
 row that is absent from the new extract is **soft-deleted** by stamping `source_deleted_at` with
 the load timestamp, not removed. This preserves any entity a downstream graph node may reference and
 matches the project's bitemporal stance (never overwrite history). Within BAG this is rare, because

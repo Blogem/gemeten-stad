@@ -180,9 +180,11 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 	// -- 7.5 new voorkomen: an additional voorkomen for an existing object --------
 
 	t.Run("new voorkomen: additional voorkomen for an existing object inserts, priors remain", func(t *testing.T) {
+		// A new voorkomen of num-a: same object identificatie, a distinct
+		// voorkomenidentificatie (num-a already uses 1 and 2, so this is 3).
 		_, err := pool.Exec(ctx, `INSERT INTO bag_nummeraanduiding_staging
-			(identificatie, postcode, huisnummer, openbareruimteref, begingeldigheid, eindgeldigheid, eindregistratie, tijdstipregistratie, status)
-			VALUES ('num-a', '1000AB', '1', 'opr-teststraat', '2024-01-01', NULL, NULL, '2024-01-01T00:00:00Z', 'Naamgeving uitgegeven')`)
+			(identificatie, voorkomenidentificatie, postcode, huisnummer, openbareruimteref, begingeldigheid, eindgeldigheid, eindregistratie, tijdstipregistratie, status)
+			VALUES ('num-a', 3, '1000AB', '1', 'opr-teststraat', '2024-01-01', NULL, NULL, '2024-01-01T00:00:00Z', 'Naamgeving uitgegeven')`)
 		require.NoError(t, err)
 
 		loadTS4 := time.Now().UTC()
