@@ -32,6 +32,11 @@ jobs:
 
   go-integration:
     runs-on: ubuntu-latest
+    env:
+      # Required by the gdal sidecar's bind mount (deploy/compose/compose.yaml); this job
+      # only starts db + fuseki, so the path is never read, but compose interpolates the
+      # whole file up front and fails fast if it's unset.
+      GS_RAW_DATA_PATH: ${{ runner.temp }}/gs-raw-data
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
