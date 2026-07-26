@@ -77,7 +77,9 @@ func provenanceTurtle(runID string, generatedAt time.Time) []byte {
 func (c *client) upsert(ctx context.Context, runID string, candidate []byte, generatedAt time.Time) (err error) {
 	stageGraph := stageGraphFor(runID)
 	if stageErr := c.stageCandidate(ctx, runID, candidate); stageErr != nil {
-		return fmt.Errorf("stage candidate: %w", stageErr)
+		// stageCandidate's own error already names what failed ("graph: stage candidate into
+		// %s: ...") — do not re-wrap with the same phrase.
+		return stageErr
 	}
 	defer func() {
 		if dropErr := c.dropGraph(context.WithoutCancel(ctx), stageGraph); dropErr != nil && err == nil {
@@ -146,7 +148,9 @@ func (c *client) upsert(ctx context.Context, runID string, candidate []byte, gen
 			closeStamps[id] = vf
 		}
 		if err := c.closePriors(ctx, closeStamps); err != nil {
-			return fmt.Errorf("close prior versions: %w", err)
+			// closePriors already passes "close prior versions" as the (*client).update action —
+			// do not re-wrap with the same phrase.
+			return err
 		}
 		// Verify BEFORE writing the new run graph / provenance (design.md risk "Open-version
 		// ambiguity"): on failure, Load has still written no run:load-... graph and no
@@ -278,7 +282,9 @@ WHERE {
 }`, gsNS, dest, values, stageGraph, dest, values, stageGraph)
 
 	if err := c.update(ctx, update, "copy delta into "+dest); err != nil {
-		return fmt.Errorf("copy delta into %s: %w", dest, err)
+		// The action string above already names what failed ("graph: copy delta into %s: ...")
+		// — do not re-wrap with the same phrase.
+		return err
 	}
 	if err := c.postGraph(ctx, provenanceGraph, provenanceTurtle(runID, generatedAt)); err != nil {
 		return fmt.Errorf("write provenance for run %s: %w", runID, err)
