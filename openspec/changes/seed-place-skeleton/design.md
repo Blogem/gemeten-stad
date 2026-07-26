@@ -79,6 +79,13 @@ so the Place IRI P12b seeds is exactly the key P14's `locatedAt` edges will refe
 human `code` (e.g. `N73a`) was rejected as the key: it is a display label, not the join key the rest
 of the pipeline uses.
 
+**Alignment constraint (verified against the merged P12):** the Place IRI MUST stay under the
+`data:` namespace `http://gemetenstad.nl/id/` — P12's change detection recognizes an entity only via
+`FILTER(STRSTARTS(STR(?s), "http://gemetenstad.nl/id/"))` (`signature.go`), so a Place minted outside
+`data:` would be invisible to the signature diff (never classified, never upserted). `…/id/place/<id>`
+satisfies this. And every Place IRI must pass P12's `assertSafeIRI` (no `<>"{}|^`\` / control chars);
+numeric gebieden `identificatie` values do.
+
 Alternative considered — reuse the raw `identificatie` as a bare `data:<id>` local name. Rejected: a
 dedicated `place/` segment namespaces Places away from interventions/trees/claims and reads clearly
 in SPARQL.
