@@ -52,6 +52,14 @@ func (c *client) stageCandidate(ctx context.Context, runID string, candidate []b
 // version — its own <<s,p,o>> already carries a gs:validTo stamp — is excluded entirely: that is
 // exactly the "open" filter live extraction (2.3) needs, and a harmless no-op against the staging
 // graph, which the writer itself never stamps validTo into (candidates never carry gs:validTo).
+//
+// The annotation branch also excludes rdf:reifies: Jena 5.5 represents an RDF-star annotation as a
+// blank-node reifier (`?ep ?eo` annotated by blank node ?ap=?r via `?r rdf:reifies <<( ?s ?ep ?eo
+// )>>`), and that reifies-linkage triple itself would otherwise surface as a signature row keyed on
+// plumbing (a blank node identity, or the triple-term value), not content — and one the copy
+// (copyDeltaAndRecordProvenance) reproduces verbatim, so including it here only risks instability,
+// never adds change-detection signal: the reified triple's actual content is already covered by row
+// branch 1 above.
 const signatureRowPattern = `
     { ?s ?p ?o .
       FILTER(STRSTARTS(STR(?s), "` + dataNS + `"))
@@ -62,7 +70,7 @@ const signatureRowPattern = `
     UNION
     { <<?s ?ep ?eo>> ?ap ?av .
       FILTER(STRSTARTS(STR(?s), "` + dataNS + `"))
-      FILTER(?ap != gs:validFrom && ?ap != gs:validTo)
+      FILTER(?ap != gs:validFrom && ?ap != gs:validTo && ?ap != rdf:reifies)
       FILTER NOT EXISTS { <<?s ?ep ?eo>> gs:validTo ?closedAnn }
       BIND(CONCAT("ann ", STR(?ep), " ", STR(?eo), " ", STR(?ap), " ", STR(?av)) AS ?row)
     }
@@ -98,7 +106,8 @@ func signatureQuery(graphIRIs []string) string {
 
 	return fmt.Sprintf(`
 PREFIX gs: <%s>
-SELECT ?s (GROUP_CONCAT(?row; separator="%s") AS ?sig) (SAMPLE(?evolvingFlag) AS ?evolving)
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT ?s (GROUP_CONCAT(DISTINCT ?row; separator="%s") AS ?sig) (SAMPLE(?evolvingFlag) AS ?evolving)
 WHERE {
   {
     SELECT ?s ?row WHERE {

@@ -226,21 +226,34 @@ HAVING (COUNT(*) != 1)
 // batched SPARQL Update (design.md D6 — no per-entity round-trips), then records the run's
 // prov:Activity (design.md D5). The writer never constructs the RDF-star annotation itself here
 // either — it only copies whatever the (already-validated) candidate carries.
+//
+// Jena 5.5 represents an RDF-star/1.2 annotation as a blank-node reifier: the annotation
+// properties (gs:confidence, gs:evidence, gs:validFrom, ...) live on a blank node ?r, keyed to the
+// base triple via `?r rdf:reifies <<( ?s ?p ?o )>>` (SPARQL/Turtle 1.2 triple-term syntax). That
+// reifier is never itself one of the delta subjects (it's a blank node, not a data: IRI), so the
+// second INSERT copies it explicitly by matching the reifier pattern in staging and re-asserting
+// it verbatim in the destination graph — this reproduces the exact reifier structure (same blank
+// node identity is not required; only the reifies-linkage + annotation properties need to survive)
+// so the destination graph is byte-identical in content to staging.
 func (c *client) copyDeltaAndRecordProvenance(ctx context.Context, runID, stageGraph string, deltaIRIs []iri, generatedAt time.Time) error {
 	dest := runGraph(runID)
 	values := iriValuesList(deltaIRIs)
 
 	update := fmt.Sprintf(`
 PREFIX gs: <%s>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 INSERT { GRAPH <%s> { ?s ?p ?o } }
 WHERE {
   VALUES ?s { %s }
   GRAPH <%s> { ?s ?p ?o }
 } ;
-INSERT { GRAPH <%s> { <<?s ?p ?o>> ?ap ?av } }
+INSERT { GRAPH <%s> { ?r rdf:reifies <<( ?s ?p ?o )>> . ?r ?ap ?av } }
 WHERE {
   VALUES ?s { %s }
-  GRAPH <%s> { <<?s ?p ?o>> ?ap ?av }
+  GRAPH <%s> {
+    ?r rdf:reifies <<( ?s ?p ?o )>> .
+    ?r ?ap ?av .
+  }
 }`, gsNS, dest, values, stageGraph, dest, values, stageGraph)
 
 	if err := c.update(ctx, update, "copy delta into "+dest); err != nil {
