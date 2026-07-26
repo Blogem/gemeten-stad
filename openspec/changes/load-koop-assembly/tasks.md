@@ -23,10 +23,11 @@
 
 - [ ] 3.1 Build `location.Query{Postcode, Huisnummer, Point (RD), Date = besluit available}` and call
       `location.Resolve`; capture `Confidence`, `Caveats`, `Geom`, `BuurtID` (`load/koop/resolve.go`).
-- [ ] 3.2 Resolve the containing gebieden buurt code: `Result.BuurtID` at the buurt tier, else PIP the
-      resolved `Geom` into `gebieden_buurten`. This code is the `Place` identity.
-- [ ] 3.3 Scope to Noord: keep permits whose buurt is in stadsdeel Noord (per design D4 / open
-      question — buurt→stadsdeel source), cross-checked by the `Z….-N…` zaaknummer prefix; log mismatches.
+- [ ] 3.2 Resolve the containing gebieden `identificatie`: `Result.BuurtID` at the buurt tier, else PIP
+      the resolved `Geom` into `gebieden_buurten` selecting `identificatie` (NOT `code`). This
+      identificatie is the `Place` identity (`data:place/<identificatie>`, verified to match P12b).
+- [ ] 3.3 Scope to Noord via `gebieden_buurten.code LIKE 'N%'` for the resolved buurt (the geo-load
+      gate), cross-checked by the `Z….-N…` zaaknummer prefix; log mismatches.
 - [ ] 3.4 Classify each besluit resolved / unresolvable; unresolvable ones bypass graph assembly and
       are recorded per task 6.
 - [ ] 3.5 Tests: title address → Noord buurt (0.90); point-only → buurt floor (0.50 +
@@ -86,6 +87,7 @@
 
 - [ ] 9.1 Confirm `koop-ingest-metadata` is merged and the metadata sidecars are landed before
       running P13 end to end (hard prerequisite).
-- [ ] 9.2 Confirm the P12b `Place` key field is the gebieden `identificatie` (14-digit `gbdBuurtId`)
-      and align `data:place/<…>` in task 4.1 before merge; share the geometry+metadata fixture with
-      the koop-ingest-metadata tests.
+- [ ] 9.2 (Verified — P12b merged) `data:place/<identificatie>` matches `load/places`
+      (`placeNS = "http://gemetenstad.nl/id/place/"`, keyed on `gebieden_buurten.identificatie`) and the
+      resolver's `buurtPIPSQL`. Keep task 4.1's IRI + task 3.2's PIP on `identificatie`; share the
+      geometry+metadata fixture with the koop-ingest-metadata tests.

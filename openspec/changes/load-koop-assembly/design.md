@@ -81,11 +81,13 @@ point + finer precision ride the edge confidence and live in PostGIS). Getting t
 cleaner but touches P6; deferred until a second caller needs it. *Alternative rejected:* point-first
 — many points are neighbourhood centroids.
 
-### D4 — Noord scoping by resolved buurt, cross-checked by zaaknummer prefix
-Keep a permit iff its resolved buurt is in stadsdeel Noord, cross-checked against the `Z….-N…`
-`referentienummer` prefix (log mismatches). Buurt→stadsdeel: see Open Questions (the gebieden tables
-expose no stadsdeel column today; the zaaknummer prefix is an independent Noord signal). *Alternative
-rejected:* the spike's tree-vote hack — we have the authoritative gebieden polygons.
+### D4 — Noord scoping by resolved buurt (`code LIKE 'N%'`), cross-checked by zaaknummer prefix
+Keep a permit iff its resolved buurt is in stadsdeel Noord, determined by
+`gebieden_buurten.code LIKE 'N%'` — the buurt `code`'s letter prefix encodes the stadsdeel, and this
+is exactly the gate `load/geo` already uses to count Noord buurten (`load/geo/gates.go`). Cross-check
+against the `Z….-N…` `referentienummer` prefix and log mismatches. (Note: P12b keys the Place on
+`identificatie`, not `code`; P13 looks up the resolved buurt's `code` from `gebieden_buurten` for the
+Noord test.) *Alternative rejected:* the spike's tree-vote hack — we have the authoritative polygons.
 
 ### D5 — Depend on P12b for the Place; still emit `<place> a gs:Place` for the gate
 Per the decision **not to decouple**, P13 depends on P12b: the buurt `Place` (label + `gs:within` +
@@ -100,11 +102,16 @@ extend P12's `validate()` to also merge the live `Place` types — cleaner but m
 tested gate (revisit if the per-run `immutableConflict` log noise proves annoying); (b) order P12b
 strictly before P13 — still needs the type triple, so it does not remove the emission.
 
-### D6 — IRI scheme (must match P12b)
+### D6 — IRI scheme (verified against merged P12b)
 `data:intervention/<zaaknummer>`, `data:claim/<zaaknummer>`,
-`data:place/<gebieden identificatie>` (14-digit `gbdBuurtId`, exactly P12b's key), all under
-`http://gemetenstad.nl/id/` (the namespace P12's change-detection filters on). Reuse the same
-`assertSafeIRI` / literal-escaping guards as `load/graph` and `load/places`.
+`data:place/<gebieden identificatie>`, all under `http://gemetenstad.nl/id/` (the namespace P12's
+change-detection filters on). Reuse the same `assertSafeIRI` / literal-escaping guards as `load/graph`
+and `load/places`. **Alignment confirmed** (P12b now merged): `load/places` mints
+`http://gemetenstad.nl/id/place/<identificatie>` from `gebieden_buurten.identificatie` (`load/places/read.go`,
+`places.go` `placeNS = dataNS + "place/"`), and the resolver's buurt-tier PIP returns that **same
+column** — `SELECT b.identificatie FROM gebieden_buurten` (`location/sql.go` `buurtPIPSQL`). So
+`data:place/<Result.BuurtID>` lands exactly on the seeded skeleton node. P13's own address-tier PIP
+(D3) MUST likewise select `gebieden_buurten.identificatie` (not `code`).
 
 ### D7 — SCD2 in the graph is minimal (besluit is stable); evolution lives in PostGIS
 With besluit-only in the graph, the `Intervention` is largely immutable (a granted permit's facts do
@@ -149,10 +156,10 @@ registry entry. Integration tests run against the isolated Fuseki dataset + Post
 
 ## Open Questions
 
-- **Buurt→stadsdeel mapping (D4):** the gebieden tables expose no stadsdeel column and P12b models no
-  stadsdeel — derive Noord membership from the buurt/gebieden code, from a future stadsdeel ingest, or
-  rely on the `Z….-N…` zaaknummer prefix alone? (The prefix is landed and independent; likely the v1
-  primary, with the buurt as a cross-check once a stadsdeel source exists.)
+- **RESOLVED — Buurt→stadsdeel mapping (D4):** `gebieden_buurten.code LIKE 'N%'` (the geo-load gate,
+  `load/geo/gates.go`) is the Noord test, cross-checked by the `Z….-N…` zaaknummer prefix.
+- **RESOLVED — P12b Place key (D6):** verified `identificatie`; the resolver's buurt PIP returns the
+  same column, so `data:place/<BuurtID>` joins the skeleton exactly.
 - **Multiple besluiten / amendments per zaak:** if a case has a besluit + a later `Verlenging`/amendment,
   v1 audits the primary besluit; is the DecisionPeriod (amendment) model needed in Phase 1 or deferred
   to Phase 2?
