@@ -2,9 +2,6 @@ package koop
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,24 +10,9 @@ import (
 	"github.com/Blogem/gemeten-stad/ingest/shared"
 )
 
-// cursorFile is the small JSON struct persisted at CursorArtifact
-// ("koop/_cursor.json"), per the pinned surface's documented shape
-// {"high_water_mark":"YYYY-MM-DD"}. It is a plain file, NOT landed via
-// shared.RawStore.Land, so it carries no .prov.jsonl sidecar.
-type cursorFile struct {
-	HighWaterMark string `json:"high_water_mark"`
-}
-
-// readCursor reads and parses the cursor sidecar directly off disk at
-// <store.BasePath>/koop/_cursor.json.
-func readCursor(t *testing.T, store *shared.RawStore) cursorFile {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(store.BasePath, CursorArtifact))
-	require.NoError(t, err, "cursor artifact must exist after at least one Ingest run")
-	var cf cursorFile
-	require.NoError(t, json.Unmarshal(data, &cf))
-	return cf
-}
+// NOTE: cursorFile, readCursor, writeCursor, and queryLowerBound are the
+// real implementation in ingest/koop/cursor.go -- do not redeclare them
+// here. readCursor(store) returns (highWaterMark string, err error).
 
 // -- First run: full window, high-water mark set to the max dt.available ------
 //
@@ -58,8 +40,9 @@ func TestIngest_FirstRun_LandsAllAndSetsHighWaterMark(t *testing.T) {
 	assert.Contains(t, queryParam(t, calls[0]), `dt.available>="`+DefaultSinceDate+`"`,
 		"the first run on a clean volume must query from the default 2021-01-01 lower bound")
 
-	cursor := readCursor(t, store)
-	assert.Equal(t, "2022-01-12", cursor.HighWaterMark,
+	hwm, err := readCursor(store)
+	require.NoError(t, err)
+	assert.Equal(t, "2022-01-12", hwm,
 		"the high-water mark must equal the MAX dt.available landed this run, not the last record processed or the query date")
 }
 
@@ -133,8 +116,9 @@ func TestIngest_SecondRun_LandsOnlyNewPublicationsAndSkipsAlreadyLanded(t *testi
 	assert.True(t, newLanded, "the genuinely new publication must be landed on the second run")
 	assert.Equal(t, 1, provenanceLineCount(t, store, "koop/gmb-2022-100004.xml"))
 
-	cursor := readCursor(t, store)
-	assert.Equal(t, "2022-01-20", cursor.HighWaterMark,
+	hwm, err := readCursor(store)
+	require.NoError(t, err)
+	assert.Equal(t, "2022-01-20", hwm,
 		"the high-water mark must advance to the new max dt.available (2022-01-20) seen on the second run")
 }
 
@@ -160,7 +144,8 @@ func TestIngest_RerunAgainstUnchangedUpstream_IsANoOp(t *testing.T) {
 	for _, name := range names {
 		provBefore[name] = provenanceLineCount(t, store, name)
 	}
-	cursorBefore := readCursor(t, store)
+	cursorBefore, err := readCursor(store)
+	require.NoError(t, err)
 
 	require.NoError(t, Ingest(context.Background(), store, httpGet))
 
@@ -173,7 +158,8 @@ func TestIngest_RerunAgainstUnchangedUpstream_IsANoOp(t *testing.T) {
 			"a re-run against unchanged upstream content must not append a provenance line for %s", name)
 	}
 
-	cursorAfter := readCursor(t, store)
+	cursorAfter, err := readCursor(store)
+	require.NoError(t, err)
 	assert.Equal(t, cursorBefore, cursorAfter,
 		"the high-water mark must not change when nothing new was landed")
 }

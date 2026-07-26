@@ -96,6 +96,7 @@ func TestQueryLowerBound_SubtractsOverlapDays(t *testing.T) {
 		{name: "year boundary", hwm: "2022-01-03", want: "2021-12-27"},
 		{name: "leap-year February boundary", hwm: "2024-03-04", want: "2024-02-26"},
 		{name: "the fixture-driven high-water mark used in the cursor tests", hwm: "2022-01-20", want: "2022-01-13"},
+		{name: "an unclamped subtraction well past the DefaultSinceDate floor", hwm: "2022-06-15", want: "2022-06-08"},
 	}
 
 	for _, tt := range tests {
@@ -103,6 +104,30 @@ func TestQueryLowerBound_SubtractsOverlapDays(t *testing.T) {
 			got, err := queryLowerBound(tt.hwm)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestQueryLowerBound_ClampsToDefaultSinceDate covers the floor clamp: a
+// high-water mark at or near DefaultSinceDate must not push the overlap
+// window before 2021-01-01 -- a first run (hwm == DefaultSinceDate) must
+// query from exactly the 2021-01-01 lower bound the spec requires, not
+// 2020-12-25.
+func TestQueryLowerBound_ClampsToDefaultSinceDate(t *testing.T) {
+	tests := []struct {
+		name string
+		hwm  string
+	}{
+		{name: "hwm a few days past the floor still clamps", hwm: "2021-01-03"},
+		{name: "hwm exactly at the floor (a clean-volume first run)", hwm: DefaultSinceDate},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := queryLowerBound(tt.hwm)
+			require.NoError(t, err)
+			assert.Equal(t, DefaultSinceDate, got,
+				"queryLowerBound(%q) must clamp to DefaultSinceDate rather than subtracting past it", tt.hwm)
 		})
 	}
 }
