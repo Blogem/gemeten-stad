@@ -1,9 +1,9 @@
 ## 1. Shared SRU plumbing (`ingest/shared`)
 
-- [ ] 1.1 Add an SRU `searchRetrieve` URL/query builder (`operation=searchRetrieve`, `version=2.0`, url-encoded `query`, `startRecord`, `maximumRecords`) as a pure function.
-- [ ] 1.2 Add an SRU response parser using `encoding/xml`: read `numberOfRecords` and split `<record>` elements, capturing each record's verbatim inner XML plus the parsed `dcterms:identifier` and `dt.available`.
-- [ ] 1.3 Add a paged SRU fetch that iterates `startRecord` in `maximumRecords` steps until `numberOfRecords` is exhausted, driven by an injected `httpGet`.
-- [ ] 1.4 Add a modest request rate limiter (fixed inter-request interval, named constant) applied across sequential SRU pages.
+- [x] 1.1 Add an SRU `searchRetrieve` URL/query builder (`operation=searchRetrieve`, `version=2.0`, url-encoded `query`, `startRecord`, `maximumRecords`) as a pure function.
+- [x] 1.2 Add an SRU response parser using `encoding/xml`: read `numberOfRecords` and split `<record>` elements, capturing each record's verbatim inner XML plus the parsed `dcterms:identifier` and `dt.available`.
+- [x] 1.3 Add a paged SRU fetch that iterates `startRecord` in `maximumRecords` steps until `numberOfRecords` is exhausted, driven by an injected `httpGet`.
+- [x] 1.4 Add a modest request rate limiter (fixed inter-request interval, named constant) applied across sequential SRU pages.
 
 ## 2. KOOP harvester (`ingest/koop`)
 
@@ -21,7 +21,7 @@
 ## 4. Tests
 
 - [ ] 4.1 Unit-test the SRU query builder — asserts the scoped clauses are present and no Noord/geometry/postcode filter is added (spec: query builder scenario).
-- [ ] 4.2 Unit-test the SRU paging over a fake `httpGet` returning a multi-page recorded response — asserts every record across pages is yielded (spec: paged to exhaustion).
+- [x] 4.2 Unit-test the SRU paging over a fake `httpGet` returning a multi-page recorded response — asserts every record across pages is yielded (spec: paged to exhaustion).
 - [ ] 4.3 Unit-test the incremental cursor: high-water-mark advance, overlap re-query, and id-dedup skip (spec: re-run lands only new publications; no-op re-run).
 - [ ] 4.4 Unit-test landing + provenance: verbatim bytes keyed by id, provenance fields recorded, and changed-content re-land appends provenance (spec: land verbatim; changed publication re-landed).
 - [ ] 4.5 Integration test: land a recorded SRU fixture subset end to end through `Ingest` with a fake getter — asserts both aanvraag and besluit land, a second run is a no-op, and a clause-by-clause `numberOfRecords` sanity check (guards the §1 silent-zero quirk).
