@@ -312,6 +312,7 @@ gemeten-stad/
   deploy/
     compose/              #   DEV: docker compose (triplestore + PostGIS + server)
     k3s/                  #   PROD (Phase 4): CronJob-per-source + derive CronJob + server Deployment
+                          #   + observability wiring to the cluster monitoring stack (§"Observability")
 ```
 
 **Loading does the resolving and assembling** — no separate post-load canonicalize/assemble
@@ -340,6 +341,35 @@ production names — tests never pollute working data.
 **Server layers:** controller (HTTP/SSE, GeoJSON) → service (audit queries, agent
 orchestration) → repository (graph + value-store access). Agent tools = SPARQL over the graph
 + read-only SQL over the value store; answers are claim-level grounded and report uncertainty.
+
+### Observability — reuse the cluster stack, add to it via GitOps
+
+Design lives here; the wiring lands in Phase 4 (nothing to instrument until the pipeline runs on
+k3s). The target is the **existing** `infra-workloads` monitoring stack — Prometheus + Pushgateway
++ Loki/Promtail + Grafana + Alertmanager, all in the `monitoring` namespace, deployed by Argo CD.
+We **add to it via GitOps and never stand up our own** Prometheus/Grafana/Loki. Three signal
+classes, each mapped to a mechanism the stack already provides:
+
+- **Logs & warnings — make them structured so they stop vanishing.** The stages and server already
+  log; today's warnings are write-only (unpinnable address → `unresolvedLocation`, the
+  `timeMismatch` valid-time fallback, a `zaaknummer` dedup collision, NER low-confidence, an
+  LLM↔rule-binder disagreement) and end up nowhere. The fix is to log **structured with a level**
+  (Go `slog`/logfmt, Python JSON): Promtail's cluster pipeline *already* promotes `level` to a Loki
+  stream label and keeps the message as queryable structured metadata, so a `level=~"warn|error"`
+  panel plus a Loki-rate alert rule surfaces every warning — **no new infrastructure**, only a
+  logging convention the code must honour.
+- **Load stats — the pipeline is batch, so push, don't scrape.** Each `ingest`/`extract`/`load`/
+  `derive` CronJob run pushes a metric set to the cluster **Pushgateway** (`honor_labels: true`,
+  the idiomatic fit for short-lived jobs a scrape would miss), keyed by stage + source: records
+  in/out, `zaaknummer` dedup drops, location-resolution outcomes (pinned / `unresolvedLocation` /
+  `timeMismatch`) and the resolution rate, confidence distribution, NER-cache hits vs LLM
+  escalations (bounds cost — Phase 2's ~14% target), `AuditLink`s derived + coverage rate,
+  assessments opened/closed, per-stage duration, exit status, and a last-success timestamp. A small
+  metrics helper in `ingest/shared` (Go) and the extractor (Python) emit these.
+- **The audit's own uncertainty *is* a data-quality signal.** `unresolvedLocation`, `weakLink`,
+  `deadlineUnknown`, and the `indeterminate`-verdict share are precisely the "warnings that should
+  end up somewhere": their rates go on the dashboard as gauges so a data-quality regression is
+  visible, not buried — the observability layer inherits the project's uncertainty-first ethos.
 
 ## 6. Phases
 
@@ -433,12 +463,21 @@ diameter-class equivalence (beleidsregel CVDR697591) turns raw felled counts int
 open / overdue / **indeterminate**) with an evidence + confidence panel; grounded chat;
 "no matching source found" as a first-class, provenanced finding.
 
-**Phase 4 — generalise, productionize & pursue hidden data.** **Productionize on k3s**
-(CronJob-per-source + a `derive` CronJob + server Deployment, from the `deploy/k3s` manifests);
-reconciliation vs the bomenboekhouding (the third audit leg; `DATA_SOURCES.md` §9); a **WOO
-request for the herplantfonds balance**
-(credible precisely because the rest works and uncertainty is shown); then a second
-intervention type (e.g. EV-charging verkeersbesluiten) reusing the machinery — the seam test.
+**Phase 4 — generalise, productionize & pursue hidden data.** **Productionize on k3s** — deploy
+through the `infra-workloads` GitOps repo (Argo CD app-of-apps): a `gemeten-stad` namespace with a
+CronJob per source (ingest→extract→load), a `derive` CronJob, and the server as a Deployment, from
+the `deploy/k3s` manifests. **Observability wiring (design in §"Observability"):** feed the
+*existing* cluster monitoring stack — stages push load-stats to the Pushgateway and log structured
+(level-tagged) to Loki, the server carries `prometheus.io/scrape` annotations — surfaced behind one
+**`grafana-dashboard-gemeten-stad`** ConfigMap (pipeline-run health & durations, load volumes over
+time, resolution/coverage/confidence rates, the `warn|error` log stream, the data-quality gauges,
+LLM-escalation rate) added to Grafana's provisioned dashboards, plus alert rules in
+`prometheus-rules.yaml` routed through the existing Alertmanager (a stage missed its cadence — KOOP
+daily / bomen weekly / BAG monthly, a stage exited non-zero, resolution rate below threshold, a
+warning/error spike). Then: reconciliation vs the bomenboekhouding (the third audit leg;
+`DATA_SOURCES.md` §9); a **WOO request for the herplantfonds balance** (credible precisely because
+the rest works and uncertainty is shown); then a second intervention type (e.g. EV-charging
+verkeersbesluiten) reusing the machinery — the seam test.
 
 ## 7. Explicitly out of scope for vertical 1
 
