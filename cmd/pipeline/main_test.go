@@ -20,13 +20,14 @@ func TestRootRegistersStages(t *testing.T) {
 	assert.ElementsMatch(t, []string{"ingest", "extract", "load", "derive", "dump"}, got)
 }
 
-// TestStageIsNoOp confirms the stub stages (extract, derive, dump) run, exit
-// without error, and report that they are not yet implemented. ingest and
-// load are wired to real work and are covered by TestIngestAndLoadAreWired
-// instead — running their RunE here would require network/DB access.
+// TestStageIsNoOp confirms the stub stages (extract, derive) run, exit
+// without error, and report that they are not yet implemented. ingest, load,
+// and dump are wired to real work and are covered by
+// TestIngestAndLoadAreWired/TestDumpIsWired instead — running their RunE here
+// would require network/DB access.
 func TestStageIsNoOp(t *testing.T) {
 	for name := range map[string]bool{
-		"extract": true, "derive": true, "dump": true,
+		"extract": true, "derive": true,
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := newRootCmd()
@@ -82,4 +83,43 @@ func TestIngestAndLoadAreWired(t *testing.T) {
 	if resetFlag.Value.Type() != "bool" {
 		t.Errorf("load: --reset flag type = %q, want %q", resetFlag.Value.Type(), "bool")
 	}
+}
+
+// TestDumpIsWired asserts `dump` is a parent command exposing `export` and `restore`
+// subcommands with their required flags, without invoking either RunE (which would require
+// live Fuseki/PostGIS connections).
+func TestDumpIsWired(t *testing.T) {
+	root := newRootCmd()
+	var dumpCmd *cobra.Command
+	for _, c := range root.Commands() {
+		if c.Name() == "dump" {
+			dumpCmd = c
+		}
+	}
+	require.NotNil(t, dumpCmd, "expected a dump subcommand")
+
+	subcommands := map[string]*cobra.Command{}
+	var names []string
+	for _, c := range dumpCmd.Commands() {
+		subcommands[c.Name()] = c
+		names = append(names, c.Name())
+	}
+	assert.ElementsMatch(t, []string{"export", "restore"}, names)
+
+	exportCmd, ok := subcommands["export"]
+	require.True(t, ok, "expected a dump export subcommand")
+	require.NotNil(t, exportCmd.RunE)
+	outFlag := exportCmd.Flags().Lookup("out")
+	require.NotNil(t, outFlag, "export: expected an --out flag")
+	assert.Equal(t, "string", outFlag.Value.Type())
+	skipBAGFlag := exportCmd.Flags().Lookup("skip-bag")
+	require.NotNil(t, skipBAGFlag, "export: expected a --skip-bag flag")
+	assert.Equal(t, "bool", skipBAGFlag.Value.Type())
+
+	restoreCmd, ok := subcommands["restore"]
+	require.True(t, ok, "expected a dump restore subcommand")
+	require.NotNil(t, restoreCmd.RunE)
+	inFlag := restoreCmd.Flags().Lookup("in")
+	require.NotNil(t, inFlag, "restore: expected an --in flag")
+	assert.Equal(t, "string", inFlag.Value.Type())
 }

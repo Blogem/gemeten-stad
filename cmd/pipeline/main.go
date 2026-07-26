@@ -4,8 +4,9 @@
 //
 // ingest and load are wired to the geo backbone (BAG + gebieden landing, and
 // the PostGIS geo load) and the bomen tree registry (kapenherplant +
-// stamgegevens landing and load). extract/derive/dump remain no-op stubs —
-// later Phase-0/1 work items fill in their behaviour.
+// stamgegevens landing and load); dump export/restore snapshot the graph,
+// PostGIS, and the NER cache (see the dump package). extract/derive remain
+// no-op stubs — later Phase-0/1 work items fill in their behaviour.
 package main
 
 import (
@@ -15,9 +16,11 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Blogem/gemeten-stad/dump"
 	"github.com/Blogem/gemeten-stad/ingest/bag"
 	"github.com/Blogem/gemeten-stad/ingest/bomen"
 	"github.com/Blogem/gemeten-stad/ingest/gebieden"
@@ -98,7 +101,7 @@ func newRootCmd() *cobra.Command {
 		newStageCmd("extract", "Extract structured facts from unstructured text (cached)"),
 		newLoadCmd(),
 		newStageCmd("derive", "Compute cross-source AuditLinks and replant progress (gold)"),
-		newStageCmd("dump", "Snapshot the graph, PostGIS, and the NER cache"),
+		newDumpCmd(),
 	)
 	return root
 }
@@ -258,6 +261,66 @@ func runLoad(ctx context.Context, args []string, reset bool) error {
 		}
 	}
 	return nil
+}
+
+// newDumpCmd is the parent for the two snapshot verbs: `dump export` writes a bundle, `dump
+// restore` rebuilds the stores from one. Store connection details are resolved from the same
+// GS_* env contract the rest of the pipeline uses (dump.ConfigFromEnv).
+func newDumpCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "dump",
+		Short: "Snapshot the graph, PostGIS, and the NER cache",
+	}
+	cmd.AddCommand(newDumpExportCmd(), newDumpRestoreCmd())
+	return cmd
+}
+
+func newDumpExportCmd() *cobra.Command {
+	var out string
+	var skipBAG bool
+
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Write a snapshot bundle of the graph, PostGIS, and the NER cache",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runDumpExport(cmd.Context(), out, skipBAG)
+		},
+	}
+	cmd.Flags().StringVar(&out, "out", "", "bundle output directory (required)")
+	cmd.Flags().BoolVar(&skipBAG, "skip-bag", false, "exclude the large BAG tables from the PostGIS artifact")
+	_ = cmd.MarkFlagRequired("out")
+	return cmd
+}
+
+func runDumpExport(ctx context.Context, out string, skipBAG bool) error {
+	cfg, err := dump.ConfigFromEnv(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve dump config: %w", err)
+	}
+	return dump.Export(ctx, cfg, out, dump.ExportOptions{SkipBAG: skipBAG}, time.Now().UTC())
+}
+
+func newDumpRestoreCmd() *cobra.Command {
+	var in string
+
+	cmd := &cobra.Command{
+		Use:   "restore",
+		Short: "Rebuild the graph, PostGIS, and NER cache from a snapshot bundle",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runDumpRestore(cmd.Context(), in)
+		},
+	}
+	cmd.Flags().StringVar(&in, "in", "", "bundle input directory (required)")
+	_ = cmd.MarkFlagRequired("in")
+	return cmd
+}
+
+func runDumpRestore(ctx context.Context, in string) error {
+	cfg, err := dump.ConfigFromEnv(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve dump config: %w", err)
+	}
+	return dump.Restore(ctx, cfg, in)
 }
 
 // runGeoLoad loads the BAG + gebieden raw data into PostGIS via the gdal sidecar's ogr2ogr.
