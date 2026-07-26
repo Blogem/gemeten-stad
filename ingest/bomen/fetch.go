@@ -52,10 +52,23 @@ func Ingest(ctx context.Context, store *shared.RawStore, httpGet httpGetFunc) er
 	return nil
 }
 
-// ingestDataset pages through dataset in full, following _links.next.href
-// until exhausted, accumulating each page's raw body as one JSONL line, then
-// lands the accumulated run as a single new version of dataset.Artifact.
+// ingestDataset fetches dataset in full per its Format, accumulating each
+// response body as one JSONL line, then lands the accumulated run as a
+// single new version of dataset.Artifact.
 func ingestDataset(ctx context.Context, store *shared.RawStore, httpGet httpGetFunc, dataset Dataset) error {
+	switch dataset.Format {
+	case FormatGeoJSON:
+		return ingestGeoJSON(ctx, store, httpGet, dataset)
+	default:
+		return ingestPagedJSON(ctx, store, httpGet, dataset)
+	}
+}
+
+// ingestPagedJSON pages through dataset's default JSON HAL representation,
+// following _links.next.href until exhausted, accumulating each page's raw
+// body as one JSONL line, then lands the accumulated run as a single new
+// version of dataset.Artifact.
+func ingestPagedJSON(ctx context.Context, store *shared.RawStore, httpGet httpGetFunc, dataset Dataset) error {
 	var buf bytes.Buffer
 
 	url := firstPageURL(dataset.BaseURL, DefaultPageSize)
@@ -72,6 +85,34 @@ func ingestDataset(ctx context.Context, store *shared.RawStore, httpGet httpGetF
 	}
 
 	sourceURL := fmt.Sprintf("%s?_pageSize=%d", dataset.BaseURL, DefaultPageSize)
+	if _, err := store.LandVersion(dataset.Artifact, &buf, sourceURL, time.Now()); err != nil {
+		return fmt.Errorf("bomen: land %q: %w", dataset.Artifact, err)
+	}
+	return nil
+}
+
+// ingestGeoJSON fetches dataset's `?_format=geojson` export, following its
+// own _links.next.href until exhausted (the export is not page-capped,
+// unlike the paged JSON representation). Each response body is accumulated
+// as one JSONL line, then the accumulated run is landed as a single new
+// version of dataset.Artifact.
+func ingestGeoJSON(ctx context.Context, store *shared.RawStore, httpGet httpGetFunc, dataset Dataset) error {
+	var buf bytes.Buffer
+
+	sourceURL := dataset.BaseURL + "?_format=geojson"
+	url := sourceURL
+	for url != "" {
+		body, nextURL, err := fetchPage(ctx, httpGet, url)
+		if err != nil {
+			return err
+		}
+		if err := json.Compact(&buf, body); err != nil {
+			return fmt.Errorf("bomen: compact geojson body from %s: %w", url, err)
+		}
+		buf.WriteByte('\n')
+		url = nextURL
+	}
+
 	if _, err := store.LandVersion(dataset.Artifact, &buf, sourceURL, time.Now()); err != nil {
 		return fmt.Errorf("bomen: land %q: %w", dataset.Artifact, err)
 	}

@@ -12,14 +12,29 @@ import (
 
 // dsoPage is the minimal Datapunt bomen DSO API HAL envelope shape needed to pull a page's row
 // array back out of a landed page body: the rows live under _embedded[<dataset name>]
-// (docs/DATA_SOURCES.md §2a).
+// (docs/DATA_SOURCES.md §2a). This is the paged-JSON landed line shape (kapenherplant).
 type dsoPage struct {
 	Embedded map[string]json.RawMessage `json:"_embedded"`
 }
 
+// geoJSONPage is the minimal GeoJSON FeatureCollection shape a landed geojson export line takes
+// (stamgegevens, DATA_SOURCES.md §2a): each feature's flat properties plus its own geometry.
+type geoJSONPage struct {
+	Features []geoJSONFeature `json:"features"`
+}
+
+type geoJSONFeature struct {
+	Properties map[string]any `json:"properties"`
+	Geometry   map[string]any `json:"geometry"`
+}
+
 // readLandedRows reads the latest landed version of artifact from store (one newline-delimited
-// raw page body per line — ingest/bomen.LandVersion's landing convention), decodes each line as a
-// dsoPage, and concatenates every page's embedKey row array into one slice for the whole snapshot.
+// JSON value per line — ingest/bomen.LandVersion's landing convention) and concatenates every
+// line's rows into one slice for the whole snapshot. Each line is auto-detected as one of the two
+// shapes this package lands verbatim:
+//   - a paged-JSON HAL envelope (_embedded[embedKey] holds the row array — kapenherplant), or
+//   - a GeoJSON FeatureCollection (features[].properties is the row, features[].geometry becomes
+//     the row's "geometrie" field — stamgegevens).
 func readLandedRows(store *shared.RawStore, artifact, embedKey string) ([]map[string]any, error) {
 	relPath, ok, err := store.LatestVersion(artifact)
 	if err != nil {
@@ -45,20 +60,43 @@ func readLandedRows(store *shared.RawStore, artifact, embedKey string) ([]map[st
 			continue
 		}
 
-		var page dsoPage
-		if err := json.Unmarshal(line, &page); err != nil {
-			return nil, fmt.Errorf("bomen: decode landed page for %s: %w", artifact, err)
+		var envelope struct {
+			Embedded map[string]json.RawMessage `json:"_embedded"`
+			Features json.RawMessage            `json:"features"`
+		}
+		if err := json.Unmarshal(line, &envelope); err != nil {
+			return nil, fmt.Errorf("bomen: decode landed line for %s: %w", artifact, err)
 		}
 
-		raw, ok := page.Embedded[embedKey]
-		if !ok {
-			continue
+		switch {
+		case envelope.Embedded != nil:
+			raw, ok := envelope.Embedded[embedKey]
+			if !ok {
+				continue
+			}
+			var pageRows []map[string]any
+			if err := json.Unmarshal(raw, &pageRows); err != nil {
+				return nil, fmt.Errorf("bomen: decode %s rows for %s: %w", embedKey, artifact, err)
+			}
+			rows = append(rows, pageRows...)
+
+		case envelope.Features != nil:
+			var page geoJSONPage
+			if err := json.Unmarshal(line, &page); err != nil {
+				return nil, fmt.Errorf("bomen: decode landed geojson page for %s: %w", artifact, err)
+			}
+			for _, feature := range page.Features {
+				row := make(map[string]any, len(feature.Properties)+1)
+				for k, v := range feature.Properties {
+					row[k] = v
+				}
+				row["geometrie"] = feature.Geometry
+				rows = append(rows, row)
+			}
+
+		default:
+			return nil, fmt.Errorf("bomen: landed line for %s has neither _embedded nor features", artifact)
 		}
-		var pageRows []map[string]any
-		if err := json.Unmarshal(raw, &pageRows); err != nil {
-			return nil, fmt.Errorf("bomen: decode %s rows for %s: %w", embedKey, artifact, err)
-		}
-		rows = append(rows, pageRows...)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("bomen: scan landed %s: %w", artifact, err)
