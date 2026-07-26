@@ -1,167 +1,160 @@
 ## Context
 
-`load koop` (P13) is the silver assembler for permits — the first stage that turns raw documents
-into fully-formed graph entities. It sits between three shipped pieces:
+`load koop` (P13) is the silver assembler for permits — the first stage that turns raw documents into
+graph entities. It sits atop shipped pieces, and its design was corrected twice against the **real
+10,503-record corpus** (`data/raw/koop/`), so the data facts below are measured, not assumed:
 
-- **P11 `ingest koop`** lands each Noord kap/verplant publication as **verbatim SRU `gzd` inner
-  XML** at `koop/<gmb-id>.xml` (via `shared.RawStore.Land`; a `.prov.jsonl` sidecar per file, and a
-  `koop/_cursor.json`). P11 parses only `identifier` + `available` for its incremental cursor; **all
-  other structure survives only inside the landed XML**, and there is no reader/lister — P13
-  enumerates the store prefix directly.
-- **P12 `load/graph.Load(ctx, fusekiURL, candidate []byte, Config{Reset})`** takes turtle bytes,
-  SHACL-gates them against `ontology/shapes.ttl`, and on conform runs the SCD2 idempotent upsert
-  (IRI-keyed, change-detected by an order-stable per-entity signature that ignores
-  `validFrom`/`validTo`; a delta-empty run mints no run graph). It is **Postgres-free**: callers
-  build the turtle, including the `{| … |}` confidence annotations.
-- **P6 `location.Resolve(ctx, pool, Query) (Result, error)`** ladders address (0.90) → postcode
-  (0.70) → buurt-via-point PIP (0.50) against the local BAG/gebieden mirror; returns `Geom` (EWKT),
-  `Confidence`, `TimeMatch`, `Caveats`, `BuurtID` (set at the buurt tier). It errors only when
-  nothing resolves.
-
-**Correcting a false premise.** An early scan of P11's _test fixtures_ (`ingest/koop/testdata/*.xml`,
-minimal hand-authored records) suggested the landed permits carried no geometry. They do:
-Spike B (`spikes/spike-b/harvest_permits.py`) and `docs/DATA_SOURCES.md` §1 confirm the `gzd` record
-exposes a **structured RD point** (`overheidwetgeving:geometrie` `POINT(x y)`) and WGS84
-`locatiepunt`, plus `overheidop:postcode`, controlled `overheidop:activiteit`, and a
-`overheidop:referentienummer` whose prefix encodes the stadsdeel (`Z2022-N…` = Noord). P11 sets no
-`recordSchema`, so it lands the default `gzd` payload verbatim — the geometry is present. This design
-is built on the structured signal; the fixtures are the thing that must catch up (a task below).
+- **What is landed.** P11 lands the SRU `gzd` record verbatim at `koop/<id>.xml`; `koop-ingest-metadata`
+  (prerequisite change) lands the `metadata.xml` sidecar at `koop/<id>.metadata.xml`. Between them:
+  - **Geometry: 99.2%** (`overheidwetgeving:geometrie` RD `POINT(x y)` + `locatiepunt`) — but the
+    point is a **`Gebiedsmarkering`** (area marker): 92 records share one identical point, so many
+    points are coarse centroids, not exact addresses.
+  - **Address** (street + huisnummer + postcode) sits in `dcterms:title`, e.g. *"Besluit
+    omgevingsvergunning vellen van een houtopstand (kap) … Örehof 8 1060RW Amsterdam"*.
+  - **Activiteit: 98.6%** (`overheidwetgeving:activiteit scheme="OVERHEIDop.ActiviteitOmgevingsvergunning"`
+    = `kappen`); also in the metadata sidecar.
+  - **Zaaknummer:** `0/10,503` in the SRU record — **only** in `metadata.xml`
+    (`OVERHEIDop.referentienummer`, e.g. `Z2022-NW001025`; prefix encodes stadsdeel). Hence the
+    prerequisite change.
+  - **Publication kind** (title prefix): Aanvraag 5,111 · Besluit 4,659 · Verlenging 348 ·
+    Ingetrokken 66 · Ontwerpbesluit / Rectificatie … The harvest is Amsterdam-wide (Noord scoping
+    lands here).
+- **P12 writer** — `Load(ctx, url, candidate []byte, Config{Reset})`: SHACL-gates candidate against
+  `ontology/shapes.ttl` (validate merges **only** ontology+vocab+candidate — shacl.go), then IRI-keyed
+  SCD2 upsert (classify.go: same-IRI signature equal → unchanged; differ+evolving → new version;
+  differ+not-evolving → `immutableConflict`, skipped+logged). Postgres-free; callers build turtle.
+- **P12b place skeleton** — seeds `place:<identificatie> a gs:Place ; rdfs:label … ; gs:active true
+  {| gs:validFrom … |}` and `gs:within` (buurt→wijk) from `gebieden_buurten`/`_wijken`. IRI =
+  `http://gemetenstad.nl/id/place/<14-digit gbdBuurtId>`. **Stadsdeel is not modelled** (only
+  buurt+wijk). Its turtle helpers are package-private; P13 mirrors the IRI scheme, it cannot import.
+- **P6 resolver** — `Resolve(ctx, pool, Query) (Result, error)` ladders address (0.90) → postcode
+  (0.70) → buurt-via-point PIP (0.50); returns `Geom`, `Confidence`, `Caveats`, `BuurtID` (buurt
+  tier). Errors only when nothing resolves.
 
 ## Goals / Non-Goals
 
 **Goals:**
-
-- Assemble each Noord besluit into a provenanced `Intervention` + `Claim` + `locatedAt`→`Place`,
-  through the P12 SHACL gate, with permit values/geometry in PostGIS.
-- Dedup aanvraag/besluit per zaaknummer; audit the besluit.
-- Resolve location from the structured point + postcode; scope to Noord by geometry.
-- Idempotent: unchanged re-run is a true no-op; a changed field opens a new SCD2 version.
-- Decouple from P12b: satisfy the `locatedAt`→`Place` gate without the skeleton being seeded first.
+- Dedup landed publications by zaaknummer; assemble the **besluit** into a provenanced `Intervention`
+  + `Claim` + `locatedAt`→`Place`, through the SHACL gate.
+- Resolve location address-first (point as floor); scope to Noord by resolved buurt + zaaknummer prefix.
+- Keep the **full publication trail** (aanvraag/besluit/verlenging/ingetrokken) in PostGIS as history.
+- Align with P12b (shared `Place` IRI); idempotent (unchanged re-run is a true no-op).
 
 **Non-Goals:**
-
-- No obligation **count** on the `Claim` (Phase-2 extraction). No fulfilment/timeliness (P14/Phase-2).
-- No permit→registry `AuditLink` (that is P14 `derive`).
-- No NER / permit-text parsing beyond a best-effort huisnummer off the title.
-- No new resolver tiers and no PDOK Locatieserver fallback (settled: local mirror only).
-- No stadsdeel-level `Place` node (P12b defers it; Noord scoping uses the PostGIS buurt→stadsdeel
-  mapping, not a graph node).
+- No obligation **count** on the `Claim` (Phase-2). No fulfilment/timeliness (P14/Phase-2). No
+  `AuditLink` (P14). No NER beyond a best-effort address parse from the title.
+- No aanvraag/ontwerp/verlenging as separate graph `Intervention`s — the graph carries the audited
+  besluit only (below); their history lives in PostGIS.
+- No stadsdeel `Place` node (P12b defers it); Noord scoping uses the resolved buurt + zaaknummer prefix.
 
 ## Decisions
 
-### D1 — Parse the landed XML directly; a typed permit struct is the seam
+### D1 — Parse both landed artifacts; a typed permit struct is the seam
+`load/koop` enumerates `store.BasePath/koop/*.xml` (excluding `*.metadata.xml`, `_cursor.json`,
+`*.prov.jsonl`), and for each publication reads its SRU record + its `<id>.metadata.xml`, parsing
+into a typed `Publication` (id, zaaknummer, kind, activiteit, RD point, title/address, available,
+raw). *Alternative rejected:* extending P11 with a reader — P11 exposes none by design; parsing is
+the consumer's job.
 
-`load/koop` enumerates `store.BasePath/koop/*.xml` (skipping `_cursor.json` and `*.prov.jsonl`) and
-parses each with `encoding/xml` into a typed `Permit` (id, zaaknummer, activiteit, RD point,
-postcode, title, available, doctype). Rationale: P11 exposes no reader and lands verbatim bytes; the
-parser is P13's responsibility and the one place that knows the `gzd` shape. _Alternative rejected:_
-extending P11 with a reader — out of scope, P11 is in test, and the parse concern belongs to the
-consumer.
+### D2 — Dedup by zaaknummer; audit the besluit; besluit-only in the graph
+Group by `OVERHEIDop.referentienummer`; classify each publication by title prefix; select the
+**besluit** as the audited permit. **Measured:** ~92% of besluit-cases also carry an aanvraag (over
+address-keyed grouping of the full corpus), so the besluit is the reliable auditable grant — it is
+what creates the herplantplicht. Therefore **only the besluit becomes a graph `Intervention`**; the
+aanvraag/ontwerp/verlenging/ingetrokken publications are recorded in PostGIS (the trail), not as
+graph entities. A zaak with no besluit yet (a pending application, or the ~8% besluit-less remainder)
+has **no** graph Intervention — it lives in PostGIS until its besluit lands, when the next run
+assembles it. *This resolves the inline question ("do we track both, or go for the besluit"): the
+graph tracks the besluit; PostGIS holds the evolution.* *Alternative rejected:* one evolving
+`Intervention` per case with aanvraag→besluit SCD2 versions in the graph — the graph audits grants,
+not applications; the 92% pairing means the aanvraag adds little graph signal, and it would force an
+Intervention for pending/aanvraag-only cases that carry no obligation.
 
-### D2 — Dedup by zaaknummer, classify by title prefix <<do we track both versions, or will we immediatly go for the besluit if it's there? i prefer to see the evolution, also on old data. of course the besluit is the active one.>>
-
-Group by `overheidop:referentienummer`; within a group pick the besluit (`dcterms:title` starts
-`"Verleend:"`/`"Besluit:"`) over the aanvraag (`"Aanvraag:"`). The title prefix is the only
-aanvraag/besluit signal in the payload (both carry `dt.type omgevingsvergunning`). _Alternative
-rejected:_ a doctype field — none exists.
-
-### D3 — Location: structured point primary, postcode/address ladder, buurt is the Place
-
-Build a `location.Query{Postcode, Huisnummer (parsed from title), Point (RD), Date (besluit
-valid-time)}`. The resolver ladders to the finest tier it can; the **graph `Place` is always the
-containing gebieden buurt** — a thin-graph choice: the exact point + finer precision live in PostGIS
-and ride the edge as `gs:confidence`, while the graph records buurt-level membership for roll-up.
-Getting the buurt code: the resolver already returns `BuurtID` at the buurt tier; at the
-address/postcode tier it returns a `Geom` but no buurt, so P13 PIPs that geom into `gebieden_buurten`
-to obtain the code. _Alternative considered:_ extend `location.Result` to always carry the containing
-buurt — cleaner, but touches the P6 package; deferred to keep P13 additive (revisit if a second
-caller needs it). _Alternative rejected:_ mint a distinct BAG-address `Place` node — the graph
-skeleton is buurt/wijk only (P12b), and a per-address node buys nothing the confidence + PostGIS
-point don't already carry.
+### D3 — Location: address-from-title primary, point as the buurt floor
+Because the RD point is a coarse `Gebiedsmarkering`, the title address is often more precise. Build a
+`location.Query{Postcode, Huisnummer, Point (RD), Date = besluit available}` from a best-effort
+title parse (`\d{4}\s?[A-Z]{2}` postcode + preceding huisnummer) plus the point; the resolver ladders
+to the finest tier. **The graph `Place` is always the containing gebieden buurt** (thin graph: exact
+point + finer precision ride the edge confidence and live in PostGIS). Getting the buurt code: use
+`Result.BuurtID` at the buurt tier; at the address/postcode tier PIP the resolved `Geom` into
+`gebieden_buurten`. *Alternative considered:* extend `location.Result` to always carry the buurt —
+cleaner but touches P6; deferred until a second caller needs it. *Alternative rejected:* point-first
+— many points are neighbourhood centroids.
 
 ### D4 — Noord scoping by resolved buurt, cross-checked by zaaknummer prefix
+Keep a permit iff its resolved buurt is in stadsdeel Noord, cross-checked against the `Z….-N…`
+`referentienummer` prefix (log mismatches). Buurt→stadsdeel: see Open Questions (the gebieden tables
+expose no stadsdeel column today; the zaaknummer prefix is an independent Noord signal). *Alternative
+rejected:* the spike's tree-vote hack — we have the authoritative gebieden polygons.
 
-Keep a permit iff its resolved buurt is in stadsdeel Noord (buurt→stadsdeel via the gebieden
-code/`ligtInWijk`→stadsdeel mapping in PostGIS), cross-checked against the `Z….-N…` referentienummer
-prefix (log a mismatch). The harvest is Amsterdam-wide by design (P11 `query.go`), so scoping lands
-here. _Alternative rejected:_ the spike's tree-vote-for-buurt — a pre-BAG hack; we have the authoritative
-local gebieden polygons.
+### D5 — Depend on P12b for the Place; still emit `<place> a gs:Place` for the gate
+Per the decision **not to decouple**, P13 depends on P12b: the buurt `Place` (label + `gs:within` +
+`gs:active`) is P12b's, referenced by the shared IRI. But `InterventionShape`'s `sh:class gs:Place`
+runs at validation against **candidate+ontology+vocab only** (shacl.go merges no live data), so the
+candidate must itself type the target — P13 emits a bare `place:<id> a gs:Place` alongside its
+`locatedAt` edge. Against P12b's live richer `Place`, that bare re-assertion classifies as
+`immutableConflict` (classify.go) → **skipped, not written, logged once** — harmless, no version
+churn, the `Place` stays exactly as P12b made it. *This resolves the inline "we shouldn't decouple":
+the dependency stands; the type triple is only a gate-satisfying formality.* *Alternatives:* (a)
+extend P12's `validate()` to also merge the live `Place` types — cleaner but modifies the shipped,
+tested gate (revisit if the per-run `immutableConflict` log noise proves annoying); (b) order P12b
+strictly before P13 — still needs the type triple, so it does not remove the emission.
 
-### D5 — Assert `<place> a gs:Place` locally to decouple from P12b <<we shouldn't decouple>>
+### D6 — IRI scheme (must match P12b)
+`data:intervention/<zaaknummer>`, `data:claim/<zaaknummer>`,
+`data:place/<gebieden identificatie>` (14-digit `gbdBuurtId`, exactly P12b's key), all under
+`http://gemetenstad.nl/id/` (the namespace P12's change-detection filters on). Reuse the same
+`assertSafeIRI` / literal-escaping guards as `load/graph` and `load/places`.
 
-`InterventionShape` requires `locatedAt` → a node that **is** a `gs:Place` (`sh:class`). P13 emits a
-minimal `data:place/<code> a gs:Place` alongside its edge, so the candidate conforms whether or not
-P12b has seeded the skeleton. P12b independently enriches the same IRI with `rdfs:label` + `gs:within`;
-under IRI-keyed upsert both contribute to one `Place`, order-independent. This realizes the user's
-"P13 must not depend on P12b." _Alternative rejected:_ ordering P12b before P13 — reintroduces the
-build-order coupling we were asked to avoid.
+### D7 — SCD2 in the graph is minimal (besluit is stable); evolution lives in PostGIS
+With besluit-only in the graph, the `Intervention` is largely immutable (a granted permit's facts do
+not change). The one evolving edge is `locatedAt`: its `{| … |}` annotation carries `gs:validFrom` =
+the besluit date, so a **re-resolution** (BAG update, better address) opens a new version and closes
+the prior — the rest being un-stamped makes the common re-run a pure no-op. The aanvraag→besluit
+progression is captured as PostGIS rows, not graph versions.
 
-### D6 — IRI scheme
-
-`data:intervention/<zaaknummer>`, `data:claim/<zaaknummer>`, `data:place/<gebieden-buurt-code>` (all
-under `http://gemetenstad.nl/id/`, the namespace the writer's change-detection keys on). The `place/`
-scheme **must match P12b** — the one hard cross-worktree contract; captured here and coordinated by
-value, not build order.
-
-### D7 — SCD2 granularity: keep v1 mostly immutable, stamp validFrom only on the evolving edge
-
-Identity + activity + the `claims` edge are write-once (immutable facts). The **`locatedAt`
-resolution** is the evolving state: its RDF-star annotation carries `gs:validFrom` = the besluit
-valid-time, so a re-resolution (BAG update, better address) opens a new version and closes the prior
-per D4 of the plan. Everything else being un-stamped means the common re-run is a pure no-op
-(unchanged signature). _Alternative considered:_ stamp the whole Intervention as evolving — over-broad;
-most permit facts never change once decided.
-
-### D8 — PostGIS shape mirrors `load/bomen`
-
-A `koop_permits` table keyed by zaaknummer (schema-qualified via `current_schema()`, staging +
-upsert + `--reset` drop, `raw jsonb` catch-all — the `load/bomen` pattern): publication ids,
-activiteit, dates, `geometry(Point, 28992)` for the RD point, postcode, resolved buurt code,
-`resolvedConfidence`, `caveats`, an `unresolved` marker column, `raw`. Geometry lives here only.
-
-### D9 — Unresolvable permits: record in PostGIS, never graph a fake
-
-A besluit that resolves to nothing (no point, no address) is written to `koop_permits` with the
-`unresolved` marker and **no** graph Intervention (it cannot satisfy `locatedAt` minCount without a
-real place, and faking one violates §4). Surfaced for P14 / reporting. Rare, since the point is
-structured. _Alternative rejected (Q2 option "Noord placeholder"):_ attaching to a synthetic
-stadsdeel-Noord `Place` — needs a node P12b defers and dilutes the audit with low-signal edges;
-revisit only if the unresolved rate is material.
+### D8 — PostGIS: one row per publication (the trail), keyed by publication id
+A `koop_publications` table (schema-qualified via `current_schema()`, staging + upsert + `--reset`,
+`raw jsonb` catch-all — the `load/bomen` pattern): `gmb_id` PK, `zaaknummer`, `kind`
+(aanvraag/besluit/…), `available` + parsed dates, `geometry(Point, 28992)` (the RD point), postcode,
+resolved buurt code, `resolved_confidence`, `caveats`, an `unresolved` marker, `raw`. Keyed by
+publication id (**not** zaaknummer — a zaak has multiple publications; the inline note is right). The
+audited-besluit resolution is stored on the besluit's row. Geometry lives here only.
 
 ## Risks / Trade-offs
 
-- **[gzd parse drift]** Real `gzd` records are richer/messier than the minimal fixtures → parse
-  against a realistic fixture (a Spike-B-shaped record with the geometry block) and treat missing
-  required fields as "unresolvable", never a panic. → Add the enriched fixture as a task; parse
-  defensively.
-- **[P12b IRI contract]** If P12b keys `Place` by a different code than D6, resolved places split
-  into two nodes. → Pin the scheme in D6, confirm P12b's key field (gebieden buurt `identificatie`
-  vs `code`) before merge; an integration test asserts an Intervention's `locatedAt` target matches
-  a seeded skeleton IRI.
-- **[Buurt PIP at address tier]** Doing a second PIP in P13 (D3) duplicates logic the resolver
-  nearly has. → Acceptable for one caller; if P14 needs the same, promote it into `location.Result`.
-- **[Noord yield]** Address/huisnummer parsed from free-text titles is best-effort; but the RD point
-  guarantees a buurt floor, so yield is driven by the point, not the title. → Point is primary;
-  title huisnummer only sharpens confidence.
-- **[valid-time source]** The besluit publication date (`dcterms:available`) is the only reliable
-  date (Spike A: the administrative permit dates are unreliable). Use it as the resolution
-  valid-time and the `validFrom`. → Documented; anchor elapsed-time reasoning downstream on the
-  registry felling date (P14), not these.
+- **[Metadata prerequisite]** P13 cannot dedup without `koop-ingest-metadata` landed. → Hard
+  dependency, sequenced first; a publication whose sidecar is missing (rare) falls to the keyless
+  remainder (PostGIS, no graph).
+- **[Coarse point]** A `Gebiedsmarkering` point may PIP into the wrong buurt at a boundary. → Address
+  tier is primary; buurt-floor edges carry `unresolvedLocation` + confidence 0.50, never written as
+  exact; the zaaknummer prefix cross-checks the stadsdeel.
+- **[Title address parsing]** Free-text titles are messy (~11% have no extractable postcode). → Those
+  fall to the point-in-buurt floor or the unresolvable bucket; never fabricate coordinates.
+- **[P12b IRI contract]** A key mismatch splits a `Place` into two nodes. → D6 pins the scheme to
+  P12b's `identificatie`; an integration test asserts an Intervention's `locatedAt` target equals a
+  seeded skeleton IRI.
+- **[immutableConflict log noise]** One log line per referenced `Place` per run (D5). → Acceptable;
+  escalate to the `validate()`-merges-live-types option only if it becomes noisy.
+- **[valid-time source]** Only `dcterms:available` (besluit publication date) is reliable (Spike A). →
+  Use it as the resolution valid-time and `validFrom`; anchor elapsed-time reasoning downstream (P14)
+  on the registry felling date, not permit dates.
 
 ## Migration Plan
 
-Additive. New `load/koop` package + a `koop` entry in `cmd/pipeline`'s `loadRegistry` (after `bomen`,
-before/with `graph`). New `koop_permits` PostGIS table created on first run; `--reset` drops it.
-Rollback = remove the registry entry; no existing stage or table changes. Integration tests run
-against the isolated Fuseki dataset + Postgres schema (never production names).
+Sequence `koop-ingest-metadata` → this change. Additive: new `load/koop` package + a `koop` entry in
+`cmd/pipeline`'s `loadRegistry` (after `bomen`, and after `graph`/`places` so the skeleton exists);
+new `koop_publications` table created on first run, dropped by `--reset`. Rollback = remove the
+registry entry. Integration tests run against the isolated Fuseki dataset + Postgres schema.
 
 ## Open Questions
 
-- **Buurt→stadsdeel mapping source (D4):** derive Noord membership from the gebieden code prefix, or
-  from a `ligtInWijk`→wijk→stadsdeel join in PostGIS? (P12b defers stadsdeel; confirm what the P7
-  gebieden tables actually expose.)
-- **P12b `Place` key field (D6):** confirm P12b keys on gebieden `identificatie` (the 14-digit
-  `gbdBuurtId` the resolver returns) vs a short `code`, so `data:place/<…>` matches exactly.
-- **Multiple besluiten per zaaknummer:** if a case has a besluit + a later `"Verlengd:"`/amendment,
-  v1 audits the first/primary besluit; is amendment handling needed in Phase 1 or deferred to the
-  DecisionPeriod model (Phase 2)?
+- **Buurt→stadsdeel mapping (D4):** the gebieden tables expose no stadsdeel column and P12b models no
+  stadsdeel — derive Noord membership from the buurt/gebieden code, from a future stadsdeel ingest, or
+  rely on the `Z….-N…` zaaknummer prefix alone? (The prefix is landed and independent; likely the v1
+  primary, with the buurt as a cross-check once a stadsdeel source exists.)
+- **Multiple besluiten / amendments per zaak:** if a case has a besluit + a later `Verlenging`/amendment,
+  v1 audits the primary besluit; is the DecisionPeriod (amendment) model needed in Phase 1 or deferred
+  to Phase 2?
+- **Keyless remainder handling:** for the rare publication with no metadata sidecar, confirm the
+  PostGIS-only fallback is sufficient for P14, or whether a heuristic zaak key is worth it.

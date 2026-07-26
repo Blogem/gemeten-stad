@@ -1,103 +1,105 @@
 ## ADDED Requirements
 
-### Requirement: Parse structured signals from landed gzd records
+### Requirement: Read the landed SRU record and metadata sidecar per publication
 
-The system SHALL enumerate the landed KOOP publications from the shared raw store under the `koop/`
-prefix (ignoring `koop/_cursor.json` and `*.prov.jsonl` sidecars, for which no reader exists) and
-parse each record's XML for its structured signals: the publication id (`dcterms:identifier`), the
-zaaknummer (`overheidop:referentienummer`), the controlled activiteit (`overheidop:activiteit`), the
-RD point geometry (`overheidwetgeving:geometrie`, `POINT(x y)` in EPSG:28992) and/or WGS84 point
-(`locatiepunt`), the postcode (`overheidop:postcode`), the title (`dcterms:title`), and the
-publication date (`dcterms:available`). A record missing a required signal SHALL be handled per the
-"unresolvable permit" requirement, never dropped silently.
+The system SHALL enumerate landed KOOP publications from the raw store under the `koop/` prefix
+(the SRU records `koop/<id>.xml`, excluding `*.metadata.xml`, `koop/_cursor.json`, and `*.prov.jsonl`)
+and, for each, parse its SRU record and its `koop/<id>.metadata.xml` sidecar into a typed publication:
+the publication id, the zaaknummer (`OVERHEIDop.referentienummer` from the sidecar), the publication
+kind (from the `dcterms:title` prefix), the activiteit, the RD point (`overheidwetgeving:geometrie`),
+the title address, and the publication date (`dcterms:available`). The zaaknummer SHALL be sourced
+from the metadata sidecar (it is absent from the SRU record).
 
-#### Scenario: A gzd record yields its structured fields
+#### Scenario: A publication yields its structured fields from both artifacts
 
-- **WHEN** the load parses a landed `koop/<id>.xml` gzd record carrying a geometry block
-- **THEN** the zaaknummer, activiteit, RD point, postcode, title, and publication date are extracted
-- **AND** the RD point is read as a `POINT(x y)` in EPSG:28992
+- **WHEN** the load parses a publication's SRU record and metadata sidecar
+- **THEN** the zaaknummer comes from `OVERHEIDop.referentienummer`, and the RD point, activiteit,
+  title address, kind, and date come from the SRU record
+- **AND** sidecar/cursor/prov files are not treated as SRU records
 
-#### Scenario: Sidecars are not treated as permits
+#### Scenario: A publication with no metadata sidecar falls to the keyless remainder
 
-- **WHEN** the load enumerates the `koop/` prefix
-- **THEN** `koop/_cursor.json` and any `*.prov.jsonl` file are skipped
+- **WHEN** a publication has no landed `metadata.xml` (no zaaknummer available)
+- **THEN** it is recorded in PostGIS as part of the keyless remainder and is not assembled into the
+  graph
 
-### Requirement: Dedup aanvraag and besluit per zaaknummer, audit the besluit
+### Requirement: Dedup by zaaknummer and audit the besluit
 
-The system SHALL group landed publications by zaaknummer (`overheidop:referentienummer`) and, per
-group, select the **besluit** publication as the audited permit. Aanvraag versus besluit SHALL be
-classified from the `dcterms:title` prefix (`"Verleend:"` / `"Besluit:"` = besluit; `"Aanvraag:"` =
-aanvraag) — the only distinguishing signal in the payload. A group with no besluit SHALL NOT produce
-an Intervention <<i want to challenge this. i'm curious if the data is as complete as you say (that we will always get a besluit eventually). can you validate against the data pulled? older data should always have an aanvraag+besluit, newer only besluit>>.
+The system SHALL group publications by zaaknummer and select the **besluit** (title prefix
+`Besluit`/`Ontwerpbesluit`) as the audited permit. Only the besluit SHALL become a graph
+`Intervention`; the aanvraag, verlenging, ingetrokken, and other publications of the same zaak SHALL
+be retained in PostGIS as the publication trail, not assembled as graph entities. A zaak with no
+besluit SHALL NOT produce a graph `Intervention`.
 
-#### Scenario: An aanvraag and besluit sharing a zaaknummer collapse to one besluit <<i want to at least have both in postgis and in the graph this should naturally build up (the besluit would become the active version), unelss we only load besluiten in the graph - depends on the point aboves>>
+#### Scenario: A case with aanvraag and besluit yields one besluit Intervention
 
-- **WHEN** two publications share a zaaknummer, one titled `"Aanvraag: …"` and one `"Verleend: …"`
-- **THEN** a single Intervention is assembled from the besluit publication
-- **AND** the aanvraag publication is not assembled as a separate Intervention
+- **WHEN** a zaak has an `Aanvraag` and a `Besluit` publication
+- **THEN** a single `Intervention` is assembled from the besluit
+- **AND** both publications are retained as rows in PostGIS
 
-#### Scenario: A zaaknummer with only an aanvraag produces no Intervention
+#### Scenario: A pending case (aanvraag only) is recorded but not graphed
 
-- **WHEN** a zaaknummer group contains only an `"Aanvraag: …"` publication
-- **THEN** no Intervention is assembled for that zaaknummer
+- **WHEN** a zaak has only an `Aanvraag` publication (no besluit yet)
+- **THEN** no graph `Intervention` is assembled
+- **AND** the aanvraag is retained in PostGIS, to be assembled when its besluit later lands
 
-### Requirement: Resolve location and scope to Noord by geometry
+### Requirement: Resolve location address-first and scope to Noord
 
-The system SHALL resolve each besluit's location through the P6 resolver, preferring the structured
-signals: postcode (plus a huisnummer parsed from the title, when present) for the address/postcode
-tier, with the structured RD point as the buurt-tier floor via point-in-polygon. The resolved
-buurt's gebieden code SHALL be the `Place` identity. The load SHALL keep only permits whose resolved
-buurt lies in stadsdeel Noord, cross-checked by the `Z….-N…` zaaknummer prefix; a permit resolving
-outside Noord SHALL be excluded. The resolution confidence and any caveats
-(`unresolvedLocation`/`timeMismatch`) SHALL be carried onto the `locatedAt` edge and into PostGIS.
+The system SHALL resolve each besluit's location through the P6 resolver, preferring the title
+address (postcode + huisnummer parsed from `dcterms:title`) for the address/postcode tier, with the
+RD point (a coarse `Gebiedsmarkering`) as the buurt point-in-polygon floor. The resolved gebieden
+buurt code SHALL be the `Place` identity. The load SHALL keep only permits whose resolved buurt is in
+stadsdeel Noord, cross-checked by the `Z….-N…` zaaknummer prefix; permits resolving outside Noord
+SHALL be excluded from the graph. The resolution confidence and caveats SHALL be carried onto the
+`locatedAt` edge and into PostGIS.
 
-#### Scenario: A permit point resolves to a Noord buurt
+#### Scenario: A title address resolves to a Noord buurt
 
-- **WHEN** a besluit's RD point falls inside a gebieden buurt in stadsdeel Noord
+- **WHEN** a besluit's title postcode + huisnummer resolve to a BAG address in a Noord buurt
 - **THEN** the Intervention is located at that buurt `Place` with the resolver's confidence
-- **AND** the exact point is stored in PostGIS
+- **AND** the resolved values are stored in PostGIS
 
-#### Scenario: A permit outside Noord is excluded
+#### Scenario: Only the coarse point resolves, at the buurt floor
 
-- **WHEN** a besluit resolves to a buurt not in stadsdeel Noord
-- **THEN** no Intervention is assembled and no graph or PostGIS permit row is written for it
-
-#### Scenario: Fallback resolution carries a caveat, never fake coordinates
-
-- **WHEN** a besluit resolves only to buurt granularity (point-in-polygon floor)
+- **WHEN** a besluit's address does not resolve but its RD point falls in a Noord buurt polygon
 - **THEN** the `locatedAt` edge carries confidence < 1.0 and an `unresolvedLocation` caveat
 - **AND** no finer geometry is invented
 
-### Requirement: Assemble the Intervention/Claim/Place graph turtle
+#### Scenario: A permit outside Noord is excluded from the graph
 
-For each audited besluit the system SHALL construct, and hand to the graph writer, turtle that
-asserts: an `Intervention` keyed by zaaknummer under the `data:` namespace; `gs:activity` referencing
-the `act:vellen` concept (verplanten ≡ vellen); a `gs:locatedAt` edge to the resolved buurt `Place`
-carrying an RDF-star `{| gs:confidence <c> ; gs:caveat <term> |}` annotation (the caveat present iff
-`c < 1.0`); a minimal `<place> a gs:Place` typing so the edge satisfies the shape gate independently
-of P12b; and a `gs:claims` edge to a `Claim` representing the herplantplicht triggered via art. 7,
-**with no obligation count**. The `{| … |}` annotation construction lives in this load, not in the
-writer.
+- **WHEN** a besluit resolves to a buurt not in stadsdeel Noord
+- **THEN** no graph `Intervention` is assembled for it
+
+### Requirement: Assemble the besluit Intervention/Claim/Place turtle
+
+For each audited besluit the system SHALL construct, and hand to the graph writer, turtle asserting:
+an `Intervention` keyed by zaaknummer (`data:intervention/<zaaknummer>`); `gs:activity` → `act:vellen`
+(verplanten ≡ vellen); a `gs:locatedAt` edge to the resolved buurt `Place`
+(`data:place/<gebieden identificatie>`, the IRI P12b seeds) carrying a `{| gs:confidence <c> ;
+gs:caveat <term> ; gs:validFrom <besluit-date> |}` annotation (caveat present iff `c < 1.0`); a
+minimal `<place> a gs:Place` typing so the edge satisfies the shape gate; and a `gs:claims` edge to a
+`Claim` (`data:claim/<zaaknummer>`) representing the herplantplicht via art. 7, **with no obligation
+count**.
 
 #### Scenario: A besluit produces a fully-formed Intervention
 
 - **WHEN** a Noord besluit is assembled
 - **THEN** the turtle contains one `gs:Intervention` with `gs:activity act:vellen`, a `gs:locatedAt`
   edge to the buurt `Place`, and a `gs:claims` edge to a `Claim`
-- **AND** the buurt `Place` carries `a gs:Place`
+- **AND** the buurt `Place` IRI matches the P12b `data:place/<identificatie>` scheme
 - **AND** the `Claim` carries no numeric obligation count
 
-#### Scenario: The activity edge resolves to the vocabulary
+#### Scenario: The place typing re-assertion does not disturb the P12b Place
 
-- **WHEN** a permit's `overheidop:activiteit` is a felling term (kappen/vellen/rooien/verplanten)
-- **THEN** `gs:activity` references `act:vellen` in the tree-audit ConceptScheme
+- **WHEN** the candidate's `<place> a gs:Place` is written against a P12b-seeded live Place
+- **THEN** the writer classifies it as an immutable-content match (skipped), leaving the seeded
+  Place's label and `gs:within` unchanged
 
 ### Requirement: Write through the SHACL gate; reject malformed candidates
 
-The assembled turtle SHALL be written through the P12 `load/graph.Load` gate. A candidate that
-violates `ontology/shapes.ttl` (e.g. a `locatedAt` edge with no `gs:confidence`, or a non-exact edge
-with no caveat) SHALL be rejected with no partial write. Values and geometry SHALL be written to
-PostGIS.
+The assembled turtle SHALL be written through `load/graph.Load`. A candidate that violates
+`ontology/shapes.ttl` (e.g. a `locatedAt` edge with no `gs:confidence`, or a non-exact edge with no
+caveat) SHALL be rejected with no partial write.
 
 #### Scenario: A conforming candidate is written
 
@@ -109,47 +111,48 @@ PostGIS.
 - **WHEN** an assembled `locatedAt` edge lacks its `gs:confidence` annotation
 - **THEN** the load fails and nothing is written to the graph
 
-### Requirement: Persist permit values and geometry to PostGIS
+### Requirement: Persist the full publication trail to PostGIS
 
-The system SHALL store each loaded permit's values in a PostGIS table keyed by zaaknummer <<since we get multiple versions (aanvraag, besluit, maybe additional updates) we cannot just key by zaaknummer, but need to follow the SCD2 pattern>>: the
-publication ids, activiteit, publication/besluit dates, the exact RD point geometry, postcode, the
-resolved buurt code, the resolution confidence and caveats, and the raw record. Geometry SHALL live
-only in PostGIS, never as an RDF literal.
+The system SHALL store every publication of every in-scope zaak in a PostGIS table keyed by
+publication id: the zaaknummer, the kind (aanvraag/besluit/verlenging/ingetrokken/…), the dates, the
+RD point geometry, postcode, resolved buurt code, resolution confidence and caveats, an `unresolved`
+marker, and the raw record. A zaak's multiple publications SHALL each be their own row (the table is
+keyed by publication id, not zaaknummer). Geometry SHALL live only in PostGIS, never as an RDF literal.
 
-#### Scenario: A loaded permit's values are persisted
+#### Scenario: All publications of a case are persisted
 
-- **WHEN** a Noord besluit is loaded
-- **THEN** a PostGIS row keyed by its zaaknummer holds its point geometry, postcode, dates,
-  resolved buurt code, confidence, and caveats
+- **WHEN** a zaak with an aanvraag and a besluit is loaded
+- **THEN** PostGIS holds a row per publication keyed by publication id, each carrying its zaaknummer
+  and kind
 - **AND** no geometry literal appears in the graph turtle
 
-### Requirement: Idempotent reload by permit identity
+### Requirement: Idempotent reload
 
-Re-running the load on unchanged landed input SHALL be a true no-op: no new graph triples, no new
-run graph, and no PostGIS row changes. A changed tracked field SHALL open a new version under the
-P12 SCD2 upsert semantics (closing the prior's `gs:validTo`), never overwriting history, and SHALL
-upsert the corresponding PostGIS row.
+Re-running the load on unchanged landed input SHALL be a true no-op: no new graph triples, no new run
+graph, and no PostGIS row changes. A changed tracked field on the besluit (e.g. a re-resolution) SHALL
+open a new graph version under the P12 SCD2 semantics (closing the prior's `gs:validTo`) and upsert
+the corresponding PostGIS row.
 
 #### Scenario: Unchanged re-run is a no-op
 
 - **WHEN** the load runs a second time against the same landed corpus
 - **THEN** no new run graph is minted and no PostGIS rows change
 
-#### Scenario: A changed field opens a new version
+#### Scenario: A re-resolution opens a new version
 
-- **WHEN** a permit's tracked field changes between runs
-- **THEN** a new graph version opens and the prior version's `gs:validTo` is stamped
-- **AND** the PostGIS row is upserted to the new value
+- **WHEN** a besluit's resolved location changes between runs
+- **THEN** a new `locatedAt` version opens and the prior's `gs:validTo` is stamped
+- **AND** the besluit's PostGIS row is upserted
 
 ### Requirement: Handle unresolvable permits honestly
 
-A besluit whose location cannot be resolved to any place (no usable point or address) SHALL be
-persisted to PostGIS with an `unresolved` marker (zaaknummer, raw title, dates) and SHALL NOT be
-written to the graph as an Intervention with fabricated coordinates. Such permits SHALL be
-surfaced for downstream reporting, not silently dropped.
+A besluit whose location cannot be resolved SHALL be persisted to PostGIS with an `unresolved` marker
+and SHALL NOT be written to the graph with fabricated coordinates — unresolvable meaning no resolvable
+title address and no RD point falling in a Noord buurt. Such permits SHALL be surfaced for downstream
+reporting.
 
 #### Scenario: An unresolvable besluit is recorded but not graphed
 
-- **WHEN** a besluit has neither a usable point nor a resolvable address
+- **WHEN** a besluit has neither a resolvable address nor a point in a Noord buurt
 - **THEN** it is stored in PostGIS with an `unresolved` marker
 - **AND** no graph Intervention is asserted for it
