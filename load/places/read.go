@@ -21,7 +21,7 @@ func qualify(schema, table string) string {
 // soft-deleted rows are both projected, per design.md's whole-city, non-destructive scope).
 func readBuurten(ctx context.Context, pool *pgxpool.Pool, schema string) ([]buurtRow, error) {
 	stmt := fmt.Sprintf(
-		"SELECT identificatie, naam, ligtinwijkid, source_deleted_at FROM %s",
+		"SELECT identificatie, COALESCE(naam, ''), ligtinwijkid, source_deleted_at FROM %s",
 		qualify(schema, "gebieden_buurten"),
 	)
 	rows, err := pool.Query(ctx, stmt)
