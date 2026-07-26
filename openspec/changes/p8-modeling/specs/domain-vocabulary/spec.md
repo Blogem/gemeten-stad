@@ -84,18 +84,36 @@ concern.)
 - **WHEN** the surface form "essen" (plural of es) is looked up
 - **THEN** it resolves to the same concept as "es"
 
-### Requirement: Data-enum and geography concepts ingested
+### Requirement: Data-enum concepts ingested; places live in the value store
 
-The vocab SHALL ingest the distinct values of the touched data enums — `boomgebreken`
-(tree defects), read from the loaded `stamgegevens`/`kapenherplant` rows' `raw` jsonb (where
-`load/bomen` retains every source field) — and the `gebieden`/CBS place names and codes from the
-loaded geo tables, as SKOS concepts with their source codes preserved as identity. (Species are
-handled by the city-wide species requirement above.)
+The vocab SHALL ingest the distinct values of the touched data enums that a consumer uses — the
+`kapenherplant.boomAanwezigheid` status axis (the fulfilment signal, Spike C) — as SKOS concepts
+with their source value preserved as identity, so the `gs:status` controlled-value shape can bind
+to them. (Species are handled by the city-wide species requirement above.)
 
-#### Scenario: Enum values become concepts with codes
+Places (gebieden buurten/wijken, CBS buurten) SHALL NOT be seeded as SKOS concepts. A place's
+meaning is its geometry and its buurt→wijk→stadsdeel membership, which are authoritative in the
+PostGIS value store (`gebieden_buurten`: naam + code + geom + `ligtinwijkid`); a SKOS name→code
+copy would add nothing the value store lacks, invite drift, and still force any real place query
+(containment, aggregation) back to PostGIS. Places SHALL instead live as `gs:Place` instance nodes
+keyed by their gebieden/BAG code, resolving to the value store, and the analytics agent SHALL be
+given a value-store query capability for locations (a Phase-2 server/agent concern), not a vocab
+shadow. `boomgebreken` is likewise not ingested here — it is the separate un-ingested
+`gebrekregistratie` dataset (a `load/bomen`/P7 scope addition), deferred and recorded in the vocab
+header.
 
-- **WHEN** a `boomgebreken` value or a gebieden/CBS place is represented in the vocab
-- **THEN** it is a SKOS concept whose identity carries the source code (not just the name)
+#### Scenario: Status enum values become concepts with their source value
+
+- **WHEN** a `boomAanwezigheid` value is represented in the vocab
+- **THEN** it is a SKOS concept whose identity carries the source value (a `skos:notation`), and
+  the `gs:status` shape resolves against it
+
+#### Scenario: Places are not vocab concepts
+
+- **WHEN** the v0 vocab is inspected for gebieden/CBS places
+- **THEN** no place is a SKOS concept; places are represented only as `gs:Place` instance nodes
+  keyed by code, resolving to the PostGIS value store (which holds their names, geometry, and
+  hierarchy)
 
 ### Requirement: Whole-city and multi-intervention scope is a planned Phase-4 revisit
 
