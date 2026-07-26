@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -34,11 +35,19 @@ const SRURateInterval = 200 * time.Millisecond
 
 // SRUMaxAttempts is the maximum number of attempts made to fetch a single
 // SRU page before giving up, retrying only transient fetch/read errors.
-const SRUMaxAttempts = 5
+const SRUMaxAttempts = 8
 
-// SRURetryBaseDelay is the base delay for the exponential backoff between
-// retry attempts of a failed page fetch (1s, 2s, 4s, 8s for attempts 1-4).
+// SRURetryBaseDelay is the base delay for the capped exponential backoff
+// between retry attempts of a failed page fetch: the delay after attempt n
+// (1-based) is min(SRURetryBaseDelay<<(n-1), SRUMaxRetryDelay), giving the
+// sequence 1s, 2s, 4s, 8s, 16s, 30s, 30s (slept between attempts 1..7 of
+// SRUMaxAttempts=8; no sleep after the final attempt).
 const SRURetryBaseDelay = 1 * time.Second
+
+// SRUMaxRetryDelay caps the per-attempt backoff delay computed from
+// SRURetryBaseDelay, so the doubling plateaus instead of growing unbounded
+// (and never overflows time.Duration) across SRUMaxAttempts retries.
+const SRUMaxRetryDelay = 30 * time.Second
 
 // sruSleep is a seam over time.Sleep so tests can drive a multi-page fetch
 // without incurring real rate-limit delays.
@@ -175,6 +184,24 @@ func fetchSRUPage(ctx context.Context, httpGet HTTPGetFunc, url string) ([]byte,
 	return body, nil
 }
 
+// sruRetryBackoff computes the capped exponential backoff delay to sleep
+// after a failed attempt n (1-based): min(SRURetryBaseDelay<<(n-1),
+// SRUMaxRetryDelay). The shift is clamped before it can overflow by bailing
+// out to the cap as soon as doubling would meet or exceed it.
+func sruRetryBackoff(attempt int) time.Duration {
+	delay := SRURetryBaseDelay
+	for i := 1; i < attempt; i++ {
+		if delay >= SRUMaxRetryDelay {
+			return SRUMaxRetryDelay
+		}
+		delay *= 2
+	}
+	if delay > SRUMaxRetryDelay {
+		return SRUMaxRetryDelay
+	}
+	return delay
+}
+
 // FetchSRUAll pages endpoint for query to exhaustion, invoking yield for
 // each record encountered. It fetches startRecord=1 first, reads
 // numberOfRecords from that page, then keeps advancing startRecord by the
@@ -182,9 +209,11 @@ func fetchSRUPage(ctx context.Context, httpGet HTTPGetFunc, url string) ([]byte,
 // page size, so a short/partial page is handled correctly) until every
 // record has been yielded. Pages are rate-limited by SRURateInterval (no
 // delay before the first request). Each page fetch is retried up to
-// SRUMaxAttempts times with exponential backoff (SRURetryBaseDelay << n) on
-// transient fetch/read errors; a page whose XML fails to parse is not
-// retried, since that failure is deterministic. If yield returns an error,
+// SRUMaxAttempts times with capped exponential backoff (see
+// SRURetryBaseDelay/SRUMaxRetryDelay); each retry is logged via slog.Warn,
+// and exhausting all attempts is logged via slog.Error before the wrapped
+// error is returned. A page whose XML fails to parse is not retried, since
+// that failure is deterministic. If yield returns an error,
 // paging stops immediately and that error is returned. Returns the
 // numberOfRecords reported by the endpoint.
 func FetchSRUAll(ctx context.Context, httpGet HTTPGetFunc, endpoint, query string, yield func(SRURecord) error) (numberOfRecords int, err error) {
@@ -210,10 +239,23 @@ func FetchSRUAll(ctx context.Context, httpGet HTTPGetFunc, endpoint, query strin
 				break
 			}
 			if attempt < SRUMaxAttempts {
-				sruSleep(SRURetryBaseDelay << (attempt - 1))
+				delay := sruRetryBackoff(attempt)
+				slog.Warn("shared: SRU page fetch failed; retrying",
+					"startRecord", startRecord,
+					"attempt", attempt,
+					"maxAttempts", SRUMaxAttempts,
+					"backoff", delay,
+					"error", fetchErr,
+				)
+				sruSleep(delay)
 			}
 		}
 		if fetchErr != nil {
+			slog.Error("shared: SRU page fetch exhausted retries",
+				"startRecord", startRecord,
+				"attempts", SRUMaxAttempts,
+				"error", fetchErr,
+			)
 			return 0, fetchErr
 		}
 
