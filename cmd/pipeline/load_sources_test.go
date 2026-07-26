@@ -9,17 +9,17 @@ import (
 )
 
 // TestLoadRegistryShape asserts the load registry exposes exactly the names
-// geo and bomen, in that order — the load-side mirror of the ingest
-// registry's bag/gebieden/bomen. It reads the unexported loadRegistry
+// geo, bomen, and graph, in that order — the value-store loaders (geo, bomen)
+// then the SHACL-gated graph writer. It reads the unexported loadRegistry
 // directly (fine within package main) rather than executing any loader,
-// since loaders require a live database connection.
+// since loaders require a live database / triplestore connection.
 func TestLoadRegistryShape(t *testing.T) {
 	var names []string
 	for _, s := range loadRegistry {
 		names = append(names, s.name)
 	}
 
-	assert.Equal(t, []string{"geo", "bomen"}, names)
+	assert.Equal(t, []string{"geo", "bomen", "graph"}, names)
 }
 
 // TestLoadCmd_UnknownSourceFailsFast exercises the load subcommand
