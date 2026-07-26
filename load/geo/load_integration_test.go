@@ -62,6 +62,8 @@ func newSchemaPool(t *testing.T, ctx context.Context, dsn string) *pgxpool.Pool 
 	t.Cleanup(pool.Close)
 
 	require.NoError(t, pool.Ping(ctx))
+	require.NoError(t, testdb.AssertIsolatedSchema(ctx, pool, schema),
+		"harness guard: pool's search_path must resolve current_schema() to the isolated test schema")
 	return pool
 }
 
