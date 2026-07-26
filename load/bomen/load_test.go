@@ -175,3 +175,40 @@ func TestReadLandedRows_AbsentArtifact(t *testing.T) {
 		}
 	})
 }
+
+// TestReadLandedRows_FeatureCollection covers the geojson auto-detect path: a versioned artifact
+// landed as a single GeoJSON FeatureCollection JSONL line (stamgegevens' new DSO geojson-export
+// ingest shape) must decode into one row per feature, each carrying its `properties` fields plus
+// a `geometrie` key set to the feature's own GeoJSON `geometry` object — proving readLandedRows
+// auto-detects this shape independently of the `_embedded` page shape covered above.
+func TestReadLandedRows_FeatureCollection(t *testing.T) {
+	store := shared.NewRawStore(t.TempDir())
+
+	fc := `{"type":"FeatureCollection","features":[` +
+		`{"type":"Feature","id":"stam-1","geometry":{"type":"Point","coordinates":[4.895,52.370]},"properties":{"id":"stam-1","gbdBuurtId":"A01","soortnaam":"Tilia"}},` +
+		`{"type":"Feature","id":"stam-2","geometry":{"type":"Point","coordinates":[4.900,52.375]},"properties":{"id":"stam-2","gbdBuurtId":"A02","soortnaam":"Quercus"}}` +
+		`]}` + "\n"
+
+	_, err := store.LandVersion(testStamgegevensArtifact, strings.NewReader(fc), "https://example.com/stamgegevens?_format=geojson", time.Now())
+	require.NoError(t, err)
+
+	rows, err := readLandedRows(store, testStamgegevensArtifact, "stamgegevens")
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "one row per feature")
+
+	assert.Equal(t, "stam-1", rows[0]["id"])
+	assert.Equal(t, "A01", rows[0]["gbdBuurtId"])
+	assert.Equal(t, "Tilia", rows[0]["soortnaam"])
+	geom, ok := rows[0]["geometrie"].(map[string]any)
+	require.True(t, ok, "geometrie must be the feature's geometry object")
+	assert.Equal(t, "Point", geom["type"])
+	coords, ok := geom["coordinates"].([]any)
+	require.True(t, ok)
+	require.Len(t, coords, 2)
+	assert.InDelta(t, 4.895, coords[0], 1e-9)
+	assert.InDelta(t, 52.370, coords[1], 1e-9)
+
+	assert.Equal(t, "stam-2", rows[1]["id"])
+	assert.Equal(t, "A02", rows[1]["gbdBuurtId"])
+	assert.Equal(t, "Quercus", rows[1]["soortnaam"])
+}

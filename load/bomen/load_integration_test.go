@@ -81,12 +81,45 @@ func geoJSONPoint(lon, lat float64) map[string]any {
 // new version of artifact via the real shared.RawStore.LandVersion — the actual seam Load's
 // readLandedRows reads back through (read.go), not a shortcut around it. Landing identical
 // content twice is intentionally content-hash idempotent (LandVersion's own dedup), which the
-// "re-run is a no-op" scenario below relies on.
+// "re-run is a no-op" scenario below relies on. kapenherplant still ingests via this paged _embedded
+// shape.
 func landPage(t *testing.T, store *shared.RawStore, artifact, embedKey string, rows []map[string]any, fetchedAt time.Time) {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{"_embedded": map[string]any{embedKey: rows}})
 	require.NoError(t, err)
 	_, err = store.LandVersion(artifact, strings.NewReader(string(body)+"\n"), "https://example.com/"+artifact, fetchedAt)
+	require.NoError(t, err)
+}
+
+// landStamgegevensGeoJSON marshals rows into a GeoJSON FeatureCollection body — feature.properties
+// holding every row field except `geometrie`, feature.geometry holding the row's own `geometrie`
+// value — and lands it as a new version of artifact via the real shared.RawStore.LandVersion,
+// mirroring stamgegevens' new DSO geojson-export ingest shape (readLandedRows auto-detects the
+// "features" key and unpacks each feature back into properties + {"geometrie": geometry}, see
+// read.go). Landing identical content twice is content-hash idempotent, same as landPage.
+func landStamgegevensGeoJSON(t *testing.T, store *shared.RawStore, artifact string, rows []map[string]any, fetchedAt time.Time) {
+	t.Helper()
+
+	features := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		props := make(map[string]any, len(row))
+		for k, v := range row {
+			if k == "geometrie" {
+				continue
+			}
+			props[k] = v
+		}
+		features[i] = map[string]any{
+			"type":       "Feature",
+			"id":         row["id"],
+			"geometry":   row["geometrie"],
+			"properties": props,
+		}
+	}
+
+	body, err := json.Marshal(map[string]any{"type": "FeatureCollection", "features": features})
+	require.NoError(t, err)
+	_, err = store.LandVersion(artifact, strings.NewReader(string(body)+"\n"), "https://example.com/"+artifact+"?_format=geojson", fetchedAt)
 	require.NoError(t, err)
 }
 
@@ -156,13 +189,14 @@ func fixtureKapenherplantV2() []map[string]any {
 }
 
 // seed lands both kapenherplant and stamgegevens rows as one new version each, mirroring how
-// ingest/bomen lands both datasets independently. It uses the same artifact/embed-key constants
-// load.go's Load itself reads through (artifactKapenherplant/embedKeyKapenherplant and their
-// stamgegevens counterparts), so this test exercises the real ingest<->load landing contract.
+// ingest/bomen lands both datasets independently: kapenherplant still lands as an _embedded page
+// (landPage, using load.go's artifactKapenherplant/embedKeyKapenherplant), stamgegevens now lands
+// as a GeoJSON FeatureCollection (landStamgegevensGeoJSON, using artifactStamgegevens) — so this
+// test exercises the real ingest<->load landing contract for both current shapes.
 func seed(t *testing.T, store *shared.RawStore, kapRows, stamRows []map[string]any, fetchedAt time.Time) {
 	t.Helper()
 	landPage(t, store, artifactKapenherplant, embedKeyKapenherplant, kapRows, fetchedAt)
-	landPage(t, store, artifactStamgegevens, embedKeyStamgegevens, stamRows, fetchedAt)
+	landStamgegevensGeoJSON(t, store, artifactStamgegevens, stamRows, fetchedAt)
 }
 
 // countRowsWhere counts table's rows matching where (or all rows, if where is empty).
@@ -284,7 +318,7 @@ func TestBomenLoad_EndToEnd(t *testing.T) {
 		kapV2 := fixtureKapenherplantV2()
 		landPage(t, store, artifactKapenherplant, embedKeyKapenherplant, kapV2, t2)
 		// stamgegevens is unchanged: land the same content again (dedupes, no new version).
-		landPage(t, store, artifactStamgegevens, embedKeyStamgegevens, stamV1, t2)
+		landStamgegevensGeoJSON(t, store, artifactStamgegevens, stamV1, t2)
 
 		loadTime := time.Now().UTC()
 		require.NoError(t, Load(ctx, pool, store, Config{Reset: false}))
