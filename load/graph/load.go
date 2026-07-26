@@ -12,8 +12,10 @@ import (
 // Config configures a graph Load run.
 type Config struct {
 	// Reset clears prior run graphs (every run:load-... graph, plus run:_provenance) before
-	// (re)loading the reference model — a clean rebuild. Absent, Load is additive: a conforming
-	// candidate gets its own new run:load-... graph alongside any prior ones.
+	// (re)loading the reference model — a full rebuild from scratch. Absent, Load is an
+	// idempotent upsert: a conforming candidate writes only the entities that are genuinely new
+	// or changed relative to what the graph already holds (design.md D1-D6); an unchanged
+	// re-run writes nothing at all (D5).
 	Reset bool
 }
 
@@ -22,22 +24,30 @@ type Config struct {
 // the embedded model there, never an accumulation — then, if candidate is non-empty, validates it
 // against ontology.Shapes using the merge-vocab recipe (see doc.go: SHACL controlled-value checks
 // only see a concept's skos:inScheme triple when the concept and the candidate are in the SAME
-// validated graph) and, on conform, writes it into a run-stamped run:load-<runID> named graph plus
-// a prov:Activity in run:_provenance (design.md D5).
+// validated graph) and, on conform, runs the SCD2 idempotent-upsert write path (design.md D1-D6,
+// write.go's upsert): the candidate is staged, diffed by subject IRI against the live open graph,
+// classified into new/changed/unchanged/immutableConflict, and only the delta (new ∪ changed) is
+// ever written — a changed evolving entity opens a new version and closes its prior (stamping
+// gs:validTo), an unchanged entity is skipped entirely, and a delta-empty run leaves no trace: no
+// run:load-<runID> graph, no prov:Activity (D5). Immutable content conflicts are skipped (never
+// overwritten) but logged via log.Printf so the anomaly is surfaced (D4).
 //
 // On non-conform, nothing is written and the violation detail is returned as part of the error —
-// the SHACL check is the loud-failing load gate, the graph analogue of load/geo/gates.go. With
-// cfg.Reset, prior run:load-... graphs and run:_provenance are cleared first, before the reference
-// model is (re)ensured. With a nil/empty candidate, Load only (re)loads the reference model — the
-// primitive the pipeline's load/derive stages call; full derive-stage assembly is out of scope for
-// v0.
+// the SHACL check is the loud-failing load gate, the graph analogue of load/geo/gates.go, and it
+// runs before any staging/mutation (D7). With cfg.Reset, prior run:load-... graphs and
+// run:_provenance are cleared first, before the reference model is (re)ensured — a clean rebuild,
+// unaffected by the upsert logic above. With a nil/empty candidate, Load only (re)loads the
+// reference model — the primitive the pipeline's load/derive stages call; full derive-stage
+// assembly is out of scope for v0.
 //
-// It returns a non-nil error — the caller should exit non-zero — if any step, including SHACL
-// non-conformance, fails.
+// It returns a non-nil error — the caller should exit non-zero — if any step fails: SHACL
+// non-conformance, or the SCD2 open-version invariant check failing after a close (design.md risk
+// "Open-version ambiguity") — in both cases no run:load-... graph and no prov:Activity are written
+// for that run.
 //
 // Load is NOT safe for concurrent calls against the same dataset: the reference-model and
-// provenance graphs are fixed names and the per-run scratch/run graphs key off a timestamp, so
-// two Loads racing within one clock tick could collide. The pipeline calls it sequentially; a
+// provenance graphs are fixed names and the per-run scratch/stage/run graphs key off a timestamp,
+// so two Loads racing within one clock tick could collide. The pipeline calls it sequentially; a
 // future parallel caller must serialize per dataset (or mint collision-proof run IDs first).
 func Load(ctx context.Context, fusekiURL string, candidate []byte, cfg Config) error {
 	c, err := newClient(fusekiURL, os.Getenv)
@@ -71,7 +81,7 @@ func Load(ctx context.Context, fusekiURL string, candidate []byte, cfg Config) e
 		return fmt.Errorf("graph: load: candidate does not conform to shapes: %s", detail)
 	}
 
-	if err := c.writeCandidate(ctx, runID, candidate, time.Now()); err != nil {
+	if err := c.upsert(ctx, runID, candidate, time.Now()); err != nil {
 		return fmt.Errorf("graph: load: %w", err)
 	}
 	return nil
