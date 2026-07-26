@@ -27,6 +27,7 @@ import (
 	"github.com/Blogem/gemeten-stad/ingest/shared"
 	loadbomen "github.com/Blogem/gemeten-stad/load/bomen"
 	"github.com/Blogem/gemeten-stad/load/geo"
+	loadgraph "github.com/Blogem/gemeten-stad/load/graph"
 )
 
 // ingestSource pairs a registered ingest source name with its ingester
@@ -214,6 +215,7 @@ type loadSource struct {
 var loadRegistry = []loadSource{
 	{name: "geo", fn: runGeoLoad},
 	{name: "bomen", fn: runBomenLoad},
+	{name: "graph", fn: runGraphLoad},
 }
 
 // loadRegistryNames returns the loadRegistry's source names, in registration order.
@@ -349,6 +351,21 @@ func runGeoLoad(ctx context.Context, reset bool) error {
 	}
 	if err := geo.Load(ctx, pool, sc, store, cfg); err != nil {
 		return fmt.Errorf("load geo: %w", err)
+	}
+	return nil
+}
+
+// runGraphLoad seeds the graph reference model (ontology + SKOS vocab) into the Fuseki dataset
+// through the SHACL-gated load path. It is the v0 primitive: with no candidate it (re)loads the
+// reference model idempotently (Reset clears prior run graphs first); the load/derive stages call
+// loadgraph.Load with real candidate graphs. The Fuseki URL resolves from GS_FUSEKI_URL.
+func runGraphLoad(ctx context.Context, reset bool) error {
+	fusekiURL, err := shared.FusekiURL(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve fuseki url: %w", err)
+	}
+	if err := loadgraph.Load(ctx, fusekiURL, nil, loadgraph.Config{Reset: reset}); err != nil {
+		return fmt.Errorf("load graph: %w", err)
 	}
 	return nil
 }
