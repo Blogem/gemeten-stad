@@ -40,7 +40,7 @@ func requireEnv(t *testing.T, name string) string {
 // The load DDL and the upsert/gate SQL all use UNQUALIFIED table names, and
 // PostGIS functions (ST_GeomFromText, etc.) live in public, so both must be on
 // the path.
-func newSchemaPool(t *testing.T, ctx context.Context, dsn string) *pgxpool.Pool {
+func newSchemaPool(t *testing.T, ctx context.Context, dsn string) (*pgxpool.Pool, string) {
 	t.Helper()
 
 	schema, err := testdb.NewSchemaName()
@@ -64,7 +64,7 @@ func newSchemaPool(t *testing.T, ctx context.Context, dsn string) *pgxpool.Pool 
 	require.NoError(t, pool.Ping(ctx))
 	require.NoError(t, testdb.AssertIsolatedSchema(ctx, pool, schema),
 		"harness guard: pool's search_path must resolve current_schema() to the isolated test schema")
-	return pool
+	return pool, schema
 }
 
 // seedStaging loads testdata/staging_seed.sql (the checked-in real-shaped
@@ -81,27 +81,27 @@ func seedStaging(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	require.NoError(t, err)
 }
 
-func sourceDeletedAtCount(ctx context.Context, pool *pgxpool.Pool, table string) (int, error) {
-	return countWhere(ctx, pool, table, "source_deleted_at IS NOT NULL")
+func sourceDeletedAtCount(ctx context.Context, pool *pgxpool.Pool, schema, table string) (int, error) {
+	return countWhere(ctx, pool, schema, table, "source_deleted_at IS NOT NULL")
 }
 
 func TestGeoLoad_FromStaging(t *testing.T) {
 	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
 	ctx := context.Background()
 
-	pool := newSchemaPool(t, ctx, dsn)
+	pool, schema := newSchemaPool(t, ctx, dsn)
 
 	require.NoError(t, ensureExtensions(ctx, pool))
-	require.NoError(t, ensureSchema(ctx, pool))
+	require.NoError(t, ensureSchema(ctx, pool, schema))
 	seedStaging(t, ctx, pool)
 
 	// -- 7.5 upsert insert: the seeded voorkomens land in the targets ------------
 
 	loadTS1 := time.Now().UTC()
-	require.NoError(t, upsertAll(ctx, pool, loadTS1))
+	require.NoError(t, upsertAll(ctx, pool, schema, loadTS1))
 	// CBS is reconciled separately (best-effort in production); here it must land its one
 	// in-municipality row, and its gemeentecode='GM0363' filter must drop the GM0999 row.
-	require.NoError(t, upsertCBS(ctx, pool, loadTS1))
+	require.NoError(t, upsertCBS(ctx, pool, schema, loadTS1))
 
 	wantCounts := map[string]int{
 		"bag_openbareruimte":   1,
@@ -117,7 +117,7 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 	assertCounts := func(t *testing.T) {
 		t.Helper()
 		for table, want := range wantCounts {
-			got, err := countWhere(ctx, pool, table, "")
+			got, err := countWhere(ctx, pool, schema, table, "")
 			require.NoError(t, err, "count %s", table)
 			assert.Equalf(t, want, got, "table %s row count", table)
 		}
@@ -126,7 +126,7 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 	assertNoSoftDeletes := func(t *testing.T) {
 		t.Helper()
 		for table := range wantCounts {
-			n, err := sourceDeletedAtCount(ctx, pool, table)
+			n, err := sourceDeletedAtCount(ctx, pool, schema, table)
 			require.NoError(t, err, "count soft-deleted rows in %s", table)
 			assert.Zerof(t, n, "table %s: expected no soft-deleted rows", table)
 		}
@@ -141,7 +141,7 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 
 	t.Run("re-run against unchanged staging is a no-op", func(t *testing.T) {
 		loadTS2 := time.Now().UTC()
-		require.NoError(t, upsertAll(ctx, pool, loadTS2))
+		require.NoError(t, upsertAll(ctx, pool, schema, loadTS2))
 		assertCounts(t)
 		assertNoSoftDeletes(t)
 	})
@@ -153,7 +153,7 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 		require.NoError(t, err)
 
 		loadTS3 := time.Now().UTC()
-		require.NoError(t, upsertAll(ctx, pool, loadTS3))
+		require.NoError(t, upsertAll(ctx, pool, schema, loadTS3))
 
 		// num-g's target row is retained (not physically deleted) with
 		// source_deleted_at stamped to the load timestamp.
@@ -172,12 +172,12 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, stillNull)
 
-		n, err := countWhere(ctx, pool, "bag_nummeraanduiding", "source_deleted_at IS NOT NULL")
+		n, err := countWhere(ctx, pool, schema, "bag_nummeraanduiding", "source_deleted_at IS NOT NULL")
 		require.NoError(t, err)
 		assert.Equal(t, 1, n, "only num-g's row should be soft-deleted")
 
 		// Row count is unchanged — soft-delete never physically removes a row.
-		got, err := countWhere(ctx, pool, "bag_nummeraanduiding", "")
+		got, err := countWhere(ctx, pool, schema, "bag_nummeraanduiding", "")
 		require.NoError(t, err)
 		assert.Equal(t, wantCounts["bag_nummeraanduiding"], got)
 	})
@@ -193,9 +193,9 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 		require.NoError(t, err)
 
 		loadTS4 := time.Now().UTC()
-		require.NoError(t, upsertAll(ctx, pool, loadTS4))
+		require.NoError(t, upsertAll(ctx, pool, schema, loadTS4))
 
-		got, err := countWhere(ctx, pool, "bag_nummeraanduiding", "identificatie = 'num-a'")
+		got, err := countWhere(ctx, pool, schema, "bag_nummeraanduiding", "identificatie = 'num-a'")
 		require.NoError(t, err)
 		assert.Equal(t, 3, got, "num-a's 2 prior voorkomens must remain plus the new one")
 
@@ -214,7 +214,7 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 	// -- 7.5 indexes: ensureIndexes creates the resolver's indexes ----------------
 
 	t.Run("ensureIndexes creates the resolver's indexes", func(t *testing.T) {
-		require.NoError(t, ensureIndexes(ctx, pool))
+		require.NoError(t, ensureIndexes(ctx, pool, schema))
 
 		wantIndexes := []string{
 			"ix_vbo_geom", "ix_lig_geom", "ix_sta_geom", "ix_buurt_geom",
@@ -233,12 +233,12 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 	// -- 7.5 SRID gate -------------------------------------------------------------
 
 	t.Run("gateSRID passes on the seeded 28992 geometry", func(t *testing.T) {
-		assert.NoError(t, gateSRID(ctx, pool))
+		assert.NoError(t, gateSRID(ctx, pool, schema))
 	})
 
 	// documents the seam: the 69/15 Noord ground-truth gate is a full-corpus
 	// anchor (design D6) and cannot hold on this subset.
 	t.Run("gateNoordGroundTruth fails on the subset (full-corpus-only anchor)", func(t *testing.T) {
-		assert.Error(t, gateNoordGroundTruth(ctx, pool))
+		assert.Error(t, gateNoordGroundTruth(ctx, pool, schema))
 	})
 }

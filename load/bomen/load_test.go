@@ -27,10 +27,10 @@ func TestMergeSQL_FixtureSpec(t *testing.T) {
 		},
 	}
 
-	sql := mergeSQL(spec)
+	sql := mergeSQL("s", spec)
 	normalized := strings.Join(strings.Fields(sql), " ")
 
-	assert.Contains(t, normalized, "MERGE INTO bomen_test_target")
+	assert.Contains(t, normalized, `MERGE INTO "s"."bomen_test_target"`, "target table must be schema-qualified")
 	assert.Contains(t, normalized, `t."id" = s."id"`, "must be keyed on id (identifiers are quoted)")
 	assert.Contains(t, normalized, "WHEN MATCHED AND t.raw IS DISTINCT FROM s.raw", "changed rows must be refreshed")
 	assert.Contains(t, normalized, "WHEN MATCHED AND t.source_deleted_at IS NOT NULL", "a reappearing soft-deleted row must be un-soft-deleted")
@@ -49,7 +49,7 @@ func TestMergeSQL_UpsertSpecs(t *testing.T) {
 
 	for _, spec := range upsertSpecs {
 		t.Run(spec.target, func(t *testing.T) {
-			sql := mergeSQL(spec)
+			sql := mergeSQL("s", spec)
 			normalized := strings.Join(strings.Fields(sql), " ")
 
 			assert.Contains(t, spec.keys, "id", "bomen upsert specs are keyed on the resolved id")
