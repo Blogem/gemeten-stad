@@ -41,23 +41,26 @@ const (
 // guard against a malformed/injected value ever reaching a minted IRI.
 const disallowedIdentificatieChars = "<>\"{}|^`\\"
 
-// assertSafeIdentificatie panics if identificatie contains a character that would make the minted
-// Place IRI an unsafe/invalid IRIREF. mintPlaceIRI and the Turtle renderer share this single choke
-// point. A gebieden identificatie is a database PK we do not otherwise control the shape of, so a
-// violation here indicates a data invariant break, not a normal error path — hence the panic
-// rather than a speculative error-return plumbed through the pure renderer's fixed signature.
-func assertSafeIdentificatie(identificatie string) {
+// assertSafeIdentificatie returns an error if identificatie contains a character that would make
+// the minted Place IRI an unsafe/invalid IRIREF (mirrors load/graph/signature.go's assertSafeIRI).
+// BuildCandidate is this package's single production entry point and validates every buurt/wijk
+// identificatie through this guard before renderPlaces ever runs, so the pure render path
+// (mintPlaceIRI, placeToken) can trust its input and stay panic-free.
+func assertSafeIdentificatie(identificatie string) error {
 	for _, r := range identificatie {
 		if r <= 0x20 || strings.ContainsRune(disallowedIdentificatieChars, r) {
-			panic(fmt.Sprintf("places: unsafe gebieden identificatie %q: contains disallowed character %U", identificatie, r))
+			return fmt.Errorf("places: unsafe gebieden identificatie %q: contains disallowed character %U", identificatie, r)
 		}
 	}
+	return nil
 }
 
 // mintPlaceIRI returns the full Place IRI for a gebieden identificatie:
 //
 //	http://gemetenstad.nl/id/place/<identificatie>
+//
+// It trusts identificatie is already validated (BuildCandidate validates every identificatie via
+// assertSafeIdentificatie before any candidate is rendered).
 func mintPlaceIRI(identificatie string) string {
-	assertSafeIdentificatie(identificatie)
 	return placeNS + identificatie
 }

@@ -47,7 +47,7 @@ func readBuurten(ctx context.Context, pool *pgxpool.Pool, schema string) ([]buur
 // readWijken reads every gebieden_wijken row (no source_deleted_at filter).
 func readWijken(ctx context.Context, pool *pgxpool.Pool, schema string) ([]wijkRow, error) {
 	stmt := fmt.Sprintf(
-		"SELECT identificatie, naam, source_deleted_at FROM %s",
+		"SELECT identificatie, COALESCE(naam, ''), source_deleted_at FROM %s",
 		qualify(schema, "gebieden_wijken"),
 	)
 	rows, err := pool.Query(ctx, stmt)
@@ -82,6 +82,20 @@ func BuildCandidate(ctx context.Context, pool *pgxpool.Pool, schema string) ([]b
 	wijken, err := readWijken(ctx, pool, schema)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate every identificatie before it ever reaches the pure render path: BuildCandidate is
+	// this package's single production entry point, so this guarantees renderPlaces/placeToken/
+	// mintPlaceIRI only ever see already-safe input and can stay panic-free (places.go).
+	for _, b := range buurten {
+		if err := assertSafeIdentificatie(b.identificatie); err != nil {
+			return nil, fmt.Errorf("places: unsafe buurt identificatie %q: %w", b.identificatie, err)
+		}
+	}
+	for _, w := range wijken {
+		if err := assertSafeIdentificatie(w.identificatie); err != nil {
+			return nil, fmt.Errorf("places: unsafe wijk identificatie %q: %w", w.identificatie, err)
+		}
 	}
 
 	turtle, dangling := renderPlaces(buurten, wijken, time.Now())

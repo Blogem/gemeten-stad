@@ -39,10 +39,10 @@ func turtleString(s string) string {
 	return `"` + literalEscaper.Replace(s) + `"`
 }
 
-// placeToken renders identificatie as a place:-prefixed Turtle token, after validating it through
-// the same safety guard mintPlaceIRI uses.
+// placeToken renders identificatie as a place:-prefixed Turtle token. It trusts identificatie is
+// already validated (BuildCandidate validates every identificatie via assertSafeIdentificatie
+// before renderPlaces ever runs — see places.go).
 func placeToken(identificatie string) string {
-	assertSafeIdentificatie(identificatie)
 	return "place:" + identificatie
 }
 
