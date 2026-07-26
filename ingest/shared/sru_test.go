@@ -71,13 +71,15 @@ func TestSRURequestURL(t *testing.T) {
 // TestSRUConstants pins the named tuning constants the design settled on: a
 // 100-record page size (matching the proven spike-b harvest), a ~200ms (~5
 // req/s) inter-request interval for polite sequential paging, and the P11
-// live-harvest retry tuning (5 attempts, 1s exponential backoff base) that
-// keeps a single transient httpGet/read failure from aborting a page fetch.
+// live-harvest retry tuning (8 attempts, 1s exponential backoff base capped
+// at 30s) that keeps a single transient httpGet/read failure from aborting a
+// page fetch.
 func TestSRUConstants(t *testing.T) {
 	assert.Equal(t, 100, SRUPageSize)
 	assert.Equal(t, 200*time.Millisecond, SRURateInterval)
-	assert.Equal(t, 5, SRUMaxAttempts)
+	assert.Equal(t, 8, SRUMaxAttempts)
 	assert.Equal(t, 1*time.Second, SRURetryBaseDelay)
+	assert.Equal(t, 30*time.Second, SRUMaxRetryDelay)
 }
 
 // -- ParseSRUResponse ---------------------------------------------------------
@@ -289,11 +291,12 @@ func TestFetchSRUAll_YieldErrorStopsPaging(t *testing.T) {
 //
 // Covers the P11 live-harvest fix: a single flaky httpGet/body-read failure on
 // a page must be retried (with exponential backoff via the sruSleep seam, per
-// SRURetryBaseDelay << (n-1)) up to SRUMaxAttempts before giving up, so one
-// transient network blip doesn't abort an otherwise-successful harvest run.
-// An XML parse error is a distinct failure mode (a malformed response body,
-// not a transient transport error) and is deliberately NOT retried -- these
-// tests only exercise the httpGet/body-read failure path.
+// min(SRURetryBaseDelay << (n-1), SRUMaxRetryDelay)) up to SRUMaxAttempts
+// before giving up, so one transient network blip doesn't abort an otherwise-
+// successful harvest run. An XML parse error is a distinct failure mode (a
+// malformed response body, not a transient transport error) and is
+// deliberately NOT retried -- these tests only exercise the httpGet/body-read
+// failure path.
 
 // flakyHTTPGet returns transportErr for the first failCount calls (tracked via
 // *calls) and serves page for every call after that.
@@ -331,7 +334,7 @@ const singlePageAvailableFixture = `<?xml version="1.0" encoding="UTF-8"?>
 
 // TestFetchSRUAll_RetriesTransientFailures guards against an implementation
 // that gives up on the first httpGet/read error: with a getter that fails
-// twice (well under SRUMaxAttempts=5) and then succeeds, FetchSRUAll must
+// twice (well under SRUMaxAttempts) and then succeeds, FetchSRUAll must
 // still yield the page's record and return no error.
 func TestFetchSRUAll_RetriesTransientFailures(t *testing.T) {
 	origSleep := sruSleep
@@ -383,4 +386,44 @@ func TestFetchSRUAll_ExhaustsRetriesAndReturnsError(t *testing.T) {
 	require.Error(t, err, "FetchSRUAll must return an error once every attempt for a page has failed")
 	assert.Equal(t, SRUMaxAttempts, calls,
 		"httpGet must be attempted exactly SRUMaxAttempts times before giving up")
+}
+
+// TestFetchSRUAll_BackoffIsCappedExponential guards the capped exponential
+// backoff schedule directly: it records every duration passed to the
+// sruSleep seam (rather than stubbing it to a no-op) while a page fetch
+// fails all SRUMaxAttempts attempts, so the only sleeps captured are the
+// retry backoffs -- there is no successful page (so no second page, hence no
+// SRURateInterval inter-page pacing sleep) and no sleep before the very first
+// request (FetchSRUAll never sleeps before its first fetch). This proves both
+// the doubling (1s, 2s, 4s, 8s, 16s) and the SRUMaxRetryDelay=30s cap
+// (32s/64s would be the uncapped values for attempts 6-7).
+func TestFetchSRUAll_BackoffIsCappedExponential(t *testing.T) {
+	origSleep := sruSleep
+	var recorded []time.Duration
+	sruSleep = func(d time.Duration) { recorded = append(recorded, d) }
+	defer func() { sruSleep = origSleep }()
+
+	var calls int
+	wantErr := fmt.Errorf("transient: connection reset")
+	// failCount == SRUMaxAttempts: every attempt fails, so exactly
+	// SRUMaxAttempts-1 backoff sleeps are recorded (no sleep after the final
+	// failed attempt) and no page is ever successfully fetched.
+	httpGet := flakyHTTPGet(&calls, SRUMaxAttempts, nil, wantErr)
+
+	_, err := FetchSRUAll(context.Background(), httpGet,
+		"https://repository.overheid.nl/sru",
+		`(dt.creator any "Amsterdam")`,
+		func(SRURecord) error { return nil })
+
+	require.Error(t, err)
+	assert.Equal(t, SRUMaxAttempts, calls)
+	assert.Equal(t, []time.Duration{
+		1 * time.Second,
+		2 * time.Second,
+		4 * time.Second,
+		8 * time.Second,
+		16 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+	}, recorded, "backoff after each failed attempt must double from SRURetryBaseDelay, capping at SRUMaxRetryDelay once the doubled value would exceed it")
 }
