@@ -13,13 +13,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Blogem/gemeten-stad/internal/testdb"
 )
 
-// These integration tests exercise the SHACL load gate against a live Fuseki dataset given by
-// GS_TEST_FUSEKI_URL (which MUST be a dataset that exposes the /shacl endpoint — see
-// deploy/compose ENABLE_SHACL; a plain dbType=mem dataset created via the admin API does NOT).
-// Isolation is by the run:* graphs Load writes, cleaned up in t.Cleanup — Load uses fixed graph
-// names, so these tests must run serially against a dedicated test dataset.
+// These integration tests exercise the SHACL load gate against the dedicated, in-memory,
+// SHACL-enabled `gs-test` dataset (deploy/compose/fuseki/gs-test.ttl) — NOT the runtime `ds`, so
+// they never touch working data (enforced by testdb.AssertNotProduction). GS_TEST_FUSEKI_URL is
+// the bare Fuseki server root (matching GS_TEST_DATABASE_URL's convention); the test appends the
+// dataset segment. A per-test isolated dataset is not possible here — the image can't add a
+// /shacl endpoint to admin-API-created datasets (both mem and tdb2 return 405), and config-upload
+// creation is disabled — so isolation is by the run:* graphs Load writes, dropped in t.Cleanup;
+// tests run serially against gs-test (whose in-memory store is also wiped on container restart).
+const testDataset = "gs-test"
 
 const (
 	// A well-formed intervention: an exact (confidence 1.0) locatedAt edge needs no caveat.
@@ -55,17 +61,21 @@ data:bad a gs:Intervention ; gs:locatedAt data:pb .
 data:pb a gs:Place .`
 )
 
+// testClient returns a client and the dataset URL for the gs-test dataset. GS_TEST_FUSEKI_URL is
+// the bare server root; the dataset segment is appended here and guarded against production names.
 func testClient(t *testing.T) (*client, string) {
 	t.Helper()
-	base := os.Getenv("GS_TEST_FUSEKI_URL")
-	require.NotEmptyf(t, base, "GS_TEST_FUSEKI_URL must be set to run graph integration tests")
+	root := os.Getenv("GS_TEST_FUSEKI_URL")
+	require.NotEmptyf(t, root, "GS_TEST_FUSEKI_URL must be set to run graph integration tests")
 	require.NotEmptyf(t, os.Getenv("FUSEKI_ADMIN_PASSWORD"), "FUSEKI_ADMIN_PASSWORD must be set")
-	c, err := newClient(base, os.Getenv)
+	require.NoError(t, testdb.AssertNotProduction("", testDataset), "must not target a production dataset")
+	dsURL := strings.TrimRight(root, "/") + "/" + testDataset
+	c, err := newClient(dsURL, os.Getenv)
 	require.NoError(t, err)
 	// Clean slate + teardown: drop every run:* graph this suite touches.
 	dropRunGraphs(t, c)
 	t.Cleanup(func() { dropRunGraphs(t, c) })
-	return c, base
+	return c, dsURL
 }
 
 func dropRunGraphs(t *testing.T, c *client) {
@@ -103,18 +113,19 @@ func TestLoadReferenceModelAndVocab(t *testing.T) {
 	// 5.1: the reference model (ontology + vocab) loads without error.
 	require.NoError(t, Load(ctx, base, nil, Config{Reset: true}))
 
-	// 5.2: vocab assertions via SPARQL.
-	gs := "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\nPREFIX act: <http://gemetenstad.nl/id/activity/>\nPREFIX sp: <http://gemetenstad.nl/id/species/>\nPREFIX sch: <http://gemetenstad.nl/id/scheme/>\n"
-	assert.True(t, c.ask(t, gs+`ASK { act:vellen skos:altLabel "verplanten"@nl , "kappen"@nl , "rooien"@nl }`),
+	// 5.2: vocab assertions via SPARQL. Queries name the graph explicitly (the reference model
+	// lands in run:_model) rather than relying on a union default graph.
+	gs := "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\nPREFIX act: <http://gemetenstad.nl/id/activity/>\nPREFIX sp: <http://gemetenstad.nl/id/species/>\n"
+	assert.True(t, c.ask(t, gs+`ASK { GRAPH ?g { act:vellen skos:altLabel "verplanten"@nl , "kappen"@nl , "rooien"@nl } }`),
 		"felling concept carries verplanten/kappen/rooien altLabels")
-	assert.False(t, c.ask(t, gs+`ASK { ?c skos:prefLabel "verplanten"@nl }`),
+	assert.False(t, c.ask(t, gs+`ASK { GRAPH ?g { ?c skos:prefLabel "verplanten"@nl } }`),
 		"no separate Verplanten concept exists")
-	assert.True(t, c.ask(t, gs+`ASK { sp:ulmus skos:prefLabel "iep"@nl ; skos:altLabel "iepen"@nl , "Ulmus" }`),
+	assert.True(t, c.ask(t, gs+`ASK { GRAPH ?g { sp:ulmus skos:prefLabel "iep"@nl ; skos:altLabel "iepen"@nl , "Ulmus" } }`),
 		"species iep carries plural + Latin genus")
 	// a plural surface form resolves to the same concept as its singular
-	assert.True(t, c.ask(t, gs+`ASK { ?c skos:prefLabel "es"@nl ; skos:altLabel "essen"@nl }`),
+	assert.True(t, c.ask(t, gs+`ASK { GRAPH ?g { ?c skos:prefLabel "es"@nl ; skos:altLabel "essen"@nl } }`),
 		"essen resolves to the same concept as es")
-	assert.False(t, c.ask(t, gs+`ASK { ?p a <http://gemetenstad.nl/id/place/> }`),
+	assert.False(t, c.ask(t, gs+`ASK { GRAPH ?g { ?p a <http://gemetenstad.nl/id/place/> } }`),
 		"no place concepts seeded")
 }
 

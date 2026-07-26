@@ -1,0 +1,23 @@
+@prefix fuseki: <http://jena.apache.org/fuseki#> .
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ja:     <http://jena.hpl.hp.com/2005/11/Assembler#> .
+@prefix :       <#> .
+
+# Integration-test dataset for the P8 graph load gate (docs/PHASE_0_PLAN.md P5/P8).
+# A dedicated, in-memory, SHACL-enabled service, DISTINCT from the runtime `ds`, so the
+# load-gate integration tests never touch working data (guarded by testdb.AssertNotProduction).
+# The image's ENABLE_SHACL only sed-toggles ds's assembler; this file declares the /shacl
+# endpoint (plus query/update/GSP-rw) directly. Fuseki loads every *.ttl in this directory.
+<#service> rdf:type fuseki:Service ;
+    fuseki:name                        "gs-test" ;
+    fuseki:serviceQuery                "sparql" ;
+    fuseki:serviceUpdate               "update" ;
+    fuseki:serviceReadWriteGraphStore  "data" ;
+    fuseki:endpoint [ fuseki:operation fuseki:shacl ; fuseki:name "shacl" ] ;
+    fuseki:dataset                     <#ds> ;
+    .
+
+# A plain in-memory dataset. It does NOT set unionDefaultGraph (unlike the runtime `ds`): the load
+# path targets explicit named graphs for validation (/shacl?graph=…) and writes, and the
+# integration tests query with explicit GRAPH clauses, so the union default is not needed here.
+<#ds> rdf:type ja:MemoryDataset .

@@ -47,6 +47,11 @@ services:
       - "${FUSEKI_PORT:-3030}:3030"    # Fuseki UI + endpoints; default dataset is /ds
     volumes:
       - fuseki-data:/fuseki-base/databases
+      # A dedicated in-memory, SHACL-enabled `gs-test` dataset for the P8 load-gate
+      # integration tests — distinct from the runtime `ds`, so tests never touch working
+      # data. Fuseki loads every *.ttl in the configuration dir at startup; ENABLE_SHACL
+      # only toggles ds's assembler, so gs-test declares its /shacl endpoint directly.
+      - ./fuseki/gs-test.ttl:/fuseki-base/configuration/gs-test.ttl:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3030/$$/ping || exit 1"]
       interval: 5s
