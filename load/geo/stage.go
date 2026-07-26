@@ -113,9 +113,12 @@ func containerPath(rel string) string {
 }
 
 // vsizipPath resolves rel (a path relative to the raw store root, identifying a file INSIDE a
-// zip) to a GDAL /vsizip/ virtual path as seen from inside the gdal sidecar container.
+// zip) to a GDAL /vsizip/ virtual path as seen from inside the gdal sidecar container. The
+// container path is absolute (/data/...), so it is appended after "/vsizip/" verbatim, yielding
+// the double-slash form GDAL requires for an absolute archive path (e.g. /vsizip//data/bag/x.zip);
+// a single slash would make GDAL treat the archive path as relative to the working dir and fail.
 func vsizipPath(rel string) string {
-	return "/vsizip" + containerPath(rel)
+	return "/vsizip/" + containerPath(rel)
 }
 
 // extractInnerZip extracts the BAG outer extract's per-object-type inner zip for code (matching
