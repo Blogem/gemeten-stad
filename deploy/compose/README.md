@@ -10,26 +10,44 @@ Two `pipeline` subcommands, run on the host (not through compose — see the env
 
 ```
 pipeline ingest [source ...]  # bronze: land raw sources verbatim + provenance
-pipeline load [--reset]       # silver: stage via ogr2ogr, upsert, index, gate
+pipeline load [source ...]    # silver: stage via ogr2ogr/rows, upsert, index, gate
 ```
 
 - **`pipeline ingest`** downloads the national BAG *LV 2.0 Extract* from the PDOK atom feed, the
-  whole-city `gebieden` buurt/wijk polygons (Datapunt GeoJSON), and the CBS "wijken en buurten" WFS
-  reference, and lands all three verbatim under `GS_RAW_DATA_PATH` with a provenance sidecar.
-  Idempotent: a source already landed is skipped, not re-fetched.
-  - `pipeline ingest` with no arguments ingests all registered sources, in registration order.
+  whole-city `gebieden` buurt/wijk polygons (Datapunt GeoJSON), the CBS "wijken en buurten" WFS
+  reference, and the Amsterdam `bomen` tree registry (`kapenherplant` + `stamgegevens`, paginated
+  Datapunt DSO API), and lands all four verbatim under `GS_RAW_DATA_PATH` with a provenance
+  sidecar.
+  - `pipeline ingest` with no arguments ingests all registered sources, in registration order
+    (`bag`, `gebieden`, `bomen`).
   - `pipeline ingest bag` ingests only the BAG source — schedule this monthly.
   - `pipeline ingest gebieden` ingests only the `gebieden`/CBS boundaries — schedule this weekly.
+  - `pipeline ingest bomen` ingests only the tree registry.
   - An unknown source name exits non-zero with an error listing the valid source names, without
     ingesting anything.
-- **`pipeline load`** stages each source into PostGIS via the `gdal` sidecar's `ogr2ogr`
-  (`lvbag` for BAG, GeoJSON/WFS for the polygons) into `*_staging` tables, then upserts staging into
-  the target tables keyed by voorkomen identity (`identificatie` + `begingeldigheid` +
-  `tijdstipregistratie`): new voorkomens insert, unchanged ones no-op, and a target row absent from
-  the fresh staging set is **soft-deleted** (`source_deleted_at`), never physically dropped. It then
-  builds the resolver's indexes (GIST + `pg_trgm`) and asserts the post-load sanity gates (single
-  SRID 28992; 69 Noord buurten / 15 Noord wijken present in the whole-city load).
-  - **`--reset`** drops and rebuilds the target tables first, for a clean dev volume.
+  - **Landing behaviour differs by source.** BAG and `gebieden` are idempotent: a source already
+    landed is skipped, not re-fetched. `bomen` instead **re-fetches every run and lands each run
+    as a new version**, keeping all past versions — the tree registry changes over time (felled,
+    replanted) and audit needs the history, not just the latest snapshot.
+- **`pipeline load [source ...]`** stages each landed source into PostGIS and upserts it into the
+  target tables:
+  - `pipeline load` with no arguments loads all registered sources, in registration order (`geo`,
+    `bomen`); `pipeline load geo` or `pipeline load bomen` loads just one; an unknown source name
+    exits non-zero with an error listing the valid names, without loading anything.
+  - **`geo`** stages BAG + `gebieden` via the `gdal` sidecar's `ogr2ogr` (`lvbag` for BAG,
+    GeoJSON/WFS for the polygons) into `*_staging` tables, then upserts staging into the target
+    tables keyed by voorkomen identity (`identificatie` + `begingeldigheid` +
+    `tijdstipregistratie`): new voorkomens insert, unchanged ones no-op, and a target row absent
+    from the fresh staging set is **soft-deleted** (`source_deleted_at`), never physically
+    dropped. It then builds the resolver's indexes (GIST + `pg_trgm`) and asserts the post-load
+    sanity gates (single SRID 28992; 69 Noord buurten / 15 Noord wijken present in the whole-city
+    load).
+  - **`bomen`** (`pipeline load bomen [--reset]`) reads the most recently landed
+    `kapenherplant`/`stamgegevens` export, stages it, upserts it into its target tables the same
+    soft-delete way, and materializes the kapenherplant → stamgegevens point resolution. Unlike
+    `geo`, it runs directly against Postgres — no `gdal` sidecar involved.
+  - **`--reset`** drops and rebuilds the target tables first, for a clean dev volume — applies to
+    whichever source(s) are selected.
   - Without `--reset`, a reload is the non-destructive upsert described above — safe to re-run.
 
 ## 2. Env knobs (`.env.example`)
@@ -40,6 +58,7 @@ pipeline load [--reset]       # silver: stage via ogr2ogr, upsert, index, gate
 | `GS_DATABASE_URL` | The **host** pgx DSN the `pipeline` binary itself connects with, e.g. `postgres://gs:gs@localhost:5433/gemeten_stad` — the host-published port, **not** the in-network `db:5432` the `server` container uses. |
 | `GS_GDAL_EXEC_PREFIX` | Command prefix used to shell into the `gdal` sidecar. Default: `docker compose -f deploy/compose/compose.yaml exec -T gdal`. |
 | `GS_GDAL_PG_CONN` | The `ogr2ogr` Postgres connection string used **inside** the sidecar: `PG:host=db port=5432 dbname=gemeten_stad user=gs password=gs`. This is deliberately distinct from `GS_DATABASE_URL` — `ogr2ogr` runs inside the `gdal` container, on the compose network, so it addresses Postgres as `db`, not through whatever host/port the Go process's own DSN uses. |
+| `GS_BOMEN_API_KEY` | Optional `X-Api-Key` header for the Amsterdam bomen (tree registry) API. No key is required today (docs/DATA_SOURCES.md §2a), but the API docs signal a mandatory key is coming; read only by `pipeline ingest bomen`. |
 
 ## 3. Host ↔ sidecar landing store (`GS_RAW_DATA_PATH`)
 
