@@ -114,6 +114,15 @@ func TestCBSWFSURL(t *testing.T) {
 	assert.True(t,
 		strings.Contains(searchable, "28992") || strings.Contains(strings.ToUpper(searchable), "EPSG:28992"),
 		"expected an RD (EPSG:28992) SRS reference, searchable=%q", searchable)
+
+	// The gemeente filter must be a standard OGC FES filter, NOT the cql_filter
+	// extension: this PDOK endpoint silently ignores cql_filter and returns the
+	// first 1000 unfiltered features, so a regression to cql_filter would quietly
+	// mis-land the whole-country layer.
+	assert.Contains(t, searchable, "PropertyIsEqualTo",
+		"expected a standard OGC FES filter (PDOK ignores the cql_filter extension)")
+	assert.NotContains(t, q, "cql_filter",
+		"must not use cql_filter — PDOK ignores it, silently returning unfiltered features")
 }
 
 // -- landed-artifact name constants ---------------------------------------------
