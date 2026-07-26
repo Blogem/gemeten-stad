@@ -1,0 +1,149 @@
+# De Gemeten Stad — SHACL shapes v0 (the load gate)
+# ============================================================================
+# Promoted from spikes/spike-e/shapes/shapes.ttl (namespaces updated: gemeten-stad.nl
+# → gemetenstad.nl). The load path (load/graph) POSTs a candidate graph + this file to the
+# Fuseki …/shacl endpoint; a non-conforming report is the loud-failing gate — no half-broken
+# data enters the graph.
+#
+# Two mechanisms, by necessity (Spike E Finding 2):
+#   • STRUCTURE and controlled VALUE SETS — core SHACL (sh:property / sh:path / sh:minCount /
+#     sh:class / sh:node). Works because the {| … |} annotation form asserts the base edge, so
+#     a plain property path sees it.
+#   • CONFIDENCE / CAVEAT on the fuzzy edge — sh:sparql with a SPARQL-star << … >> pattern. A
+#     core SHACL path CANNOT traverse into an RDF-star annotation (the confidence/caveat hang
+#     off the QUOTED triple, not off any node reachable by a path).
+#
+# NB: validation must run against a dataset that also holds vocab.ttl, so the controlled-value
+# shapes can see each concept's skos:inScheme triple (the load path loads vocab before gating).
+# ============================================================================
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix gs:   <http://gemetenstad.nl/ns#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# ---------------------------------------------------------------------------
+# (1) Structure + confidence/caveat on the fuzzy locatedAt edge (Intervention).
+# ---------------------------------------------------------------------------
+gs:InterventionShape
+    a sh:NodeShape ;
+    sh:targetClass gs:Intervention ;
+
+    # (1a) structure — an Intervention must be locatedAt at least one Place (core SHACL).
+    sh:property [
+        sh:path     gs:locatedAt ;
+        sh:minCount 1 ;
+        sh:class    gs:Place ;
+        sh:message  "An Intervention must be locatedAt at least one Place." ;
+    ] ;
+
+    # (1b) confidence PRESENCE — every locatedAt edge must carry a gs:confidence annotation
+    #      (no fuzzy edge written as if exact). SPARQL-star, per Spike E.
+    sh:sparql [
+        sh:message "locatedAt edge has no gs:confidence annotation — a fuzzy edge must not be written as if exact." ;
+        sh:select """
+            SELECT $this ?place WHERE {
+              $this <http://gemetenstad.nl/ns#locatedAt> ?place .
+              FILTER NOT EXISTS {
+                << $this <http://gemetenstad.nl/ns#locatedAt> ?place >>
+                    <http://gemetenstad.nl/ns#confidence> ?c .
+              }
+            }
+        """ ;
+    ] ;
+
+    # (1c) confidence RANGE — the annotated gs:confidence must lie in [0,1].
+    sh:sparql [
+        sh:message "gs:confidence on a locatedAt edge is out of range [0,1]." ;
+        sh:select """
+            SELECT $this ?place ?c WHERE {
+              $this <http://gemetenstad.nl/ns#locatedAt> ?place .
+              << $this <http://gemetenstad.nl/ns#locatedAt> ?place >>
+                  <http://gemetenstad.nl/ns#confidence> ?c .
+              FILTER (?c < 0 || ?c > 1)
+            }
+        """ ;
+    ] ;
+
+    # (1d) caveat PRESENCE — a non-exact edge (confidence < 1.0) must name why, via a gs:caveat
+    #      annotation. Exact resolutions (confidence = 1.0) need no caveat.
+    #      v0 decision (Spike E did NOT probe caveat shapes): "not exact" is signalled by
+    #      confidence < 1.0. This satisfies §4 "resolved via fallback … never written as if
+    #      exact": a fallback edge (confidence < 1.0) with no caveat is rejected here.
+    sh:sparql [
+        sh:message "A non-exact locatedAt edge (gs:confidence < 1.0) must carry a gs:caveat naming why it is not exact." ;
+        sh:select """
+            SELECT $this ?place WHERE {
+              $this <http://gemetenstad.nl/ns#locatedAt> ?place .
+              << $this <http://gemetenstad.nl/ns#locatedAt> ?place >>
+                  <http://gemetenstad.nl/ns#confidence> ?c .
+              FILTER (?c < 1.0)
+              FILTER NOT EXISTS {
+                << $this <http://gemetenstad.nl/ns#locatedAt> ?place >>
+                    <http://gemetenstad.nl/ns#caveat> ?cav .
+              }
+            }
+        """ ;
+    ] ;
+
+    # (1e) caveat VALUE — any gs:caveat annotation on a locatedAt edge must reference one of the
+    #      four controlled gs:Caveat terms (SPARQL-star; the caveat hangs off the quoted triple).
+    sh:sparql [
+        sh:message "A gs:caveat value must be one of the controlled caveat terms (gs:unresolvedLocation, gs:timeMismatch, gs:weakLink, gs:transplantOrigin)." ;
+        sh:select """
+            SELECT $this ?place ?cav WHERE {
+              $this <http://gemetenstad.nl/ns#locatedAt> ?place .
+              << $this <http://gemetenstad.nl/ns#locatedAt> ?place >>
+                  <http://gemetenstad.nl/ns#caveat> ?cav .
+              FILTER (?cav NOT IN (
+                <http://gemetenstad.nl/ns#unresolvedLocation>,
+                <http://gemetenstad.nl/ns#timeMismatch>,
+                <http://gemetenstad.nl/ns#weakLink>,
+                <http://gemetenstad.nl/ns#transplantOrigin>
+              ))
+            }
+        """ ;
+    ] .
+
+# ---------------------------------------------------------------------------
+# (2) Controlled value sets backed by SKOS — species / activity / status must resolve to a
+#     concept in the tree-audit ConceptScheme (core SHACL; these are plain node properties).
+#     targetSubjectsOf so the constraint fires only when the property is used (values are
+#     optional in the thin v0 graph), never forcing presence.
+# ---------------------------------------------------------------------------
+gs:ConceptInSchemeShape
+    a sh:NodeShape ;
+    sh:class skos:Concept ;
+    sh:property [
+        sh:path     skos:inScheme ;
+        sh:hasValue <http://gemetenstad.nl/id/scheme/tree-audit> ;
+        sh:minCount 1 ;
+        sh:message  "Value must be a concept in the Gemeten Stad tree-audit ConceptScheme." ;
+    ] .
+
+gs:ActivityValueShape
+    a sh:NodeShape ;
+    sh:targetSubjectsOf gs:activity ;
+    sh:property [
+        sh:path gs:activity ;
+        sh:node gs:ConceptInSchemeShape ;
+        sh:message "gs:activity must reference a concept in the tree-audit vocabulary." ;
+    ] .
+
+gs:SpeciesValueShape
+    a sh:NodeShape ;
+    sh:targetSubjectsOf gs:species ;
+    sh:property [
+        sh:path gs:species ;
+        sh:node gs:ConceptInSchemeShape ;
+        sh:message "gs:species must reference a concept in the tree-audit vocabulary." ;
+    ] .
+
+gs:StatusValueShape
+    a sh:NodeShape ;
+    sh:targetSubjectsOf gs:status ;
+    sh:property [
+        sh:path gs:status ;
+        sh:node gs:ConceptInSchemeShape ;
+        sh:message "gs:status must reference a concept in the tree-audit vocabulary." ;
+    ] .

@@ -1,0 +1,257 @@
+# De Gemeten Stad — ontology v0 (TBox)
+# ============================================================================
+# The graph model from IMPLEMENTATION_PLAN.md §3, promoted from Spike E.
+#
+# The graph is deliberately THIN. It carries identity, relations, provenance,
+# and confidence only. Every number and geometry — tree counts, polygons,
+# replant fractions, stamdiameter — lives in the Postgres/PostGIS value store,
+# NEVER as an RDF literal. A class or property here that looks like it wants a
+# number is a modelling error: it should reference an entity that resolves to
+# the value store instead.
+#
+# Namespaces (settled, design.md): the RDF base is gemetenstad.nl (NO hyphen —
+# the Spike E probes used gemeten-stad.nl, which this committed model supersedes).
+#   gs:   http://gemetenstad.nl/ns#    — terms (this file)
+#   data: http://gemetenstad.nl/id/    — instance identities
+#   run:  http://gemetenstad.nl/run/   — run-stamped named graphs + provenance
+# ============================================================================
+
+@prefix gs:   <http://gemetenstad.nl/ns#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+@prefix run:  <http://gemetenstad.nl/run/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+
+<http://gemetenstad.nl/ns>
+    a owl:Ontology ;
+    rdfs:label "De Gemeten Stad ontology (v0)"@en ;
+    dct:description
+        "TBox for auditing Amsterdam government interventions against public observation data.  v0 covers vertical 1: the tree felling/replant (herplantplicht) lifecycle.  Thin graph (identity + relations + provenance + confidence); values live in Postgres."@en ;
+    owl:versionInfo "0" .
+
+# ============================================================================
+# 1. Classes — the Intervention–Place–Claim–Observation spine (§3)
+# ============================================================================
+
+gs:Intervention
+    a owl:Class ;
+    rdfs:label "Intervention"@en ;
+    rdfs:comment
+        "A government act audited against reality. In v0: a tree-felling permit  (kap-omgevingsvergunning). Its stable identity anchors everything else;  it is located at a Place, may be part of a Project, and makes Claims.  Numbers (how many trees) live in the value store, not here."@en .
+
+gs:Place
+    a owl:Class ;
+    rdfs:label "Place"@en ;
+    rdfs:comment
+        "The smallest area an Intervention can be confidently placed in: a BAG object,  a project polygon, a postcode-6, or a buurt (whichever is smallest by area and  clears the confidence threshold — §4). The geometry itself lives in PostGIS;  the graph node is the identity a locatedAt edge resolves to."@en .
+
+gs:Project
+    a owl:Class ;
+    rdfs:label "Project"@en ;
+    rdfs:comment
+        "A renewal/herstructurering programme several Interventions belong to (e.g.  'De Oranje Loper'). Sparse — present only for interventions that are part of one;  a one-off permit has no Project. Modelling it as an optional edge (not a column)  is exactly why the graph earns its place (§3)."@en .
+
+gs:Claim
+    a owl:Class ;
+    rdfs:label "Claim"@en ;
+    rdfs:comment
+        "The obligation derived once from an Intervention + the regulation: replant N trees  of diameter-class C at place L, by deadline D-or-unknown. Stable — derived from the  permit and the law, it does not itself evolve (the Assessment of it does)."@en .
+
+gs:Observation
+    a owl:Class ;
+    rdfs:label "Observation"@en ;
+    rdfs:comment
+        "What the registry / world data actually shows against a Claim: the kapenherplant  felling and replant records, boomAanwezigheid, dates. A Claim is testedAgainst an  Observation. The observed counts live in the value store; the node carries identity."@en .
+
+gs:AuditLink
+    a owl:Class ;
+    rdfs:label "AuditLink"@en ;
+    rdfs:comment
+        "A DERIVED, stored link joining a permit-side Intervention to registry-side trees  (finest-common-granularity + count + time-window, per §4). A fuzzy edge: it carries  gs:confidence + gs:evidence and may carry caveat flags. prov:wasDerivedFrom its inputs."@en .
+
+gs:Assessment
+    a owl:Class ;
+    rdfs:label "Assessment"@en ;
+    rdfs:comment
+        "A DERIVED verdict on a Claim's fulfilment at a point in time: {estimate none/partial/  fulfilled, timeliness, caveats, confidence}. The SCD-Type-2 fluent: each derive run  opens a new Assessment and closes the prior by stamping gs:validTo — NEVER overwritten,  so a now-fulfilled claim retains its earlier partial assessment in history (§3, D4)."@en .
+
+gs:LegalStatusPeriod
+    a owl:Class ;
+    rdfs:label "LegalStatusPeriod"@en ;
+    rdfs:comment
+        "A period during which an Intervention held a given legal force (in-force → repealed/  amended). The second use of the state/period (SCD-Type-2) mechanism: valid-time on a  bundle of state that moves together. An amendment is a NEW decision entity linked to  the prior, never an in-place edit (§3)."@en .
+
+gs:Caveat
+    a owl:Class ;
+    rdfs:label "Caveat"@en ;
+    rdfs:comment
+        "A named, controlled reason a fuzzy edge is not exact — what we explicitly do NOT know.  Attached to an edge via gs:caveat. The four v0 caveat terms are individuals below."@en .
+
+# ============================================================================
+# 2. Object properties — the spine's relations (§3)
+# ============================================================================
+
+gs:locatedAt
+    a owl:ObjectProperty ;
+    rdfs:label "located at"@en ;
+    rdfs:domain gs:Intervention ;
+    rdfs:range  gs:Place ;
+    rdfs:comment
+        "Places an Intervention on the map. A FUZZY edge: it MUST carry a gs:confidence +  gs:evidence RDF-star annotation (see the uncertainty convention below). Required  (minCount 1, shapes.ttl)."@en .
+
+gs:partOfProject
+    a owl:ObjectProperty ;
+    rdfs:label "part of project"@en ;
+    rdfs:domain gs:Intervention ;
+    rdfs:range  gs:Project ;
+    rdfs:comment
+        "Optional and sparse — present only for interventions belonging to a renewal project.  Its absence is valid (the shapes do not require it)."@en .
+
+gs:claims
+    a owl:ObjectProperty ;
+    rdfs:label "claims"@en ;
+    rdfs:domain gs:Intervention ;
+    rdfs:range  gs:Claim ;
+    rdfs:comment "Relates an Intervention to the obligation(s) it gives rise to."@en .
+
+gs:testedAgainst
+    a owl:ObjectProperty ;
+    rdfs:label "tested against"@en ;
+    rdfs:domain gs:Claim ;
+    rdfs:range  gs:Observation ;
+    rdfs:comment "Relates a Claim (obligation) to the Observation (registry reality) that tests it."@en .
+
+# The activity/species/status of an intervention or its trees resolve to SKOS concepts in
+# vocab.ttl. Identity stays in codes/IRIs, never names (§3). Controlled by the shapes.
+
+gs:activity
+    a owl:ObjectProperty ;
+    rdfs:label "activity"@en ;
+    rdfs:domain gs:Intervention ;
+    rdfs:range  skos:Concept ;
+    rdfs:comment
+        "The measure carried out — resolves to the single felling concept (verplanten ≡ vellen,  Spike C / Bomenverordening art. 1k) or the replant concept in the activity scheme."@en .
+
+gs:species
+    a owl:ObjectProperty ;
+    rdfs:label "species"@en ;
+    rdfs:range  skos:Concept ;
+    rdfs:comment
+        "The tree species — resolves to a concept in the species scheme (vocab.ttl), seeded  city-wide from stamgegevens.soortnaamTop (Dutch top level) with soortnaam cultivars  as skos:broader children."@en .
+
+gs:status
+    a owl:ObjectProperty ;
+    rdfs:label "status"@en ;
+    rdfs:domain gs:Observation ;
+    rdfs:range  skos:Concept ;
+    rdfs:comment "The observed fulfilment status of an Observation — resolves to a status concept in vocab.ttl (the kapenherplant boomAanwezigheid axis, Spike C). Controlled by the shapes." .
+
+gs:caveat
+    a owl:ObjectProperty ;
+    rdfs:label "caveat"@en ;
+    rdfs:domain gs:Caveat ;   # NB: written as an RDF-star annotation on a fuzzy edge, so the
+                              # subject at write-time is the quoted triple, not a plain node.
+    rdfs:range  gs:Caveat ;
+    rdfs:comment
+        "Flags an explicit, controlled reason a fuzzy edge (locatedAt / AuditLink) is not exact.  Written as an RDF-star annotation alongside gs:confidence:  :i gs:locatedAt :p {| gs:confidence 0.6 ; gs:caveat gs:timeMismatch |}.  Its value MUST be one of the four gs:Caveat individuals below (controlled, shapes.ttl)."@en .
+
+# ============================================================================
+# 3. Uncertainty convention — RDF-star annotation terms (§3, D2)
+# ============================================================================
+# HARD MODEL RULE: confidence + evidence are written with the RDF-star ANNOTATION
+# form  {| … |}  — NEVER the bare quoted form  << … >> .
+#
+#   :i gs:locatedAt :p {| gs:confidence 0.7 ; gs:evidence "place+time match" |} .
+#
+# The annotation form asserts the base edge (:i gs:locatedAt :p) AND stores the
+# annotation — so structural SHACL (a plain property path) still sees the edge,
+# and the annotation is readable via SPARQL-star:
+#
+#   SELECT ?c WHERE { << :i gs:locatedAt :p >> gs:confidence ?c }
+#
+# The bare  << … >>  form does NOT assert the base edge (Spike E, verified with
+# riot), so structural SHACL would not see it. Do not use it. This rule is
+# enforced by the confidence-presence sh:sparql constraint in shapes.ttl.
+
+gs:confidence
+    a owl:DatatypeProperty ;
+    rdfs:label "confidence"@en ;
+    rdfs:range  xsd:decimal ;
+    rdfs:comment
+        "How sure we are of the fuzzy edge it annotates, in [0,1] (range enforced by shapes.ttl). 1.0 denotes an exact resolution; any value < 1.0 marks a non-exact edge, which the shapes then require to carry a gs:caveat naming why (see shapes.ttl caveat-presence). Written as an RDF-star annotation; read via SPARQL-star. Shown in the UI as 'how sure'."@en .
+
+gs:evidence
+    a owl:DatatypeProperty ;
+    rdfs:label "evidence"@en ;
+    rdfs:range  xsd:string ;
+    rdfs:comment
+        "A short human-readable statement of what the confidence rests on (e.g. 'exact BAG address  match at permit valid-time'). Written as an RDF-star annotation on the same fuzzy edge."@en .
+
+# ============================================================================
+# 4. Temporal convention — valid-time terms (§3, D4)
+# ============================================================================
+# Separate stable identity from time-varying state; stamp validity only on state.
+#   • Identity is timeless — one stable IRI per entity, never changed or deleted.
+#   • Immutable facts stay UN-stamped — a publication date, a felling date are
+#     timeless facts; recording WHEN something happened is not the fact evolving.
+#     Over-stamping is an anti-pattern (every query then drags time filters).
+#   • Evolving state carries valid time via ONE of two mechanisms, chosen by shape:
+#       (a) RDF-star statement annotation on a single evolving fact that also
+#           carries confidence — e.g. a legal-status or location link;
+#       (b) a state/period NODE (gs:Assessment, gs:LegalStatusPeriod) — the SCD-2
+#           fluent — when several attributes move together and periods are queried
+#           as objects. Opened/closed by writing a new node and stamping validTo on
+#           the prior; NEVER overwritten.
+#
+# Transaction-time ("when did WE record it") is NOT modelled with these terms — it
+# is PROV: each load/derive run writes a run-stamped named graph and records a
+# prov:Activity with prov:generatedAtTime in the run:_provenance named graph (D5).
+
+gs:validFrom
+    a owl:DatatypeProperty ;
+    rdfs:label "valid from"@en ;
+    rdfs:range  xsd:date ;
+    rdfs:comment
+        "Start of the valid-time (world-time) interval of an evolving state. On an Assessment/  LegalStatusPeriod node, or as an RDF-star annotation on a single evolving fact.  Absent on immutable facts."@en .
+
+gs:validTo
+    a owl:DatatypeProperty ;
+    rdfs:label "valid to"@en ;
+    rdfs:range  xsd:date ;
+    rdfs:comment
+        "End of the valid-time interval; absent/open while the state is current. Stamping it is  how a state/period node is CLOSED when a successor opens — history is retained, never  overwritten."@en .
+
+# ============================================================================
+# 5. Caveat terms — the controlled set of non-exactness flags (§3, D3; task 1.6)
+# ============================================================================
+# Fixed model enum (small, not data-derived): the four reasons a fuzzy edge may be
+# non-exact. Values of gs:caveat. Bound by the shapes (sh:in) to exactly these.
+
+gs:unresolvedLocation
+    a gs:Caveat ;
+    rdfs:label "unresolved location"@en ;
+    rdfs:comment
+        "The reference address did not exist in BAG (e.g. demolished in a renewal area), so the  location was resolved by fallback rather than an exact BAG object match (§4)."@en .
+
+gs:timeMismatch
+    a gs:Caveat ;
+    rdfs:label "time mismatch"@en ;
+    rdfs:comment
+        "No BAG voorkomen was valid at the intervention's date, so the location was resolved  against a voorkomen from another time and the time alignment is uncertain (§3, §8)."@en .
+
+gs:weakLink
+    a gs:Caveat ;
+    rdfs:label "weak link"@en ;
+    rdfs:comment
+        "The permit↔trees AuditLink rests on coarse or partial evidence (e.g. buurt-level only,  count/time window loose) — the join is plausible but not strong."@en .
+
+gs:transplantOrigin
+    a gs:Caveat ;
+    rdfs:label "transplant origin"@en ;
+    rdfs:comment
+        "The felling was a verplanten (transplant): legally a velling (Bomenverordening art. 1k,  Spike C) and counted in the felling total, but the tree may persist at a new site — so  the 'removal' is qualified."@en .
