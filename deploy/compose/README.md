@@ -36,17 +36,21 @@ pipeline load [--reset]  # silver: stage via ogr2ogr, upsert, index, gate
 | `GS_GDAL_EXEC_PREFIX` | Command prefix used to shell into the `gdal` sidecar. Default: `docker compose -f deploy/compose/compose.yaml exec -T gdal`. |
 | `GS_GDAL_PG_CONN` | The `ogr2ogr` Postgres connection string used **inside** the sidecar: `PG:host=db port=5432 dbname=gemeten_stad user=gs password=gs`. This is deliberately distinct from `GS_DATABASE_URL` — `ogr2ogr` runs inside the `gdal` container, on the compose network, so it addresses Postgres as `db`, not through whatever host/port the Go process's own DSN uses. |
 
-## 3. Known dev limitation — `raw-data` volume vs `GS_RAW_DATA_PATH`
+## 3. Host ↔ sidecar landing store (`GS_RAW_DATA_PATH`)
 
-The host `pipeline` process (`pipeline ingest`) lands files under `GS_RAW_DATA_PATH` **on the
-host filesystem**. The `gdal` sidecar, however, reads the extract from `/data`, which
-`compose.yaml` mounts from the `raw-data` **named Docker volume** — not a host bind mount. These
-are not the same filesystem today, so a fresh `pipeline ingest` followed by `pipeline load` does
-not yet see the landed extract inside the sidecar: the real `ogr2ogr`/`lvbag` staging step (and
-therefore an end-to-end `pipeline load` against the real landed extract) requires bridging that
-gap first — e.g. bind-mounting `raw-data` to `GS_RAW_DATA_PATH`, or having `pipeline ingest` land
-directly into the volume. This is a deploy follow-up, not yet done; the automatic integration gate
-below does not depend on it (it does not use the `gdal` sidecar).
+The host `pipeline` process lands files under `GS_RAW_DATA_PATH`, and the `gdal` sidecar reads them
+at `/data`. `compose.yaml` bind-mounts the two together (`${GS_RAW_DATA_PATH}:/data`), so a fresh
+`pipeline ingest` followed by `pipeline load` sees the same landed extract on both sides.
+
+`GS_RAW_DATA_PATH` **must be an absolute host path** and is **required** to bring up the `gdal`
+service — `compose config`/`up` fails fast with a clear message if it is unset, rather than mounting
+an unexpected directory. (Bringing up only `db`+`fuseki` — as the CI integration job does — does not
+start `gdal` and so does not need it set.) Create the directory before the first run:
+
+```
+export GS_RAW_DATA_PATH="$HOME/gemeten-stad-rawdata"   # absolute; ~10 GB free for the full extract
+mkdir -p "$GS_RAW_DATA_PATH"
+```
 
 ## 4. Integration gate (automatic, CI)
 
@@ -67,8 +71,7 @@ unaffected by the volume gap in §3. This is the tier that runs in default CI.
 Reproduces Spike D's exact numbers against the real ~3.6 GB national extract, on the full compose
 stack including `gdal`. Not run in default CI — run by hand when validating a real load:
 
-1. Resolve the volume gap in §3 (bind-mount `raw-data` to `GS_RAW_DATA_PATH`, or land directly into
-   the volume) so the sidecar can see the landed extract.
+1. Set `GS_RAW_DATA_PATH` to an absolute host path and `mkdir -p` it (see §3).
 2. `docker compose -f deploy/compose/compose.yaml up -d` (full stack, incl. `gdal`).
 3. `pipeline ingest` — lands the real BAG extract + `gebieden`/CBS.
 4. `pipeline load --reset` — runs the actual `ogr2ogr`/`lvbag` load against the real extract.

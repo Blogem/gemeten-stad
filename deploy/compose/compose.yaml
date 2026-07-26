@@ -83,11 +83,15 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - raw-data:/data
+      # Bind-mount the host raw landing store into the sidecar so the host `pipeline ingest`
+      # (which lands under GS_RAW_DATA_PATH) and the sidecar's ogr2ogr (which reads /data) share
+      # one filesystem — the seam P6's geo load needs. GS_RAW_DATA_PATH must be an absolute host
+      # path; it is required (no default) so a missing value fails fast instead of mounting an
+      # unexpected directory.
+      - ${GS_RAW_DATA_PATH:?set GS_RAW_DATA_PATH to the absolute host raw landing store path}:/data
     working_dir: /data
     command: ["sleep", "infinity"]
 
 volumes:
   pgdata:
   fuseki-data:
-  raw-data:
