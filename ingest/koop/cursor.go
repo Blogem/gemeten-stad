@@ -74,11 +74,24 @@ func writeCursor(store *shared.RawStore, highWaterMark string) error {
 }
 
 // queryLowerBound returns hwm (a "YYYY-MM-DD" high-water mark) minus OverlapDays, as
-// "YYYY-MM-DD" — the dt.available>= floor passed to BuildQuery. Pure: no I/O.
+// "YYYY-MM-DD" — the dt.available>= floor passed to BuildQuery. The result is clamped to never
+// go below DefaultSinceDate: on a first run (hwm == DefaultSinceDate) the overlap would otherwise
+// push the floor before 2021-01-01, but the spec requires a clean-volume run to query from
+// exactly the 2021-01-01 lower bound. Pure: no I/O.
 func queryLowerBound(hwm string) (string, error) {
 	t, err := time.Parse(cursorDateLayout, hwm)
 	if err != nil {
 		return "", fmt.Errorf("koop: parse high-water mark %q: %w", hwm, err)
 	}
-	return t.AddDate(0, 0, -OverlapDays).Format(cursorDateLayout), nil
+
+	floor, err := time.Parse(cursorDateLayout, DefaultSinceDate)
+	if err != nil {
+		return "", fmt.Errorf("koop: parse default since date %q: %w", DefaultSinceDate, err)
+	}
+
+	lowerBound := t.AddDate(0, 0, -OverlapDays)
+	if lowerBound.Before(floor) {
+		lowerBound = floor
+	}
+	return lowerBound.Format(cursorDateLayout), nil
 }
