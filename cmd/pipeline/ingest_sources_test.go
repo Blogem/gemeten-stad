@@ -11,7 +11,9 @@ import (
 // TestSelectSources covers the pure source-name resolver behind `pipeline
 // ingest [source ...]` (OpenSpec change per-source-ingest, tasks 3.1/3.2,
 // scenarios "Ingest a single named source", "No arguments ingests all
-// sources", and "Unknown source name fails fast").
+// sources", and "Unknown source name fails fast"). selectSources is now a
+// thin wrapper over resolveSources(args, <ingest registry names>); the
+// generic resolver behaviour itself is covered by TestResolveSources.
 func TestSelectSources(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -23,7 +25,7 @@ func TestSelectSources(t *testing.T) {
 		{
 			name:      "no args selects all sources in registration order",
 			args:      nil,
-			wantNames: []string{"bag", "gebieden"},
+			wantNames: []string{"bag", "gebieden", "bomen"},
 		},
 		{
 			name:      "single known source: bag",
@@ -36,21 +38,31 @@ func TestSelectSources(t *testing.T) {
 			wantNames: []string{"gebieden"},
 		},
 		{
+			name:      "single known source: bomen",
+			args:      []string{"bomen"},
+			wantNames: []string{"bomen"},
+		},
+		{
 			name:      "multiple known sources preserve given order",
 			args:      []string{"gebieden", "bag"},
 			wantNames: []string{"gebieden", "bag"},
 		},
 		{
+			name:      "all three sources reordered preserve given order",
+			args:      []string{"bomen", "bag", "gebieden"},
+			wantNames: []string{"bomen", "bag", "gebieden"},
+		},
+		{
 			name:      "unknown source errors listing valid names",
 			args:      []string{"nope"},
 			wantErr:   true,
-			errMsgAll: []string{"bag", "gebieden"},
+			errMsgAll: []string{"bag", "gebieden", "bomen"},
 		},
 		{
 			name:      "unknown mixed with known source still errors with no names",
 			args:      []string{"bag", "nope"},
 			wantErr:   true,
-			errMsgAll: []string{"bag", "gebieden"},
+			errMsgAll: []string{"bag", "gebieden", "bomen"},
 		},
 	}
 
@@ -73,14 +85,15 @@ func TestSelectSources(t *testing.T) {
 	}
 }
 
-// TestSelectSources_RegistryShape asserts the registry exposes exactly the
-// names bag and gebieden, in that order, via the public selectSources(nil)
-// contract rather than reaching into unexported registry internals.
+// TestSelectSources_RegistryShape asserts the ingest registry exposes exactly
+// the names bag, gebieden, and bomen, in that order, via the public
+// selectSources(nil) contract rather than reaching into unexported registry
+// internals.
 func TestSelectSources_RegistryShape(t *testing.T) {
 	names, err := selectSources(nil)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"bag", "gebieden"}, names)
+	assert.Equal(t, []string{"bag", "gebieden", "bomen"}, names)
 }
 
 // TestIngestCmd_UnknownSourceFailsFast exercises the ingest subcommand

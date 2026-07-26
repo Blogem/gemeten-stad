@@ -43,7 +43,10 @@ func TestStageIsNoOp(t *testing.T) {
 
 // TestIngestAndLoadAreWired asserts ingest/load are wired to real
 // implementations (non-stub RunE) without invoking that RunE, which would
-// require network/DB access. It also checks load registers its --reset flag.
+// require network/DB access. It also checks load registers its --reset flag
+// and that both ingest and load accept an arbitrary number of positional
+// source-name arguments (cobra.ArbitraryArgs), since load now takes
+// "load [source ...]" just like ingest.
 func TestIngestAndLoadAreWired(t *testing.T) {
 	root := newRootCmd()
 	commands := map[string]*cobra.Command{}
@@ -59,6 +62,16 @@ func TestIngestAndLoadAreWired(t *testing.T) {
 		if c.RunE == nil {
 			t.Errorf("%s: expected non-nil RunE", name)
 		}
+		if c.Args == nil {
+			t.Errorf("%s: expected non-nil Args validator (ArbitraryArgs)", name)
+			continue
+		}
+		// ArbitraryArgs accepts any number of positional args, including more
+		// than one; validating that here (rather than comparing function
+		// identity, which cobra.ArbitraryArgs does not support) confirms the
+		// command was not left at cobra's zero-arg default.
+		assert.NoError(t, c.Args(c, []string{"one", "two", "three"}),
+			"%s: Args should accept an arbitrary number of positional args", name)
 	}
 
 	loadCmd := commands["load"]
