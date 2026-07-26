@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS gebieden_wijken (
 );
 
 CREATE TABLE IF NOT EXISTS cbs_buurten (
-    identificatie      text PRIMARY KEY,
+    buurtcode          text PRIMARY KEY,
     geom               geometry(Geometry, 28992),
     source_deleted_at  timestamptz
 );

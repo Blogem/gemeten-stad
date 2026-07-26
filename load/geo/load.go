@@ -3,6 +3,7 @@ package geo
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/Blogem/gemeten-stad/ingest/shared"
@@ -68,6 +69,12 @@ func Load(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, store *sh
 	loadTS := time.Now().UTC()
 	if err := upsertAll(ctx, pool, loadTS); err != nil {
 		return fmt.Errorf("geo: load: %w", err)
+	}
+
+	// CBS is a best-effort cross-reference (see cbsSpec): reconciled in its own transaction and
+	// never allowed to fail the BAG + gebieden backbone. Log and continue on error.
+	if err := upsertCBS(ctx, pool, loadTS); err != nil {
+		log.Printf("geo: load: %v (best-effort, non-fatal — continuing)", err)
 	}
 
 	if err := ensureIndexes(ctx, pool); err != nil {

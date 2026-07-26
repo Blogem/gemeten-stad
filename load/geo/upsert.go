@@ -22,11 +22,15 @@ type column struct {
 // upsertSpec describes one target/staging table pair for the MERGE upsert: the identity keys
 // used to match a staging row to its target row, and the full column list (including the keys)
 // to insert for a new row. source_deleted_at is deliberately excluded — it is provenance the
-// upsert itself manages, never sourced from staging.
+// upsert itself manages, never sourced from staging. sourceWhere, when non-empty, is a raw WHERE
+// clause applied to the staging table before the merge (used only for the CBS cross-reference,
+// which lands whole-country and is narrowed to the municipality at load time) — it is an internal
+// constant, never user input.
 type upsertSpec struct {
-	target string
-	keys   []string
-	cols   []column
+	target      string
+	keys        []string
+	cols        []column
+	sourceWhere string
 }
 
 // upsertSpecs is the pinned load/geo <-> location resolver table contract: the BAG family keyed
@@ -130,14 +134,18 @@ var upsertSpecs = []upsertSpec{
 			{"geom", ""},
 		},
 	},
-	{
-		target: "cbs_buurten",
-		keys:   []string{"identificatie"},
-		cols: []column{
-			{"identificatie", ""},
-			{"geom", ""},
-		},
-	},
+}
+
+// cbsSpec is the CBS "wijken en buurten" cross-reference. It is NOT part of upsertSpecs (the atomic
+// BAG + gebieden core): CBS is a best-effort cross-reference nothing in the resolver or the sanity
+// gates reads, so a broken/missing CBS load must never roll back the backbone. It is keyed by the
+// CBS buurtcode (CBS has no BAG identificatie) and narrowed to the municipality at load time,
+// because the landed CBS layer is whole-country.
+var cbsSpec = upsertSpec{
+	target:      "cbs_buurten",
+	keys:        []string{"buurtcode"},
+	cols:        []column{{"buurtcode", ""}, {"geom", ""}},
+	sourceWhere: "gemeentecode = 'GM0363'",
 }
 
 // mergeSQL builds the MERGE statement for spec. It takes a single $1 parameter, the load
@@ -163,6 +171,11 @@ func mergeSQL(spec upsertSpec) string {
 		}
 	}
 
+	source := spec.target + "_staging"
+	if spec.sourceWhere != "" {
+		source = fmt.Sprintf("(SELECT * FROM %s WHERE %s)", source, spec.sourceWhere)
+	}
+
 	return fmt.Sprintf(`
 MERGE INTO %s AS t
 USING %s AS s
@@ -173,7 +186,7 @@ WHEN MATCHED AND t.source_deleted_at IS NOT NULL THEN
   UPDATE SET source_deleted_at = NULL
 WHEN NOT MATCHED BY SOURCE AND t.source_deleted_at IS NULL THEN
   UPDATE SET source_deleted_at = $1;
-`, spec.target, spec.target+"_staging", strings.Join(on, " AND "), strings.Join(names, ", "), strings.Join(values, ", "))
+`, spec.target, source, strings.Join(on, " AND "), strings.Join(names, ", "), strings.Join(values, ", "))
 }
 
 // upsertAll runs every upsertSpec's MERGE in a single transaction against one load timestamp, so
@@ -194,6 +207,16 @@ func upsertAll(ctx context.Context, pool *pgxpool.Pool, loadTS time.Time) error 
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("geo: upsert: commit: %w", err)
+	}
+	return nil
+}
+
+// upsertCBS reconciles the CBS cross-reference (cbsSpec) in its own transaction, separate from the
+// atomic BAG + gebieden core. The caller treats its error as non-fatal (logged, not propagated):
+// CBS is a cross-reference only, so a CBS problem must not fail the backbone load.
+func upsertCBS(ctx context.Context, pool *pgxpool.Pool, loadTS time.Time) error {
+	if _, err := pool.Exec(ctx, mergeSQL(cbsSpec), loadTS); err != nil {
+		return fmt.Errorf("geo: upsert %s: %w", cbsSpec.target, err)
 	}
 	return nil
 }

@@ -97,6 +97,9 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 
 	loadTS1 := time.Now().UTC()
 	require.NoError(t, upsertAll(ctx, pool, loadTS1))
+	// CBS is reconciled separately (best-effort in production); here it must land its one
+	// in-municipality row, and its gemeentecode='GM0363' filter must drop the GM0999 row.
+	require.NoError(t, upsertCBS(ctx, pool, loadTS1))
 
 	wantCounts := map[string]int{
 		"bag_openbareruimte":   1,
@@ -106,7 +109,7 @@ func TestGeoLoad_FromStaging(t *testing.T) {
 		"bag_standplaats":      1,
 		"gebieden_buurten":     2,
 		"gebieden_wijken":      1,
-		"cbs_buurten":          1,
+		"cbs_buurten":          1, // BU03630000 lands; BU09990000 (GM0999) is filtered out
 	}
 
 	assertCounts := func(t *testing.T) {

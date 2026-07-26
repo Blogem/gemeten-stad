@@ -98,8 +98,9 @@ CREATE TABLE gebieden_wijken_staging (
 );
 
 CREATE TABLE cbs_buurten_staging (
-    identificatie   text,
-    geom            geometry
+    buurtcode      text,
+    gemeentecode   text,
+    geom           geometry
 );
 
 -- -- openbareruimte: one street, shared by every nummeraanduiding below ----------
@@ -184,7 +185,11 @@ VALUES
     ('wijk-noord', 'Testwijk Noord', 'N01',
      ST_GeomFromText('POLYGON((120000 486000, 131000 486000, 131000 491000, 120000 491000, 120000 486000))', 28992));
 
+-- Two rows: one in the municipality (GM0363) that must land, and one in another
+-- municipality (GM0999) that the load's gemeentecode='GM0363' filter must drop —
+-- the CBS layer lands whole-country, so the narrowing happens at load time.
 INSERT INTO cbs_buurten_staging
-    (identificatie, geom)
+    (buurtcode, gemeentecode, geom)
 VALUES
-    ('buurt-noord', ST_GeomFromText('POLYGON((120800 486800, 121150 486800, 121150 487150, 120800 487150, 120800 486800))', 28992));
+    ('BU03630000', 'GM0363', ST_GeomFromText('POLYGON((120800 486800, 121150 486800, 121150 487150, 120800 487150, 120800 486800))', 28992)),
+    ('BU09990000', 'GM0999', ST_GeomFromText('POLYGON((130000 490000, 130100 490000, 130100 490100, 130000 490100, 130000 490000))', 28992));
