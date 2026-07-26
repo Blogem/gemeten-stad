@@ -154,7 +154,7 @@ var cbsSpec = upsertSpec{
 // reappearing in a fresh extract); target rows absent from staging are soft-deleted by stamping
 // source_deleted_at = $1, guarded by "AND t.source_deleted_at IS NULL" so re-running against an
 // unchanged extract never re-touches an already soft-deleted row (the no-op requirement).
-func mergeSQL(spec upsertSpec) string {
+func mergeSQL(schema string, spec upsertSpec) string {
 	on := make([]string, len(spec.keys))
 	for i, k := range spec.keys {
 		on[i] = fmt.Sprintf("t.%s = s.%s", k, k)
@@ -171,7 +171,8 @@ func mergeSQL(spec upsertSpec) string {
 		}
 	}
 
-	source := spec.target + "_staging"
+	target := qualify(schema, spec.target)
+	source := qualify(schema, spec.target+"_staging")
 	if spec.sourceWhere != "" {
 		source = fmt.Sprintf("(SELECT * FROM %s WHERE %s)", source, spec.sourceWhere)
 	}
@@ -186,13 +187,13 @@ WHEN MATCHED AND t.source_deleted_at IS NOT NULL THEN
   UPDATE SET source_deleted_at = NULL
 WHEN NOT MATCHED BY SOURCE AND t.source_deleted_at IS NULL THEN
   UPDATE SET source_deleted_at = $1;
-`, spec.target, source, strings.Join(on, " AND "), strings.Join(names, ", "), strings.Join(values, ", "))
+`, target, source, strings.Join(on, " AND "), strings.Join(names, ", "), strings.Join(values, ", "))
 }
 
 // upsertAll runs every upsertSpec's MERGE in a single transaction against one load timestamp, so
 // the whole reload is atomic: either every table reconciles against its staging snapshot, or
 // none of it does.
-func upsertAll(ctx context.Context, pool *pgxpool.Pool, loadTS time.Time) error {
+func upsertAll(ctx context.Context, pool *pgxpool.Pool, schema string, loadTS time.Time) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("geo: upsert: begin transaction: %w", err)
@@ -200,7 +201,7 @@ func upsertAll(ctx context.Context, pool *pgxpool.Pool, loadTS time.Time) error 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	for _, spec := range upsertSpecs {
-		if _, err := tx.Exec(ctx, mergeSQL(spec), loadTS); err != nil {
+		if _, err := tx.Exec(ctx, mergeSQL(schema, spec), loadTS); err != nil {
 			return fmt.Errorf("geo: upsert %s: %w", spec.target, err)
 		}
 	}
@@ -214,8 +215,8 @@ func upsertAll(ctx context.Context, pool *pgxpool.Pool, loadTS time.Time) error 
 // upsertCBS reconciles the CBS cross-reference (cbsSpec) in its own transaction, separate from the
 // atomic BAG + gebieden core. The caller treats its error as non-fatal (logged, not propagated):
 // CBS is a cross-reference only, so a CBS problem must not fail the backbone load.
-func upsertCBS(ctx context.Context, pool *pgxpool.Pool, loadTS time.Time) error {
-	if _, err := pool.Exec(ctx, mergeSQL(cbsSpec), loadTS); err != nil {
+func upsertCBS(ctx context.Context, pool *pgxpool.Pool, schema string, loadTS time.Time) error {
+	if _, err := pool.Exec(ctx, mergeSQL(schema, cbsSpec), loadTS); err != nil {
 		return fmt.Errorf("geo: upsert %s: %w", cbsSpec.target, err)
 	}
 	return nil

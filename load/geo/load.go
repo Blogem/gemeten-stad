@@ -44,13 +44,23 @@ func Load(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, store *sh
 		return err
 	}
 
+	// Resolve the schema every subsequent DDL/DML statement is qualified against, once per Load,
+	// instead of relying on the connection's search_path at each call site (see qualify/
+	// loadSchema in schema.go). In production this resolves to "public"; under an integration
+	// harness with search_path = <test_schema>, public, it confines every table op — including
+	// the --reset drop — to the isolated test schema.
+	schema, err := loadSchema(ctx, pool)
+	if err != nil {
+		return err
+	}
+
 	if cfg.Reset {
-		if err := dropTargets(ctx, pool); err != nil {
+		if err := dropTargets(ctx, pool, schema); err != nil {
 			return err
 		}
 	}
 
-	if err := ensureSchema(ctx, pool); err != nil {
+	if err := ensureSchema(ctx, pool, schema); err != nil {
 		return err
 	}
 
@@ -59,29 +69,29 @@ func Load(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, store *sh
 		pgConn = defaultGDALPGConn
 	}
 
-	if err := stageBAG(ctx, pool, sc, store, pgConn); err != nil {
+	if err := stageBAG(ctx, pool, sc, store, pgConn, schema); err != nil {
 		return fmt.Errorf("geo: load: %w", err)
 	}
-	if err := stagePolygons(ctx, pool, sc, pgConn); err != nil {
+	if err := stagePolygons(ctx, pool, sc, pgConn, schema); err != nil {
 		return fmt.Errorf("geo: load: %w", err)
 	}
 
 	loadTS := time.Now().UTC()
-	if err := upsertAll(ctx, pool, loadTS); err != nil {
+	if err := upsertAll(ctx, pool, schema, loadTS); err != nil {
 		return fmt.Errorf("geo: load: %w", err)
 	}
 
 	// CBS is a best-effort cross-reference (see cbsSpec): reconciled in its own transaction and
 	// never allowed to fail the BAG + gebieden backbone. Log and continue on error.
-	if err := upsertCBS(ctx, pool, loadTS); err != nil {
+	if err := upsertCBS(ctx, pool, schema, loadTS); err != nil {
 		log.Printf("geo: load: %v (best-effort, non-fatal — continuing)", err)
 	}
 
-	if err := ensureIndexes(ctx, pool); err != nil {
+	if err := ensureIndexes(ctx, pool, schema); err != nil {
 		return fmt.Errorf("geo: load: %w", err)
 	}
 
-	if err := runGates(ctx, pool); err != nil {
+	if err := runGates(ctx, pool, schema); err != nil {
 		return fmt.Errorf("geo: load: %w", err)
 	}
 

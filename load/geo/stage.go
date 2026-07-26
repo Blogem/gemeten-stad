@@ -42,11 +42,24 @@ const gdalDataRoot = "/data"
 // bagObjectCodes is the fixed set of BAG object types load/geo stages, in load order.
 var bagObjectCodes = []string{"OPR", "NUM", "VBO", "LIG", "STA"}
 
+// withSchema appends an ogr2ogr "-lco SCHEMA=<schema>" layer creation option to args, so the
+// sidecar's OWN Postgres connection (GS_GDAL_PG_CONN, distinct from and not honoring the Go
+// pool's search_path) lands the staging table in the same schema the pgx side resolved via
+// loadSchema — instead of ogr2ogr silently defaulting to "public". BAGStagingArgs/
+// PolygonStagingArgs's own "-nln <table>_staging" stays unqualified: it is exercised directly by
+// geo_test.go against a fixed argument shape, so the schema is layered on here, at the call site,
+// rather than threaded into those builders. In production, current_schema() resolves to "public"
+// (the default search_path), so this appends "-lco SCHEMA=public" — the same schema ogr2ogr
+// already defaults to — leaving prod behavior unchanged.
+func withSchema(args []string, schema string) []string {
+	return append(args, "-lco", "SCHEMA="+schema)
+}
+
 // stageBAG stages every BAG object type from the landed extract into its *_staging table: it
 // extracts each object type's inner zip (if not already extracted) from the outer extract, drops
 // the object type's staging table so ogr2ogr always creates it fresh (no -overwrite/-append —
 // see BAGStagingArgs), and runs the staging ogr2ogr invocation through the sidecar.
-func stageBAG(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, store *shared.RawStore, pgConn string) error {
+func stageBAG(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, store *shared.RawStore, pgConn, schema string) error {
 	outerZip := filepath.Join(store.BasePath, ArtifactBAGExtract)
 
 	for _, code := range bagObjectCodes {
@@ -56,12 +69,12 @@ func stageBAG(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, store
 		}
 
 		staging := StagingTable(code)
-		if err := dropStagingTable(ctx, pool, staging); err != nil {
+		if err := dropStagingTable(ctx, pool, schema, staging); err != nil {
 			return fmt.Errorf("geo: stage BAG %s: %w", code, err)
 		}
 
 		innerZipVsiPath := vsizipPath(path.Join(bagInnerZipDir, innerZipName))
-		args := BAGStagingArgs(code, innerZipVsiPath, pgConn)
+		args := withSchema(BAGStagingArgs(code, innerZipVsiPath, pgConn), schema)
 		if _, err := sc.OGR2OGR(ctx, args...); err != nil {
 			return fmt.Errorf("geo: stage BAG %s: %w", code, err)
 		}
@@ -71,7 +84,7 @@ func stageBAG(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, store
 
 // stagePolygons stages the whole-city gebieden buurt/wijk polygons and the CBS cross-reference
 // into their *_staging tables, dropping each staging table first (see stageBAG).
-func stagePolygons(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, pgConn string) error {
+func stagePolygons(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, pgConn, schema string) error {
 	polygons := []struct {
 		artifact string
 		staging  string
@@ -83,12 +96,12 @@ func stagePolygons(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, 
 	}
 
 	for _, p := range polygons {
-		if err := dropStagingTable(ctx, pool, p.staging); err != nil {
+		if err := dropStagingTable(ctx, pool, schema, p.staging); err != nil {
 			return fmt.Errorf("geo: stage %s: %w", p.artifact, err)
 		}
 
 		landedFilePath := containerPath(p.artifact)
-		args := PolygonStagingArgs(landedFilePath, pgConn, p.staging, p.promote)
+		args := withSchema(PolygonStagingArgs(landedFilePath, pgConn, p.staging, p.promote), schema)
 		if _, err := sc.OGR2OGR(ctx, args...); err != nil {
 			return fmt.Errorf("geo: stage %s: %w", p.artifact, err)
 		}
@@ -98,8 +111,8 @@ func stagePolygons(ctx context.Context, pool *pgxpool.Pool, sc *shared.Sidecar, 
 
 // dropStagingTable drops a *_staging table if present, so the following ogr2ogr invocation
 // always creates it fresh from the current extract (no stale rows from a prior load survive).
-func dropStagingTable(ctx context.Context, pool *pgxpool.Pool, staging string) error {
-	stmt := fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE;", staging)
+func dropStagingTable(ctx context.Context, pool *pgxpool.Pool, schema, staging string) error {
+	stmt := fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE;", qualify(schema, staging))
 	if _, err := pool.Exec(ctx, stmt); err != nil {
 		return fmt.Errorf("drop staging table %s: %w", staging, err)
 	}
