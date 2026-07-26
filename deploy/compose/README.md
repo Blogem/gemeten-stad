@@ -97,8 +97,8 @@ stack including `gdal`. Not run in default CI — run by hand when validating a 
 
 1. Set `GS_RAW_DATA_PATH` to an absolute host path and `mkdir -p` it (see §3).
 2. `docker compose -f deploy/compose/compose.yaml up -d` (full stack, incl. `gdal`).
-3. `pipeline ingest` — lands the real BAG extract + `gebieden`/CBS.
-4. `pipeline load --reset` — runs the actual `ogr2ogr`/`lvbag` load against the real extract.
+3. `pipeline ingest bag gebieden` — lands the real BAG extract + `gebieden`/CBS.
+4. `pipeline load geo --reset` — runs the actual `ogr2ogr`/`lvbag` load against the real extract.
 5. Assert the Spike D sanity numbers: **69 Noord buurten / 15 Noord wijken**, a single SRID
    **28992**, and the **90% address-precision / 100% point-in-polygon** resolution distribution
    (see `docs/DATA_SOURCES.md` §8 for the reference figures and methodology — the throwaway spike

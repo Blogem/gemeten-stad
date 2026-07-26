@@ -22,20 +22,23 @@ template, fetch timestamp, total row count, content hash).
 ### Requirement: Idempotent scheduled full reload
 
 Because neither dataset exposes a documented delta/mutation feed, a refresh SHALL be a full re-page
-of the dataset, landed as a new dated snapshot. Landing SHALL be idempotent: re-running an ingest
-against an already-landed snapshot SHALL NOT re-fetch, and a refresh SHALL preserve prior
-provenance records rather than erasing them.
+of the dataset, landed as a new immutable version. All landed versions SHALL be preserved (the tree
+registry changes over time and audit needs the history — unlike BAG, which overwrites its single
+large blob). Landing SHALL be content-addressed-idempotent: a refresh whose fetched content is
+identical to the latest landed version SHALL NOT create a new version, and a refresh SHALL preserve
+prior versions and their provenance records rather than erasing them.
 
-#### Scenario: Re-running ingest against an unchanged snapshot is a no-op
+#### Scenario: Re-running ingest against unchanged upstream content is a no-op
 
-- **WHEN** ingest runs twice in a row with no new snapshot requested
-- **THEN** the second run does not re-fetch the already-landed data
+- **WHEN** ingest runs twice with no change in the source data between runs
+- **THEN** the second run creates no new version (its content hashes identically to the latest)
+- **AND** no prior version or provenance record is altered
 
-#### Scenario: A scheduled refresh preserves prior provenance
+#### Scenario: A scheduled refresh preserves prior versions
 
-- **WHEN** a new scheduled refresh lands a fresh snapshot
-- **THEN** the previous snapshot's provenance record remains present and readable
-- **AND** the new snapshot's provenance record is added alongside it
+- **WHEN** a new scheduled refresh lands changed content as a fresh version
+- **THEN** the previous version and its provenance record remain present and readable
+- **AND** the new version and its provenance record are added alongside them
 
 ### Requirement: Client-side handling of known API quirks
 

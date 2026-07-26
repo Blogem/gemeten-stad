@@ -41,7 +41,7 @@ into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
 
 The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all code); **both are now
 DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is unblocked. **P3**,
-**P4**, **P5**, and **P6** are also DONE. The remaining open work is P7–P9.
+**P4**, **P5**, **P6**, and **P7** are also DONE. The remaining open work is P8–P9.
 
 ---
 
@@ -141,7 +141,7 @@ DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is 
   deploy follow-up. `spikes/spike-d/` has been removed — its behaviour now lives in these packages.
 - **Depends on:** P1, P3.
 
-## P7 · Preload kapenherplant + stamgegevens
+## P7 · Preload kapenherplant + stamgegevens · **DONE**
 
 - **Goal:** Full-city load of `kapenherplant` (35,202 rows) + `stamgegevens` (323,728) into
   PostGIS.

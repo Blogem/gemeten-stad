@@ -1,8 +1,8 @@
 ## 1. Shared plumbing (`ingest/shared`, config)
 
-- [x] 1.1 If `ingest/shared`'s raw-landing/provenance helper already exists (landed via the parallel P6 change), reuse it as-is. Otherwise, add the same minimal helper: land a source artifact under the `raw-data` volume path and write a history-preserving provenance sidecar (source URL, fetch timestamp, byte/row count, content hash); a refresh lands a new dated snapshot, never erasing prior provenance; expose an "already landed?" check for idempotency.
+- [x] 1.1 Extend the shared `ingest/shared` `RawStore` with a versioned, keep-all-versions landing mode (`LandVersion` + `LatestVersion`) alongside the existing overwrite `Land`: each run lands an immutable version (`<name>/<runKey>`) with a provenance record (source URL, fetch timestamp, byte size, content hash, version); content-addressed idempotency makes an unchanged re-run a no-op. BAG keeps overwrite (space); bomen keeps all versions (audit).
 - [x] 1.2 Add (or reuse) the PostGIS connection helper over `github.com/jackc/pgx/v5`, reading `GS_DATABASE_URL` at runtime.
-- [x] 1.3 Add an optional API key config value for the Datapunt `bomen` API (`X-Api-Key`, empty by default) so the loader tolerates the key becoming mandatory later without a code change.
+- [x] 1.3 Support an optional `X-Api-Key` for the Datapunt `bomen` API, injected via `GS_BOMEN_API_KEY` in the `cmd/pipeline` HTTP getter (empty by default; no per-package config), so the key becoming mandatory later needs only that env var set.
 
 ## 2. Bomen ingest (`ingest/bomen`)
 
@@ -48,5 +48,5 @@ reserved-name guard, `GS_TEST_DATABASE_URL`; they run under the existing `task t
 
 ## 6. Docs & cleanup
 
-- [x] 6.1 Add a `load/bomen`-or-`deploy` README note documenting the load recipe, the API key config knob, and how to run the integration gate.
+- [x] 6.1 Document bomen ingest/load (recipe, `GS_BOMEN_API_KEY`, keep-all-versions landing, integration gate) in `deploy/compose/README.md` — the single load-recipe doc, matching the bag/geo backbone (no per-package README).
 - [x] 6.2 Mark P7 done in `docs/PHASE_0_PLAN.md`.

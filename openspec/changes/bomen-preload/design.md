@@ -52,15 +52,18 @@ export" is read as "paged export via the API", not a CSV format mandate). Pagina
 documented `_pageSize`/`page=` params; page size is chosen to bound request count for 323,728 rows
 without hitting response-size limits — an implementation detail, not a spec-level requirement.
 
-### D2 — Raw landing: one provenance record per scheduled run, pages as the artifact
+### D2 — Raw landing: versioned, keep-all-versions via the shared `RawStore`
 
-`ingest/bomen` lands each page as a newline-delimited-JSON chunk under a dated snapshot directory,
-with a single provenance sidecar for the run (source URL template incl. `_pageSize`, fetch
-timestamp, total row count, content hash over the concatenated pages) — the same history-preserving
-contract P6's `ingest/shared` defines (a refresh lands a new dated snapshot; prior provenance is
-never erased). **If `ingest/shared`'s landing helper has already landed from the parallel P6
-change, reuse it as-is; otherwise add the same minimal helper here** — the two changes are peers,
-not sequenced, so this converges whichever merges second (a mechanical dedupe, not a design fork).
+`ingest/bomen` lands each dataset (`kapenherplant`, `stamgegevens`) as **one artifact per run** — a
+JSONL file whose lines are the raw page bodies, verbatim — through the shared
+`RawStore.LandVersion` helper (added to `ingest/shared` in this change, alongside the existing
+overwrite `Land`). Unlike BAG, which overwrites its single ~3.6 GB blob to save space, bomen
+**keeps every landed version** (`<name>/<runKey>` + a per-name `provenance.jsonl`): the tree
+registry changes over time (felled → replanted) and audit needs the history, not just the latest
+snapshot. Each version records provenance (source URL incl. `_pageSize`, fetch timestamp, byte
+size, content hash, version). Landing is content-addressed-idempotent — a run whose bytes hash
+identically to the latest version is a no-op (no duplicate version) — so a scheduled re-run on
+unchanged data costs nothing. `load/bomen` reads the newest version via `RawStore.LatestVersion`.
 
 ### D3 — Two independently-reloadable targets; the join is a materialized third pass
 
@@ -91,14 +94,27 @@ the `[isnull]` filter operator returns an empty response with no error, so any n
 handling is done client-side after fetch, never via a query filter; `kapenherplant` rejects spatial
 filters (`geometrie[within]` → HTTP 403), so the loader never attempts to query it spatially — the
 `boomId`/`boomNieuwId` join (D3) is the only placement path; and the API's "mandatory free key
-coming soon" is accommodated by an optional `X-Api-Key` config value (empty by default) so
-enforcement later needs a config change, not a code change.
+coming soon" is accommodated by an optional `X-Api-Key`, injected via `GS_BOMEN_API_KEY` in the `cmd/pipeline`
+HTTP getter (empty by default), so enforcement later needs only that env var set, not a code change.
+
+### D7 — Conforms to the P6 geo/bag leading pattern
+
+This change follows the bag/location backbone conventions rather than parallel ones: the shared
+`ingest/shared` for landing (`RawStore.LandVersion`) and Postgres (`ConnectPostgres`/`DatabaseURL`);
+`load/bomen` mirrors `load/geo`'s file layout and idioms (`Load(ctx, pool, store, Config)`, pure
+`mergeSQL` + single-transaction `upsertAll`, `ensureExtensions`/`ensureSchema`/`dropTargets`), with
+no per-package DB or config helpers; `cmd/pipeline` registers bomen in the ingest registry and a
+symmetric per-source **load registry** (`pipeline ingest|load [source ...]`); env is
+`GS_RAW_DATA_PATH` / `GS_DATABASE_URL` / `GS_BOMEN_API_KEY`; docs live in `deploy/compose/README.md`.
+The `mergeSQL` MERGE additionally refreshes matched rows whose content changed (`WHEN MATCHED AND
+t.raw IS DISTINCT FROM s.raw`) because bomen rows are keyed by a mutable `id`, unlike BAG's immutable
+voorkomens.
 
 ### D6 — Three testing tiers, aligned to the P5/P6 harness
 
 - **Unit (no DB):** the paging/query builders, the landing/provenance plumbing, the
-  `boomId`→`boomNieuwId`→`unresolved` resolution order as a pure function over fixtures, and the
-  upsert/soft-delete diffing logic.
+  `boomId`→`boomNieuwId`→`unresolved` resolution order (`resolvePoint`) as a pure function over
+  fixtures, and the `mergeSQL` upsert/soft-delete/refresh SQL builder.
 - **Integration (automatic, in CI — no live API call):** a checked-in real-shaped subset of both
   registries — a handful of `stamgegevens` rows (including one reachable only via `boomNieuwId`),
   and `kapenherplant` rows spanning a `boomId` hit, a `boomNieuwId` fallback, and a genuinely
