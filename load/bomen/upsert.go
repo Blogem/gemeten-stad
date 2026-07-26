@@ -67,12 +67,28 @@ var upsertSpecs = []upsertSpec{
 }
 
 // mergeSQL builds the MERGE statement for spec. It takes a single $1 parameter, the load
-// timestamp. Rows present in staging but not the target are inserted; rows matched by id are left
-// alone unless they need un-soft-deleting (a previously soft-deleted row reappearing in a fresh
-// export); target rows absent from staging are soft-deleted by stamping source_deleted_at = $1,
-// guarded by "AND t.source_deleted_at IS NULL" so re-running against an unchanged export never
-// re-touches an already soft-deleted row (the no-op requirement).
+// timestamp. Unlike load/geo's voorkomen identity (immutable once recorded), bomen's `id` is a
+// MUTABLE key — fields such as plantmaatregelDatumUitgevoerd fill in over time on the same row —
+// so a matched row must be refreshed when its content actually changed, not just left alone. The
+// WHEN clauses below are listed in the order Postgres MERGE evaluates them (first match wins per
+// row):
+//  1. matched AND raw changed: refresh every non-key column from staging and revive
+//     (source_deleted_at = NULL) in one step, covering both a plain content update and a changed
+//     row that had been soft-deleted and reappeared.
+//  2. matched, raw unchanged, but previously soft-deleted: revive only.
+//  3. not matched: insert the new row.
+//  4. not matched by source, not already soft-deleted: soft-delete, stamping source_deleted_at =
+//     $1 — guarded by "AND t.source_deleted_at IS NULL" so re-running against an unchanged export
+//     never re-touches an already soft-deleted row.
+//
+// A matched row that is unchanged and not soft-deleted satisfies none of the MATCHED clauses, so
+// it is left untouched — the no-op requirement for a re-run against the same export holds.
 func mergeSQL(spec upsertSpec) string {
+	keySet := make(map[string]struct{}, len(spec.keys))
+	for _, k := range spec.keys {
+		keySet[k] = struct{}{}
+	}
+
 	on := make([]string, len(spec.keys))
 	for i, k := range spec.keys {
 		ident := pgx.Identifier{k}.Sanitize()
@@ -91,19 +107,35 @@ func mergeSQL(spec upsertSpec) string {
 		}
 	}
 
+	var refreshSets []string
+	for _, c := range spec.cols {
+		if _, isKey := keySet[c.name]; isKey {
+			continue
+		}
+		ident := pgx.Identifier{c.name}.Sanitize()
+		value := "s." + ident
+		if c.cast != "" {
+			value = fmt.Sprintf("s.%s::%s", ident, c.cast)
+		}
+		refreshSets = append(refreshSets, fmt.Sprintf("%s = %s", ident, value))
+	}
+	refreshSets = append(refreshSets, "source_deleted_at = NULL")
+
 	source := spec.target + "_staging"
 
 	return fmt.Sprintf(`
 MERGE INTO %s AS t
 USING %s AS s
 ON %s
-WHEN NOT MATCHED THEN
-  INSERT (%s) VALUES (%s)
+WHEN MATCHED AND t.raw IS DISTINCT FROM s.raw THEN
+  UPDATE SET %s
 WHEN MATCHED AND t.source_deleted_at IS NOT NULL THEN
   UPDATE SET source_deleted_at = NULL
+WHEN NOT MATCHED THEN
+  INSERT (%s) VALUES (%s)
 WHEN NOT MATCHED BY SOURCE AND t.source_deleted_at IS NULL THEN
   UPDATE SET source_deleted_at = $1;
-`, spec.target, source, strings.Join(on, " AND "), strings.Join(names, ", "), strings.Join(values, ", "))
+`, spec.target, source, strings.Join(on, " AND "), strings.Join(refreshSets, ", "), strings.Join(names, ", "), strings.Join(values, ", "))
 }
 
 // upsertAll runs every upsertSpec's MERGE in a single transaction against one load timestamp, so
