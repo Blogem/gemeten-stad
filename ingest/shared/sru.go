@@ -32,6 +32,14 @@ const SRUPageSize = 100
 // keeping sequential paging polite against the endpoint.
 const SRURateInterval = 200 * time.Millisecond
 
+// SRUMaxAttempts is the maximum number of attempts made to fetch a single
+// SRU page before giving up, retrying only transient fetch/read errors.
+const SRUMaxAttempts = 5
+
+// SRURetryBaseDelay is the base delay for the exponential backoff between
+// retry attempts of a failed page fetch (1s, 2s, 4s, 8s for attempts 1-4).
+const SRURetryBaseDelay = 1 * time.Second
+
 // sruSleep is a seam over time.Sleep so tests can drive a multi-page fetch
 // without incurring real rate-limit delays.
 var sruSleep = func(d time.Duration) { time.Sleep(d) }
@@ -147,15 +155,38 @@ func parseSRURecordFields(innerXML []byte) (SRURecord, error) {
 	return rec, nil
 }
 
+// fetchSRUPage performs a single fetch+read+close of an SRU page at url,
+// returning the raw response body. Errors from httpGet or from reading/
+// closing the body are transient (network-level) failures that the caller
+// may retry.
+func fetchSRUPage(ctx context.Context, httpGet HTTPGetFunc, url string) ([]byte, error) {
+	rc, err := httpGet(ctx, url)
+	if err != nil {
+		return nil, fmt.Errorf("shared: fetch SRU page %s: %w", url, err)
+	}
+	body, readErr := io.ReadAll(rc)
+	closeErr := rc.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("shared: read SRU page body from %s: %w", url, readErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("shared: close SRU page body from %s: %w", url, closeErr)
+	}
+	return body, nil
+}
+
 // FetchSRUAll pages endpoint for query to exhaustion, invoking yield for
 // each record encountered. It fetches startRecord=1 first, reads
 // numberOfRecords from that page, then keeps advancing startRecord by the
 // number of records the previous page actually returned (not the requested
 // page size, so a short/partial page is handled correctly) until every
 // record has been yielded. Pages are rate-limited by SRURateInterval (no
-// delay before the first request). If yield returns an error, paging stops
-// immediately and that error is returned. Returns the numberOfRecords
-// reported by the endpoint.
+// delay before the first request). Each page fetch is retried up to
+// SRUMaxAttempts times with exponential backoff (SRURetryBaseDelay << n) on
+// transient fetch/read errors; a page whose XML fails to parse is not
+// retried, since that failure is deterministic. If yield returns an error,
+// paging stops immediately and that error is returned. Returns the
+// numberOfRecords reported by the endpoint.
 func FetchSRUAll(ctx context.Context, httpGet HTTPGetFunc, endpoint, query string, yield func(SRURecord) error) (numberOfRecords int, err error) {
 	if httpGet == nil {
 		return 0, fmt.Errorf("shared: httpGet must not be nil")
@@ -170,17 +201,20 @@ func FetchSRUAll(ctx context.Context, httpGet HTTPGetFunc, endpoint, query strin
 		firstPage = false
 
 		reqURL := SRURequestURL(endpoint, query, startRecord, SRUPageSize)
-		rc, err := httpGet(ctx, reqURL)
-		if err != nil {
-			return 0, fmt.Errorf("shared: fetch SRU page %s: %w", reqURL, err)
+
+		var body []byte
+		var fetchErr error
+		for attempt := 1; attempt <= SRUMaxAttempts; attempt++ {
+			body, fetchErr = fetchSRUPage(ctx, httpGet, reqURL)
+			if fetchErr == nil {
+				break
+			}
+			if attempt < SRUMaxAttempts {
+				sruSleep(SRURetryBaseDelay << (attempt - 1))
+			}
 		}
-		body, readErr := io.ReadAll(rc)
-		closeErr := rc.Close()
-		if readErr != nil {
-			return 0, fmt.Errorf("shared: read SRU page body from %s: %w", reqURL, readErr)
-		}
-		if closeErr != nil {
-			return 0, fmt.Errorf("shared: close SRU page body from %s: %w", reqURL, closeErr)
+		if fetchErr != nil {
+			return 0, fetchErr
 		}
 
 		pageTotal, records, err := ParseSRUResponse(body)
