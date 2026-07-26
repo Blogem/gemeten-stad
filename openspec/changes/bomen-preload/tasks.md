@@ -7,7 +7,7 @@
 ## 2. Bomen ingest (`ingest/bomen`)
 
 - [x] 2.1 Implement paged JSON fetch of `kapenherplant` from `api.data.amsterdam.nl/v1/bomen/kapenherplant/` (`_pageSize`/`page=`), landing each page verbatim into the raw store; no `[isnull]` query filter and no `geometrie[within]` spatial query against this endpoint.
-- [x] 2.2 Implement paged JSON fetch of `stamgegevens` the same way.
+- [x] 2.2 Fetch `stamgegevens` via the uncapped DSO GeoJSON export (`?_format=geojson`, following `_links.next`), landing each response verbatim — paged JSON can't be used (323,728 rows ≫ the API's 100-page cap). Geometry comes back as GeoJSON in EPSG:4326, matching the load's `geometry(Point,4326)`.
 - [x] 2.3 Write one provenance record per landed version per dataset (source URL template incl. page size, fetch timestamp, byte size, content hash over the concatenated pages).
 - [x] 2.4 Implement refresh as an idempotent full re-page (land a new dated snapshot); skip re-fetching an already-landed, unchanged snapshot.
 

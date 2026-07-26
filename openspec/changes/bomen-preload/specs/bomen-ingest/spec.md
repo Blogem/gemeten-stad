@@ -3,9 +3,10 @@
 ### Requirement: Land `kapenherplant` and `stamgegevens` verbatim
 
 The system SHALL fetch the full city-wide `kapenherplant` and `stamgegevens` datasets from the
-Amsterdam Datapunt `bomen` API by paging through all rows, and SHALL land each page verbatim (no
-row/column filtering) into the raw landing store together with a provenance record (source URL
-template, fetch timestamp, byte size, content hash).
+Amsterdam Datapunt `bomen` API — `kapenherplant` via paged JSON, and `stamgegevens` via the
+uncapped GeoJSON export because it exceeds the API's 100-page paging cap — and SHALL land each
+fetched response verbatim (no row/column filtering) into the raw landing store together with a
+provenance record (source URL template, fetch timestamp, byte size, content hash).
 
 #### Scenario: Full city-wide pull lands both datasets
 

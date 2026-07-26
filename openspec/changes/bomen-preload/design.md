@@ -44,13 +44,23 @@ without this change depending on P6's code landing first.
 
 ## Decisions
 
-### D1 — Paged JSON via the DSO API, not CSV
+### D1 — Per-dataset fetch: paged JSON where it fits, GeoJSON export where paging is capped
 
-The API offers `_format=json|csv|geojson`. JSON is chosen: it keeps one typed parser shared across
-both sub-datasets and avoids CSV quoting/type-inference edge cases (the plan text's "paged CSV/API
-export" is read as "paged export via the API", not a CSV format mandate). Pagination uses the
-documented `_pageSize`/`page=` params; page size is chosen to bound request count for 323,728 rows
-without hitting response-size limits — an implementation detail, not a spec-level requirement.
+The API offers `_format=json|csv|geojson`. The **default paged JSON** (`_pageSize`/`page=`) is
+hard-capped by the DSO at **page 100** (`403 "Page number cannot exceed 100… download one of the
+provided dump files instead"`). So the fetch is chosen per dataset by size:
+
+- **`kapenherplant`** (35,202 rows ≈ 36 pages at `_pageSize=1000`) stays on **paged JSON** — under
+  the cap, and it has no geometry so JSON rows are the natural shape.
+- **`stamgegevens`** (323,728 rows ≫ 100 pages) uses the **GeoJSON export** (`?_format=geojson`),
+  which is **not** page-capped (verified: `page=101 → 200`) and returns geometry as GeoJSON in
+  EPSG:4326 — matching `load/bomen`'s `geometry(Point,4326)` + `ST_GeomFromGeoJSON` with no
+  reprojection. (CSV was rejected: its geometry is `SRID=28992;POINT(...)` EWKT in RD, which would
+  force EWKT parsing + reprojection.) The export is followed via `_links.next.href` while present.
+
+Both land **verbatim** (one compacted JSON value per JSONL line); `load/bomen`'s `readLandedRows`
+auto-detects the two landed shapes (`_embedded` page vs GeoJSON `FeatureCollection`), so bronze
+stays verbatim and the downstream row shape is uniform.
 
 ### D2 — Raw landing: versioned, keep-all-versions via the shared `RawStore`
 
