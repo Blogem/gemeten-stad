@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Recorded-shape SRU 2.0 searchRetrieve response fixture for ParseSRUResponse tests.
+
+numberOfRecords (7) deliberately does NOT match the 2 records actually carried in
+this page - the envelope-reported total must be read independently of how many
+records happen to be on this page (real KOOP responses page at maximumRecords,
+so a single page rarely holds the whole result set).
+
+The two <record> elements deliberately use UNRELATED XML namespace URIs (not just
+different prefixes bound to the same URI) for their <identifier> and <dt.available>
+elements, mirroring how real KOOP responses vary recordSchema/namespace declarations
+across records. A parser that pins a specific namespace URI would fail on one of
+the two records; the shared SRU parser must match on local element name only.
+-->
+<srw:searchRetrieveResponse xmlns:srw="http://docs.oasis-open.org/ns/search-ws/sruResponse"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:overheidwetgeving="http://standaarden.overheid.nl/owms/terms/"
+    xmlns:gzd="http://standaarden.overheid.nl/sru">
+  <srw:version>2.0</srw:version>
+  <srw:numberOfRecords>7</srw:numberOfRecords>
+  <srw:records>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <gzd:gzd>
+          <gzd:originalData>
+            <overheidwetgeving:meta>
+              <overheidwetgeving:owmskern>
+                <dcterms:identifier>gmb-2022-291126</dcterms:identifier>
+                <dcterms:title>Verleend: kapvergunning Waddenweg 12, Amsterdam-Noord</dcterms:title>
+              </overheidwetgeving:owmskern>
+              <overheidwetgeving:owmsmantel>
+                <overheidwetgeving:dt.available>2022-06-15</overheidwetgeving:dt.available>
+              </overheidwetgeving:owmsmantel>
+            </overheidwetgeving:meta>
+          </gzd:originalData>
+        </gzd:gzd>
+      </srw:recordData>
+      <srw:recordPosition>1</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>gzd</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <different:gzd xmlns:different="urn:example:alt-gzd-ns">
+          <different:originalData>
+            <alt:meta xmlns:alt="urn:example:alt-owms-ns">
+              <alt:owmskern>
+                <alt:identifier>gmb-2022-291127</alt:identifier>
+                <alt:title>Aanvraag: kapvergunning Waddenweg 14, Amsterdam-Noord</alt:title>
+              </alt:owmskern>
+              <alt:owmsmantel>
+                <alt:dt.available>2022-06-16</alt:dt.available>
+              </alt:owmsmantel>
+            </alt:meta>
+          </different:originalData>
+        </different:gzd>
+      </srw:recordData>
+      <srw:recordPosition>2</srw:recordPosition>
+    </srw:record>
+  </srw:records>
+</srw:searchRetrieveResponse>
