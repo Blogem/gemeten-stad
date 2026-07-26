@@ -37,7 +37,7 @@ func TestMergeSQL_FixtureSpec(t *testing.T) {
 	assert.Contains(t, normalized, "WHEN NOT MATCHED THEN")
 	assert.Contains(t, normalized, "WHEN NOT MATCHED BY SOURCE")
 	assert.Contains(t, normalized, "source_deleted_at")
-	assert.Contains(t, normalized, "s.geom::geometry", "a column with a cast must be cast on the way in from staging")
+	assert.Contains(t, normalized, `s."geom"::geometry`, "a column with a cast must be cast on the way in from staging")
 }
 
 // TestMergeSQL_UpsertSpecs asserts every pinned upsertSpecs entry produces a MERGE statement
