@@ -29,16 +29,19 @@ The `IMPLEMENTATION_PLAN.md` §6 sketch listed `ingest koop` + `load` + **`load 
 
 ## Prerequisite — closes in Phase 0
 
-**P8 (ontology + SKOS vocab + SHACL shapes) must be DONE before Phase 1 assembles anything to the
-graph.** `load/graph` (P12) writes through the SHACL gate and uses the `{| … |}` confidence +
-`sh:sparql` presence pattern from `ontology/shapes.ttl`; `load koop` (P13) mints `Intervention` /
-`Claim` / `Place` against the P8 TBox. Phase 1 assumes that model exists — it is the last Phase-0
-item, not a Phase-1 work item.
+**P8 (ontology + SKOS vocab + SHACL shapes) is DONE** (merged; Phase 0) — Phase 1 assembles against
+it. P8 also shipped the `load/graph` **write/validate primitive**
+(`Load(ctx, fusekiURL, candidate, Config{Reset})`: SHACL-gate a candidate turtle graph → write it
+into a run-stamped PROV named graph on conform), using the `{| … |}` confidence + `sh:sparql`
+presence pattern from `ontology/shapes.ttl`. So **P12 is no longer a from-scratch item** — it is a
+*finish* of that primitive (the idempotent-upsert layer; see P12). `load koop` (P13) mints
+`Intervention` / `Claim` / `Place` against the P8 TBox and writes through that gate.
 
 ## Recommended sequencing
 
 - **Wave A — independent starts (need only P8 + the Phase-0 stores):** P11 `ingest koop` (Go SRU
-  harvest) · P12 `load/graph` (the Fuseki writer). No dependency between them.
+  harvest) · P12 `load/graph` — **finish** the writer (P8 shipped the SHACL-gate + run-stamped-write
+  primitive; P12 adds the idempotent-upsert layer). No dependency between them.
 - **Wave B — assembly (needs A + `location/`):** P12b seed the gebieden `Place` skeleton (needs P12
   + the P7 gebieden tables), then P13 `load koop` — consumes the harvested permits, the graph writer,
   the resolver, and the seeded Place skeleton.
@@ -73,24 +76,40 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
 - **Depends on:** P1 (skeleton), `ingest/shared`. Reference: `spikes/spike-b/harvest_permits.py`,
   `DATA_SOURCES.md` §1.
 
-## P12 · `load/graph` — the Fuseki graph writer
+## P12 · `load/graph` — finish the Fuseki graph writer (idempotent-upsert layer)
 
-- **Goal:** The shared silver-layer graph writer both P13 and P14 write through — the concrete
-  realization of the Spike-E patterns against Fuseki.
-- **Entails:** write assembled triples into a **run-stamped PROV named graph**
-  (`prov:generatedAtTime`, one `prov:Activity` per `load`/`derive` run — transaction time, §3); the
-  `{| … |}` annotation form for confidence-bearing edges; a **SHACL gate on write** that rejects
-  half-broken instances so "no half-broken data enters the graph" (§4) — using `ontology/shapes.ttl`
-  incl. the `sh:sparql` confidence-presence constraint (P8/Spike E). Idempotent upsert semantics
-  keyed by stable IRI so re-running `load` is a no-op. Env-driven connection (the compose `fuseki`
-  service, `internal/testdb` for the isolated dataset).
-- **Key decisions:** update granularity (per-entity named subgraph vs delete-insert by IRI) ·
-  whether SHACL validates pre-commit (staging graph) or post-commit-with-rollback · batching.
-- **Done when:** a well-formed instance with a confidence-annotated edge lands in a run-stamped named
-  graph and passes SHACL; a malformed one is rejected without partial writes; re-writing the same
-  IRI is idempotent. Unit tests on triple construction + the `{| … |}` serialization; an integration
-  test against the isolated Fuseki dataset (`GS_TEST_FUSEKI_URL`).
-- **Depends on:** **P8** (ontology + shapes), P2 (Fuseki), P5 (`internal/testdb`).
+- **Goal:** The shared silver-layer graph writer both P13 and P14 write through. **P8 already
+  shipped the core primitive** — `Load(ctx, fusekiURL, candidate, Config{Reset})` in `load/graph/`:
+  it SHACL-gates a candidate turtle graph against `ontology/shapes.ttl` (incl. the `sh:sparql`
+  confidence-presence constraint) so "no half-broken data enters the graph" (§4), and on conform
+  writes it into a **run-stamped PROV named graph** (`run:load-<ts>` + a `prov:Activity` /
+  `prov:generatedAtTime` in `run:_provenance` — transaction time, §3), env-driven via
+  `shared.FusekiURL`, with integration tests against an isolated Fuseki dataset. What remains for P12
+  is the **idempotent-upsert layer** the primitive deliberately left out — it is currently
+  append-per-run (each `Load` mints a fresh run graph, additive; only `Config{Reset}` clears).
+- **Entails:** add **IRI-keyed idempotent upsert** on top of the shipped primitive so re-running
+  `load` writes only *genuinely new or changed* data. **Semantics (SCD2-aware, §3 D4):** entity
+  identity is the stable IRI; an entity is *unchanged* if every field matches what is already in the
+  graph **except** the valid-time stamp (`validFrom`/`validTo`) on evolving state — an unchanged
+  entity is **not** rewritten (a true no-op). When a tracked field changes, the writer **opens** the
+  new version and **closes** the prior by stamping its `validTo`, never overwriting history;
+  immutable facts (identity + un-stamped facts) are write-once, skipped thereafter. So a
+  fully-unchanged re-run writes no new data. **The writer takes turtle bytes it is given** — the
+  `{| … |}` confidence-annotation *construction* lives with the callers (P12b, P13, P14), not here;
+  `load/graph` stays Postgres-free (doc.go: "candidates arrive already shaped").
+- **Key decisions:** change-detection granularity (per-entity subgraph diff vs delete-insert by IRI)
+  · how upsert coexists with the run-stamped named-graph model (does a no-op run mint an empty run
+  graph + `prov:Activity`, or nothing? — a no-op should leave no trace) · batching. (The
+  pre-commit-vs-post-commit SHACL question is already answered by the shipped primitive: it validates
+  a merged scratch graph and writes only on conform.)
+- **Done when:** re-running `load` on unchanged input is a true no-op (no new triples, no new run
+  graph); a changed tracked field opens a new version and closes the prior's `validTo` without
+  touching history; a malformed candidate is still rejected without partial writes (regression on the
+  shipped gate). Unit tests on the change-detection / upsert logic; an integration test against the
+  isolated Fuseki dataset (`GS_TEST_FUSEKI_URL`) covering the no-op re-run + the change-opens-a-new-
+  version paths. (Turtle / `{| … |}` construction is tested by its owners — P12b/P13/P14.)
+- **Depends on:** **P8** (ontology + shapes + the shipped write/validate primitive), P2 (Fuseki), P5
+  (`internal/testdb`).
 
 ## P12b · Seed the gebieden `Place` skeleton into the graph
 
@@ -119,11 +138,16 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
 - **Goal:** The silver step for permits: map → dedup → resolve location → assemble the
   fully-formed `Intervention` + `Claim` into the graph, values/geometry into PostGIS.
 - **Entails:** per zaaknummer, **dedup aanvraag+besluit and audit the besluit** (Spike B
-  correction). Map the besluit fields. **Resolve location via the existing `location/` resolver** —
-  the permit's structured point first, the free-text/reference address only as fallback; carry the
-  `timeMismatch` / `unresolvedLocation` caveats and the resolution confidence onto the edge; resolve
-  at the permit's **valid-time** against BAG voorkomens (§"Temporal model"). Assemble
-  `Intervention –locatedAt→ Place` (confidence-annotated edge via P12) `–claims→ Claim`, where the
+  correction). Map the besluit fields. **Set `gs:activity` to the felling concept** (verplanten ≡
+  vellen; Spike C) — activiteit is *structured* permit metadata (Spike B), so asserting the concept
+  edge is cheap, is SHACL-gated to the vocab, and already feeds the Spike-B / Phase-2 matcher; assert
+  the same for any other structured besluit field that maps to a vocab concept. **Resolve location
+  via the existing `location/` resolver** — the permit's structured point first, the
+  free-text/reference address only as fallback; carry the `timeMismatch` / `unresolvedLocation`
+  caveats and the resolution confidence onto the edge; resolve at the permit's **valid-time** against
+  BAG voorkomens (§"Temporal model"). Assemble `Intervention –locatedAt→ Place` — **P13 builds the
+  `{| … |}` confidence-annotated `locatedAt` turtle** (construction lives here, not in the writer),
+  which P12 gates + writes — `–claims→ Claim`, where the
   Claim is the **herplantplicht triggered by the permit's existence via art. 7** — *no obligation
   count yet* (the count is Phase-2 extraction; §2 says the claim comes from law, not a stated
   ground). The resolved `Place` is a `gs:Place` keyed by its code, carrying its common name
@@ -131,7 +155,8 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   the P7 gebieden tables (codes + names + buurt→wijk `gs:within`; geometry stays in PostGIS),
   seeded once by **P12b** — so resolved places already sit in the aggregation hierarchy (roll-up
   traversal over `gs:within+` is a Phase-3 UI concern). Values + geometry to PostGIS; provenance on every asserted triple. SHACL gate (P12).
-  Idempotent by permit IRI.
+  Idempotent by permit IRI under the P12 SCD2 upsert semantics — an unchanged permit re-loads as a
+  no-op; a changed field opens a new version and closes the prior's `validTo`, never overwriting.
 - **Key decisions:** the `Claim` shape without a count (obligation-exists vs obligation-of-N) · how
   `unresolvedLocation` permits are represented (written with the marker + confidence, never as if
   exact — §4) · besluit field → ontology property mapping.
@@ -154,6 +179,8 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   the count used here is the **registry** count, never a permit-text count. Store the `AuditLink`
   with the **granularity used**, the confidence, the evidence it rests on, and
   `prov:wasDerivedFrom` the permit + registry rows (§3 — derived and *stored*, not on-the-fly).
+  **P14 builds the AuditLink turtle** (the `{| … |}` annotation if the edge form is chosen below) —
+  construction lives here, not in the P12 writer, which takes turtle it is given.
   - **Model prerequisites carried over from P8 (do these FIRST — P8 shipped `gs:AuditLink` as a
     bare class and does NOT model how to attach or gate it, because P8 writes no AuditLinks):**
     (a) **TBox additions** — object properties attaching an `AuditLink` to the spine (to its
@@ -178,7 +205,8 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   so the Phase-3 UI can render it as first-class.
 - **Done when:** `derive` links the Noord corpus at ≈ Spike B rates (permit→registry ~90% place+time)
   with per-link confidence; unmatched permits surface as grounded findings, not silent gaps;
-  re-running is a no-op and supersedes prior links by run (PROV); **an `AuditLink` missing its
+  re-running is a no-op on unchanged links and, when a link changes, opens a new version / closes the
+  prior's `validTo` (§3 D4, the P12 SCD2 upsert semantics), each run stamped by PROV; **an `AuditLink` missing its
   confidence/evidence is rejected by the new `AuditLinkShape` (not written)** — the gate now covers
   derive output, not just `locatedAt`. Unit tests on the scoring/candidate logic against spike-b's
   labeled cases; integration test over a seeded permit + registry subset (incl. a malformed-link
