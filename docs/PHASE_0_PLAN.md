@@ -41,7 +41,7 @@ into `IMPLEMENTATION_PLAN.md` and `DATA_SOURCES.md`:
 
 The two hard gates were **P2** (blocks all of Wave D) and **P1** (blocks all code); **both are now
 DONE** (triple store = Fuseki; skeleton compiling), so every downstream item is unblocked. **P3**,
-**P4**, **P5**, **P6**, and **P7** are also DONE. The remaining open work is P8–P9.
+**P4**, **P5**, **P6**, **P7**, and **P9** are also DONE. The remaining open work is P8.
 
 ---
 
@@ -197,7 +197,7 @@ vocabulary can be fixed now that Spike C has settled it (**verplanten ≡ vellen
   a malformed one is rejected.
 - **Depends on:** P2.
 
-## P9 · Dump / NER-cache snapshot tool
+## P9 · Dump / NER-cache snapshot tool — **DONE**
 
 - **Goal:** `pipeline dump` snapshots graph + PostGIS + **the NER cache** (§5) so expensive
   extraction is never lost and environments are reproducible.
@@ -206,6 +206,10 @@ vocabulary can be fixed now that Spike C has settled it (**verplanten ≡ vellen
   shape (keyed by doc id + model/prompt version) should be defined now.
 - **Done when:** a dump→restore round-trip reproduces both stores on a clean volume.
 - **Depends on:** P6, P7 (something to dump); the triplestore from P2.
+- **Landed as:** `pipeline dump export`/`dump restore` (the `dump/` package) — a self-describing
+  bundle (`manifest.json` + `graph.nq.gz` + `postgis.dump` + `ner-cache.tar.gz`), additive restore,
+  `--skip-bag`, and the NER cache on-disk contract documented in `dump/doc.go`. See
+  `deploy/compose/README.md` §6 and `openspec/changes/dump-snapshot-tool/design.md`.
 
 ## P10 · Set the Noord backfill window & size the corpus — **DONE**
 

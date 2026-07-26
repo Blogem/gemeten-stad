@@ -59,6 +59,8 @@ pipeline load [source ...]    # silver: stage via ogr2ogr/rows, upsert, index, g
 | `GS_GDAL_EXEC_PREFIX` | Command prefix used to shell into the `gdal` sidecar. Default: `docker compose -f deploy/compose/compose.yaml exec -T gdal`. |
 | `GS_GDAL_PG_CONN` | The `ogr2ogr` Postgres connection string used **inside** the sidecar: `PG:host=db port=5432 dbname=gemeten_stad user=gs password=gs`. This is deliberately distinct from `GS_DATABASE_URL` — `ogr2ogr` runs inside the `gdal` container, on the compose network, so it addresses Postgres as `db`, not through whatever host/port the Go process's own DSN uses. |
 | `GS_BOMEN_API_KEY` | Optional `X-Api-Key` header for the Amsterdam bomen (tree registry) API. No key is required today (docs/DATA_SOURCES.md §2a), but the API docs signal a mandatory key is coming; read only by `pipeline ingest bomen`. |
+| `GS_NER_CACHE_PATH` | Directory holding the NER cache (bronze-layer cache of expensive Phase-2 extraction output). Default when unset: `${GS_RAW_DATA_PATH}/ner-cache`. Read by `pipeline dump`; written by `extract` (Phase 2). |
+| `GS_FUSEKI_URL` | The **host** Fuseki dataset URL `pipeline dump` reads/writes, e.g. `http://localhost:3030/ds` — the host-published port, same host-vs-in-network distinction as `GS_DATABASE_URL` above. |
 
 ## 3. Host ↔ sidecar landing store (`GS_RAW_DATA_PATH`)
 
@@ -103,3 +105,40 @@ stack including `gdal`. Not run in default CI — run by hand when validating a 
    **28992**, and the **90% address-precision / 100% point-in-polygon** resolution distribution
    (see `docs/DATA_SOURCES.md` §8 for the reference figures and methodology, and `spikes/spike-d/`
    for the original empirical write-up these packages promoted into production).
+
+## 6. Snapshot dump/restore (Phase 0 · P9)
+
+`pipeline dump export`/`pipeline dump restore` snapshot and reproduce the pipeline's three durable
+stores — the RDF graph (Fuseki), PostGIS, and the NER cache — as one self-describing bundle. See
+`openspec/changes/dump-snapshot-tool/design.md` for the full design; this is the how-to.
+
+```
+pipeline dump export --out <bundle-dir> [--skip-bag]
+pipeline dump restore --in <bundle-dir>
+```
+
+- **`dump export`** writes `<bundle-dir>/manifest.json` plus one artifact per store:
+  `graph.nq.gz` (gzipped N-Quads-star, every named graph + the default graph), `postgis.dump` (a
+  `pg_dump -Fc` custom-format archive), and `ner-cache.tar.gz` (a tar+gzip of `GS_NER_CACHE_PATH`,
+  or a valid empty archive if the cache directory does not exist yet). Export never mutates a
+  source store.
+  - **`--skip-bag`** excludes the large `bag_*` tables from the PostGIS artifact — a
+    space-constrained snapshot that still restores cleanly, since BAG is a cheap idempotent
+    re-fetch (`pipeline ingest bag` + `pipeline load geo --reset`) rather than bundle content.
+- **`dump restore`** rebuilds all three stores from a bundle, **additively**: each object, named
+  graph, or cache entry the bundle carries is dropped/cleared and reloaded so it ends up exactly as
+  the bundle holds it, while content in the target *outside* the bundle's scope (e.g. BAG, after a
+  `--skip-bag` export) is left untouched. Restore is not a wholesale volume wipe.
+- **Requires `pg_dump`/`pg_restore` on the host running the tool**, matching the target's Postgres
+  major version (the dev-compose `db` image is PG18; `brew install libpq` on macOS gets a matching
+  client without the full server). Export/restore fail fast with a clear error if the tools are
+  missing or version-mismatched.
+- Store connections come from the same env contract as the rest of the pipeline: `GS_FUSEKI_URL`,
+  `GS_DATABASE_URL` (both the **host**-published endpoints — see §2), and `GS_NER_CACHE_PATH`.
+- Run dumps when the pipeline is idle — the snapshot is not a single distributed transaction across
+  the three stores.
+- Covered by the integration suite (`task test:integration`): a full export → restore round-trip
+  into fresh `internal/testdb`-isolated targets (a whole isolated Postgres **database**, since
+  `pg_dump`/`pg_restore` operate at that granularity, not just a schema), asserting named graphs,
+  RDF-star confidence annotations, PostGIS rows + geometry, and NER cache files all survive; and a
+  `--skip-bag` round-trip asserting additive restore leaves non-bundled content untouched.
