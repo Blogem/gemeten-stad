@@ -49,6 +49,41 @@ func refToken(turtle, identificatie string) string {
 	return ""
 }
 
+// activeAssertion scopes a gs:active/gs:validFrom check to a single subject's own Place block,
+// so a fixture that co-renders another live/soft-deleted row (e.g. a buurt plus the wijk it
+// resolves against) can't trip a whole-document Contains/NotContains check on the wrong subject.
+type activeAssertion struct {
+	identificatie string
+	active        bool
+	validFrom     string // xsd:date lexical form, e.g. "2025-03-01"
+}
+
+// assertActiveStatus asserts that identificatie's own Place block asserts gs:active <active> with
+// the given gs:validFrom, and does NOT contain the opposite gs:active value within that same
+// block. The block is the subject's "a gs:Place ;" line through the terminating "|} ." of its
+// gs:active RDF-star annotation (see renderActivePlace in render.go).
+func assertActiveStatus(t *testing.T, turtle, identificatie string, active bool, validFrom string) {
+	t.Helper()
+
+	token := refToken(turtle, identificatie)
+	require.NotEmpty(t, token, "place token for %s must appear in turtle", identificatie)
+
+	start := strings.Index(turtle, token+" a gs:Place ;")
+	require.GreaterOrEqual(t, start, 0, "expected %q a gs:Place block in turtle", token)
+	relEnd := strings.Index(turtle[start:], "|} .")
+	require.GreaterOrEqual(t, relEnd, 0, "expected terminating gs:active block for %q", token)
+	block := turtle[start : start+relEnd+len("|} .")]
+
+	want := "gs:active true"
+	notWant := "gs:active false"
+	if !active {
+		want, notWant = notWant, want
+	}
+	assert.Contains(t, block, want, "expected %s in %s's own Place block", want, identificatie)
+	assert.NotContains(t, block, notWant, "did not expect %s in %s's own Place block", notWant, identificatie)
+	assert.Contains(t, block, `gs:validFrom "`+validFrom+`"^^xsd:date`, "expected validFrom %s in %s's own Place block", validFrom, identificatie)
+}
+
 // assertWithinEdge asserts the rendered turtle contains a gs:within line linking the buurt
 // Place to the wijk Place (scenario: "a buurt is contained in its wijk").
 func assertWithinEdge(t *testing.T, turtle, buurtID, wijkID string) {
@@ -91,6 +126,10 @@ func TestRenderPlaces(t *testing.T) {
 
 		// withinEdge, if set, asserts a gs:within line links buurtID -> wijkID.
 		withinEdge *[2]string
+
+		// activeAssert, if set, scopes a gs:active/gs:validFrom check to that subject's own
+		// Place block (see assertActiveStatus) rather than the whole rendered document.
+		activeAssert *activeAssertion
 	}{
 		{
 			// Scenario 1 + 7 + 8: a live buurt within its wijk, both live. Also exercises the
@@ -124,8 +163,13 @@ func TestRenderPlaces(t *testing.T) {
 		},
 		{
 			// Scenario 3: a soft-deleted buurt is still seeded, but inactive, with validFrom
-			// equal to source_deleted_at (not loadTS). ligtInWijkID resolves so this case is
-			// isolated from the dangling-containment scenarios below.
+			// equal to source_deleted_at (not loadTS). ligtInWijkID resolves against a LIVE wijk
+			// (Wijk Een, gs:active true) so this case is isolated from the dangling-containment
+			// scenarios below AND exercises that the buurt's own inactive status doesn't bleed
+			// into (or get masked by) the co-rendered live wijk's status. The active-status check
+			// is scoped to the buurt's own Place block via activeAssert below — a whole-document
+			// NotContains("gs:active true") would wrongly fail on the live wijk's own, correct
+			// gs:active true.
 			name: "soft-deleted buurt is seeded inactive with validFrom = source_deleted_at",
 			buurten: []buurtRow{
 				{
@@ -141,14 +185,14 @@ func TestRenderPlaces(t *testing.T) {
 			wantContains: []string{
 				"a gs:Place",
 				"Buurt Twee",
-				"gs:active false",
-				`gs:validFrom "2025-03-01"^^xsd:date`,
-			},
-			wantNotContains: []string{
-				`gs:active true`,
 			},
 			wantDangling: nil,
 			withinEdge:   &[2]string{"03630000000122", "03630000001"},
+			activeAssert: &activeAssertion{
+				identificatie: "03630000000122",
+				active:        false,
+				validFrom:     "2025-03-01",
+			},
 		},
 		{
 			// Scenario 3, wijk side: soft-deletion applies identically to a wijk row.
@@ -219,6 +263,9 @@ func TestRenderPlaces(t *testing.T) {
 
 			if tt.withinEdge != nil {
 				assertWithinEdge(t, text, tt.withinEdge[0], tt.withinEdge[1])
+			}
+			if tt.activeAssert != nil {
+				assertActiveStatus(t, text, tt.activeAssert.identificatie, tt.activeAssert.active, tt.activeAssert.validFrom)
 			}
 		})
 	}
