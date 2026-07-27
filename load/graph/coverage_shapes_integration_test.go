@@ -32,16 +32,22 @@ import (
 // VALID anchor/intervention pair to isolate a period-only or anchor-only violation builds on this,
 // per the task contract's "small helper that emits a valid Intervention+Place+anchor base, then
 // vary the period" guidance.
+//
+// gs:AuditLinkShape's gs:coversIntervention property is gated sh:nodeKind sh:IRI + sh:pattern
+// "^http://gemetenstad.nl/id/intervention/" (replacing an earlier, cross-load-unsatisfiable
+// sh:class gs:Intervention check) — so the covered Intervention's IRI must live under
+// http://gemetenstad.nl/id/intervention/, written here as a full IRI (a prefixed name would need
+// the "/" escaped in Turtle's PN_LOCAL grammar, so a bare <...> IRI is clearer).
 const coverageBaseTurtle = `@prefix gs: <http://gemetenstad.nl/ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix dct: <http://purl.org/dc/terms/> .
 @prefix data: <http://gemetenstad.nl/id/> .
-data:intv-cov a gs:Intervention ;
+<http://gemetenstad.nl/id/intervention/COV-1> a gs:Intervention ;
     dct:available "2022-06-01"^^xsd:date ;
     gs:locatedAt data:place-cov {| gs:confidence 1.0 ; gs:evidence "exact BAG match" |} .
 data:place-cov a gs:Place .
 data:auditlink-cov a gs:AuditLink ;
-    gs:coversIntervention data:intv-cov .
+    gs:coversIntervention <http://gemetenstad.nl/id/intervention/COV-1> .
 `
 
 // withCoverageBase appends a candidate-specific fragment (also carrying its own @prefix headers,
@@ -114,6 +120,16 @@ const coverageAnchorNoTarget = `@prefix gs: <http://gemetenstad.nl/ns#> .
 data:auditlink-bad a gs:AuditLink .
 `
 
+// coverageAnchorOutOfNamespaceTarget: an AuditLink whose gs:coversIntervention points at an IRI
+// OUTSIDE the http://gemetenstad.nl/id/intervention/ namespace (here, the place/ namespace) — must
+// be rejected by gs:AuditLinkShape's sh:pattern gate regardless of what, if anything, that IRI is
+// typed as.
+const coverageAnchorOutOfNamespaceTarget = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:auditlink-outns a gs:AuditLink ;
+    gs:coversIntervention <http://gemetenstad.nl/id/place/OUT-1> .
+`
+
 // coveragePeriodNeitherBranch: a period with gs:linksObservation but NEITHER gs:confidence NOR
 // gs:noSourceFound — satisfies neither xone branch (matched needs confidence too; no-source needs
 // noSourceFound), so sh:xone must reject it even though versionOf/validFrom/evidence are present.
@@ -183,6 +199,28 @@ func TestLoadCoverageAnchorAndPeriodRejectsMalformed(t *testing.T) {
 			assert.Len(t, after, len(before), "nothing written on non-conformance")
 		})
 	}
+}
+
+// TestLoadCoverageAnchorRejectsOutOfNamespaceCoversIntervention: a dedicated test (kept separate
+// from the table above for -run targetability) for the sh:pattern namespace gate on
+// gs:coversIntervention — an anchor pointing outside http://gemetenstad.nl/id/intervention/ must
+// be rejected, not merely one pointing at nothing (coverageAnchorNoTarget above already covers the
+// minCount 0 case).
+func TestLoadCoverageAnchorRejectsOutOfNamespaceCoversIntervention(t *testing.T) {
+	c, base := testClient(t)
+	ctx := context.Background()
+
+	require.NoError(t, Load(ctx, base, nil, Config{Reset: true}))
+	before, err := c.graphsWithPrefix(ctx, runGraphPrefix)
+	require.NoError(t, err)
+
+	err = Load(ctx, base, []byte(coverageAnchorOutOfNamespaceTarget), Config{})
+	require.Error(t, err, "an out-of-namespace coversIntervention target must be rejected")
+	assert.Contains(t, strings.ToLower(err.Error()), "conform")
+
+	after, err2 := c.graphsWithPrefix(ctx, runGraphPrefix)
+	require.NoError(t, err2)
+	assert.Len(t, after, len(before), "nothing written on non-conformance")
 }
 
 // --- Task 1b.4: Intervention dct:available gate ---
