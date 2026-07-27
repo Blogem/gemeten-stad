@@ -30,6 +30,9 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fusekiURL string, cfg Config) 
 	if err := pool.QueryRow(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
 		return fmt.Errorf("coverage: resolve current schema: %w", err)
 	}
+	if schema == "" {
+		return fmt.Errorf("coverage: current_schema() is empty (no schema on search_path)")
+	}
 
 	if cfg.Reset {
 		if err := DropAuditMetrics(ctx, pool, schema); err != nil {
