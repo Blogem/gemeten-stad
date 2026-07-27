@@ -185,11 +185,11 @@ SELECT DISTINCT ?p WHERE { GRAPH ?g { ?p a gs:CoveragePeriod } }`)
 
 // openPeriod is one currently-open (no gs:validTo) gs:CoveragePeriod node's queried-back fields —
 // the matched-branch fields (ObservationIRI/Confidence/Granularity) are "" when the period is a
-// no-source period. IsNoSource is computed via a SPARQL EXISTS/BIND rather than reading back
-// gs:noSourceFound's literal value directly: a BIND(EXISTS{...} AS ?x) result is a SPARQL-computed
-// effective boolean, always serialized "true"/"false" per the SPARQL 1.1 JSON results spec,
-// decoupling this assertion from however the store happens to canonicalize a stored xsd:boolean
-// literal's lexical form.
+// no-source period. IsNoSource is derived in Go from an OPTIONAL ?nsf binding read back INSIDE the
+// same GRAPH ?g block as the rest of the row (not a projected EXISTS/BIND against the query's
+// default graph): this dataset's default graph is not the union of its named graphs, so a pattern
+// evaluated outside GRAPH ?g never sees data that lives only in a run:load-... graph and would
+// silently and always bind false, regardless of what is actually stored.
 type openPeriod struct {
 	IRI            string
 	ObservationIRI string
@@ -208,13 +208,14 @@ type openPeriod struct {
 func openPeriodsFor(t *testing.T, ctx context.Context, dsURL, anchorIRI string) []openPeriod {
 	t.Helper()
 	query := fmt.Sprintf(`PREFIX gs: <http://gemetenstad.nl/ns#>
-SELECT ?p ?obs ?conf ?gran ?evidence (EXISTS { ?p gs:noSourceFound true } AS ?isNoSource) WHERE {
+SELECT ?p ?obs ?conf ?gran ?evidence ?nsf WHERE {
   GRAPH ?g {
     ?p gs:versionOf <%s> ; gs:evidence ?evidence .
     FILTER NOT EXISTS { ?p gs:validTo ?vt }
     OPTIONAL { ?p gs:linksObservation ?obs }
     OPTIONAL { ?p gs:confidence ?conf }
     OPTIONAL { ?p gs:granularity ?gran }
+    OPTIONAL { ?p gs:noSourceFound ?nsf }
   }
 }`, anchorIRI)
 	rows := mustSelect(t, ctx, dsURL, query)
@@ -226,7 +227,7 @@ SELECT ?p ?obs ?conf ?gran ?evidence (EXISTS { ?p gs:noSourceFound true } AS ?is
 			ObservationIRI: r["obs"],
 			Confidence:     r["conf"],
 			Granularity:    r["gran"],
-			IsNoSource:     r["isNoSource"] == "true",
+			IsNoSource:     r["nsf"] == "true",
 			Evidence:       r["evidence"],
 		})
 	}
