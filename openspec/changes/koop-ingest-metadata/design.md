@@ -71,9 +71,12 @@ page policy). Crucially, a transient reset MUST NOT be mistaken for absence: an 
 as `shared.ErrNotFound` (skip, no retry), while any transport error is retried; a sidecar still
 failing after every attempt is left **unlanded** (non-fatal) so a later run retries it. *Alternative
 rejected:* treating every error as "sidecar absent" (the first implementation) — it silently dropped
-the zaaknummer for every throttled record, defeating the change's purpose. *Alternative deferred:*
-making the pace env-configurable — kept the 200 ms default (consistent with SRU); revisit only if a
-paced run still throttles.
+the zaaknummer for every throttled record, defeating the change's purpose. The pacing is
+**env-configurable** via `GS_KOOP_METADATA_RATE_MS` (default 200 ms) — a full ~10k backfill is a
+sustained load against a host that hard-blocked us for hours on an un-paced burst, so an operator can
+run the big backfill gentler (e.g. 500–1000 ms) without a rebuild; incremental runs stay at the
+default. Validated end-to-end: a paced 45-record run landed 45/45 sidecars (all carrying a
+`referentienummer`), with one transient reset silently recovered by the retry and no block triggered.
 
 ## Risks / Trade-offs
 

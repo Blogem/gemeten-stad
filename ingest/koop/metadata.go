@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/Blogem/gemeten-stad/ingest/shared"
@@ -19,18 +21,31 @@ const metadataBaseURL = "https://zoek.officielebekendmakingen.nl/"
 
 // Rate-limit + retry policy for the metadata.xml sidecar fetch. A full backfill issues one fetch
 // per publication (~10k), and the host resets connections (EOF / unexpected EOF) under rapid-fire
-// load, so fetches are paced by metadataRateInterval and each is retried with capped exponential
+// load, so fetches are paced by metadataRateInterval() and each is retried with capped exponential
 // backoff — mirroring ingest/shared's SRU-page policy. A genuine 404 (shared.ErrNotFound) is NOT
 // retried; only transient transport failures are.
 const (
-	metadataRateInterval   = 200 * time.Millisecond
-	metadataMaxAttempts    = 8
-	metadataRetryBaseDelay = 1 * time.Second
-	metadataMaxRetryDelay  = 20 * time.Second
+	defaultMetadataRateMillis = 200 // pacing default, matching shared.SRURateInterval
+	metadataMaxAttempts       = 8
+	metadataRetryBaseDelay    = 1 * time.Second
+	metadataMaxRetryDelay     = 20 * time.Second
 )
 
 // metadataSleep is a seam over time.Sleep so tests can drive the pacing/backoff without waiting.
 var metadataSleep = func(d time.Duration) { time.Sleep(d) }
+
+// metadataRateInterval is the pacing delay between successive sidecar fetches. It defaults to 200ms
+// but is overridable via GS_KOOP_METADATA_RATE_MS (milliseconds) so a large sustained backfill can
+// be run gentler against the aggressively-throttling host without a rebuild (design D5). A missing,
+// empty, non-numeric, or negative value falls back to the default.
+func metadataRateInterval() time.Duration {
+	if v := os.Getenv("GS_KOOP_METADATA_RATE_MS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return time.Duration(n) * time.Millisecond
+		}
+	}
+	return defaultMetadataRateMillis * time.Millisecond
+}
 
 // metadataURL builds the metadata.xml sidecar URL for a publication id, e.g.
 // "https://zoek.officielebekendmakingen.nl/gmb-2022-291126/metadata.xml".
@@ -120,7 +135,7 @@ func landMetadata(ctx context.Context, store *shared.RawStore, httpGet shared.HT
 		return nil
 	}
 
-	metadataSleep(metadataRateInterval)
+	metadataSleep(metadataRateInterval())
 
 	url := metadataURL(id)
 	body, found, err := fetchMetadata(ctx, httpGet, url)

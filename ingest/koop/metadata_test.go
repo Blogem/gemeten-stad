@@ -99,6 +99,25 @@ func TestLandMetadata_EmptySidecarIsNonFatal(t *testing.T) {
 	assert.False(t, landed, "an empty sidecar body is not landed")
 }
 
+// -- Pacing is env-configurable (design D5) -----------------------------------
+
+func TestMetadataRateInterval(t *testing.T) {
+	t.Setenv("GS_KOOP_METADATA_RATE_MS", "")
+	assert.Equal(t, 200*time.Millisecond, metadataRateInterval(), "default is 200ms")
+
+	t.Setenv("GS_KOOP_METADATA_RATE_MS", "500")
+	assert.Equal(t, 500*time.Millisecond, metadataRateInterval(), "override honoured")
+
+	t.Setenv("GS_KOOP_METADATA_RATE_MS", "0")
+	assert.Equal(t, time.Duration(0), metadataRateInterval(), "0 disables pacing")
+
+	t.Setenv("GS_KOOP_METADATA_RATE_MS", "-5")
+	assert.Equal(t, 200*time.Millisecond, metadataRateInterval(), "negative falls back to default")
+
+	t.Setenv("GS_KOOP_METADATA_RATE_MS", "notanumber")
+	assert.Equal(t, 200*time.Millisecond, metadataRateInterval(), "non-numeric falls back to default")
+}
+
 // -- Transient errors are retried, not mistaken for absence (task 2.2) ---------
 
 // flakyGetter fails the first failN calls with a transient (non-404) error, then serves body.
