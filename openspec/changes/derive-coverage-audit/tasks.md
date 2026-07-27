@@ -40,9 +40,9 @@
 
 ## 5. Wiring + idempotency
 
-- [ ] 5.1 Add `runCoverageDerive` and a `deriveRegistry []deriveSource` in `cmd/pipeline`, replacing the `derive` stub; resolve sources like `loadRegistry`.
-- [ ] 5.2 Write assembled turtle through `load/graph.Load` (SHACL gate + node-form series SCD2); persist `audit_metrics` in the same run.
-- [ ] 5.3 Registry test asserting `deriveRegistry` names (`["coverage"]`) mirroring `load_sources_test.go`.
+- [x] 5.1 Add `runCoverageDerive` and a `deriveRegistry []deriveSource` in `cmd/pipeline`, replacing the `derive` stub; resolve sources like `loadRegistry`.
+- [x] 5.2 Write assembled turtle through `load/graph.Load` (SHACL gate + node-form series SCD2); persist `audit_metrics` in the same run.
+- [x] 5.3 Registry test asserting `deriveRegistry` names (`["coverage"]`) mirroring `load_sources_test.go`.
 - [ ] 5.4 Integration test (isolated Fuseki + Postgres, with `state-node-versioning` merged): seed permits + fellings covering a strong match, a below-τ weak link, a contested felling (exclusive), a multi-tree permit, and a no-source permit; assert the anchor + period nodes + `audit_metrics` rows; assert an unchanged re-run is a no-op (same content-key, no new run graph); assert a newly-appearing felling opens a matched period and closes the prior no-source period; assert a malformed period is rejected.
 
 ## 6. Validation + docs
