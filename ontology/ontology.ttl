@@ -325,3 +325,9 @@ gs:transplantOrigin
     rdfs:label "transplant origin"@en ;
     rdfs:comment
         "The felling was a verplanten (transplant): legally a velling (Bomenverordening art. 1k,  Spike C) and counted in the felling total, but the tree may persist at a new site — so  the 'removal' is qualified."@en .
+
+gs:countUnknown
+    a gs:Caveat ;
+    rdfs:label "count unknown"@en ;
+    rdfs:comment
+        "The permit's stated tree count is unknown (Phase 1 does not extract permit-text  counts), so the count axis of the coverage score contributes nothing — the matched link  rests on place + time alone."@en .
