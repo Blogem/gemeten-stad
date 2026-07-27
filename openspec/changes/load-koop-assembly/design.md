@@ -81,13 +81,22 @@ point + finer precision ride the edge confidence and live in PostGIS). Getting t
 cleaner but touches P6; deferred until a second caller needs it. *Alternative rejected:* point-first
 — many points are neighbourhood centroids.
 
-### D4 — Noord scoping by resolved buurt (`code LIKE 'N%'`), cross-checked by zaaknummer prefix
+### D4 — Noord scoping by resolved buurt (`code LIKE 'N%'`)
 Keep a permit iff its resolved buurt is in stadsdeel Noord, determined by
 `gebieden_buurten.code LIKE 'N%'` — the buurt `code`'s letter prefix encodes the stadsdeel, and this
-is exactly the gate `load/geo` already uses to count Noord buurten (`load/geo/gates.go`). Cross-check
-against the `Z….-N…` `referentienummer` prefix and log mismatches. (Note: P12b keys the Place on
-`identificatie`, not `code`; P13 looks up the resolved buurt's `code` from `gebieden_buurten` for the
-Noord test.) *Alternative rejected:* the spike's tree-vote hack — we have the authoritative polygons.
+is exactly the gate `load/geo` already uses to count Noord buurten (`load/geo/gates.go`). The resolved
+buurt is the **sole** Noord scoping signal. (Note: P12b keys the Place on `identificatie`, not `code`;
+P13 looks up the resolved buurt's `code` from `gebieden_buurten` for the Noord test.) *Alternative
+rejected:* the spike's tree-vote hack — we have the authoritative polygons.
+
+**Superseded — zaaknummer-prefix cross-check dropped (real-corpus finding).** An earlier version of
+this decision also cross-checked the resolved scope against a `Z….-N…` `referentienummer` prefix and
+logged mismatches. Running the full 10,517-record corpus proved that premise false: `Z…-NW…` is
+**Nieuw-West** (resolves to `F…` buurten, not Noord) yet starts with `N`, and real Noord zaken carry
+diverse/plain-numeric prefixes (`Z2024-004520`, `Z2023-A…`, `Z2022-C…`, `Z2021-O…`, `Z2023-WP…`) with
+no consistent `N` — the zaaknummer's stadsdeel encoding is inconsistent and often absent. The check
+produced thousands of false-positive warnings and no reliable signal, so it was removed. Scoping is
+unaffected: it never depended on the zaaknummer, only on the authoritative resolved buurt `code`.
 
 **Scope of "in-scope" (PostGIS retention):** the harvest is deliberately Amsterdam-wide, but vertical 1
 is Noord only, so a zaak whose besluit **positively resolves outside Noord** is dropped entirely — no
