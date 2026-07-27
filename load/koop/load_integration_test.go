@@ -185,12 +185,6 @@ func snapshotRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ids []s
 // TestKoopLoad_UnchangedRerunIsANoOp is task 8.1's core scenario: re-running koop.Load against the
 // exact same landed corpus must leave PostGIS and the graph completely undisturbed -- no row
 // content change, no new run:load-... graph.
-//
-// TODO(re-resolution half, task 8.1): a re-resolution scenario (e.g. a BAG update that moves the
-// Noord besluit's address into a different buurt, opening a new graph version and refreshing the
-// PostGIS row) is NOT exercised here -- it needs either a second geo seed variant or a mid-test
-// mutation of the seeded BAG rows, which is heavier than this suite's fixture-corpus shape
-// supports cleanly. Deferred; see the tester's handoff report for the reasoning.
 func TestKoopLoad_UnchangedRerunIsANoOp(t *testing.T) {
 	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
 	dsURL := fusekiDatasetURL(t)
@@ -218,4 +212,120 @@ func TestKoopLoad_UnchangedRerunIsANoOp(t *testing.T) {
 
 	graphsAfter := sparqlGraphsWithPrefix(t, dsURL, gsRunGraphPrefix)
 	assert.ElementsMatch(t, graphsBefore, graphsAfter, "no new run:load-... graph on an unchanged re-run")
+}
+
+// reResolveNoordAddressSQL is the mid-test mutation that forces a re-resolution (task 8.1's other
+// scenario): it adds a brand-new, disjoint Noord buurt (N03BUURT, code "N03", still in scope) to
+// gebieden_buurten, then moves the Noord besluit's address-tier BAG point (vbo-orehof-8 -- the
+// point postcode 1024BB/huisnummer 8 resolves to, per koop_geo_seed.sql) out of N01BUURT and into
+// N03BUURT. The address itself (postcode/huisnummer/openbareruimteref) is untouched, so the
+// address tier still fires at the same 0.90 confidence on the second run -- only the
+// point-in-polygon buurt result changes. This never touches koop_geo_seed.sql itself; it only ADDS
+// a disjoint buurt and UPDATEs the one BAG point this test needs moved, exactly as the task
+// contract asks.
+const reResolveNoordAddressSQL = `
+INSERT INTO gebieden_buurten (identificatie, naam, code, ligtinwijkid, geom) VALUES
+    ('N03BUURT', 'Testbuurt Noord Reresolved', 'N03', 'N01WIJK',
+     ST_GeomFromText('POLYGON((125000 486800, 125200 486800, 125200 487150, 125000 487150, 125000 486800))', 28992));
+
+UPDATE bag_verblijfsobject
+SET geom = ST_GeomFromText('POINT(125100 487000)', 28992)
+WHERE identificatie = 'vbo-orehof-8';
+`
+
+const (
+	// n03PlaceIdentificatie/n03PlaceIRI are the re-resolution target: a brand-new Noord buurt,
+	// disjoint from N01BUURT, minted inline by reResolveNoordAddressSQL above (not part of
+	// koop_geo_seed.sql).
+	n03PlaceIdentificatie = "N03BUURT"
+	n03PlaceIRI           = "http://gemetenstad.nl/id/place/N03BUURT"
+)
+
+// TestKoopLoad_ReResolutionOpensNewVersion is task 8.1's re-resolution scenario -- the other half
+// of TestKoopLoad_UnchangedRerunIsANoOp above: WHEN a besluit's resolved location changes between
+// runs (specs/koop-load/spec.md's "A re-resolution opens a new version"), THEN:
+//
+//   - PostGIS: the besluit's koop_publications row is upserted IN PLACE (same gmb_id, no second
+//     row), its resolved_identificatie/resolved_buurt_code/resolved_geom refreshed to the newly
+//     resolved buurt.
+//   - Graph: a new gs:locatedAt version opens, targeting the new Place; the prior version (to the
+//     original Place) is retained -- never deleted -- but stamped with gs:validTo, i.e. closed, so
+//     exactly one open version remains.
+func TestKoopLoad_ReResolutionOpensNewVersion(t *testing.T) {
+	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
+	dsURL := fusekiDatasetURL(t)
+	ctx := context.Background()
+
+	pool := newSchemaPool(t, ctx, dsn)
+	seedGeo(t, ctx, pool)
+	store := shared.NewRawStore(t.TempDir())
+	landNoordZaak(t, store)
+
+	resetFusekiRunGraphs(t, ctx, dsURL)
+
+	// Run 1: the besluit resolves address-tier (0.90) into the original Noord buurt, N01BUURT.
+	require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: true}))
+
+	rowCountBeforeReResolution := countPublications(t, ctx, pool)
+
+	before, found := queryPublication(t, ctx, pool, gmbNoordBesluit)
+	require.True(t, found)
+	require.NotNil(t, before.ResolvedIdentificatie)
+	assert.Equal(t, noordPlaceIdentificatie, *before.ResolvedIdentificatie, "run 1 resolves into the original Noord buurt")
+
+	assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> } }`),
+		"run 1's Intervention locates at the original Noord Place")
+
+	// Force a re-resolution between the two runs.
+	_, err := pool.Exec(ctx, reResolveNoordAddressSQL)
+	require.NoError(t, err)
+
+	// Run 2: same landed corpus, re-run against the moved BAG address.
+	require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: false}))
+
+	t.Run("PostGIS: the besluit's row is upserted in place, not duplicated", func(t *testing.T) {
+		assert.Equal(t, rowCountBeforeReResolution, countPublications(t, ctx, pool),
+			"a re-resolution upserts the existing row, it never inserts a second one")
+
+		after, found := queryPublication(t, ctx, pool, gmbNoordBesluit)
+		require.True(t, found)
+		require.NotNil(t, after.ResolvedIdentificatie)
+		assert.Equal(t, n03PlaceIdentificatie, *after.ResolvedIdentificatie, "the resolved buurt is refreshed to the new Noord buurt")
+		require.NotNil(t, after.ResolvedBuurtCode)
+		assert.Equal(t, "N03", *after.ResolvedBuurtCode)
+		require.NotNil(t, after.InNoord)
+		assert.True(t, *after.InNoord, "the new buurt is still in scope (code N03 -- Noord)")
+		require.NotNil(t, after.ResolvedTier)
+		assert.Equal(t, "address", *after.ResolvedTier, "still an address-tier resolution -- only the buurt it lands in changed")
+		require.NotNil(t, after.ResolvedGeomWKT)
+		assert.Contains(t, *after.ResolvedGeomWKT, "125100", "resolved_geom is refreshed to the moved BAG point")
+		assert.Contains(t, *after.ResolvedGeomWKT, "487000")
+	})
+
+	t.Run("graph: a new locatedAt version opens at the new Place, the prior version is closed", func(t *testing.T) {
+		// The new version is open (no gs:validTo) and targets the new Place, carrying the same
+		// address-tier confidence (0.90) as before.
+		assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+n03PlaceIRI+`> .
+                 << <`+noordInterventionIRI+`> gs:locatedAt <`+n03PlaceIRI+`> >> gs:confidence 0.9 .
+                 FILTER NOT EXISTS { << <`+noordInterventionIRI+`> gs:locatedAt <`+n03PlaceIRI+`> >> gs:validTo ?vt } } }`),
+			"a new, open gs:locatedAt version targets the newly resolved Place")
+
+		// The prior version's triple is retained -- history is never deleted -- but is now closed:
+		// stamped with gs:validTo rather than left open.
+		assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> } }`),
+			"the prior version's triple is retained, not deleted")
+		assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { << <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> >> gs:validTo ?vt } }`),
+			"the prior version is stamped with gs:validTo -- closed, not left open")
+
+		// The prior version is no longer the OPEN one: re-running the same "open" pattern against
+		// it (locatedAt with no validTo) must now fail, since only the new Place's version is open.
+		assert.False(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> .
+                 FILTER NOT EXISTS { << <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> >> gs:validTo ?vt } } }`),
+			"the original version is no longer the open one")
+	})
 }
