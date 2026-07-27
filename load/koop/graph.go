@@ -30,15 +30,14 @@ const (
 	placeNS        = dataNS + "place/"
 )
 
-// turtlePreamble declares the prefixes every emitted candidate needs: gs: (TBox), xsd:date (the
-// gs:validFrom annotation range), and act: bound to the activity concept namespace so mapActivity
-// can emit the compact act:vellen token rather than a full bracketed IRI. Instance IRIs
-// (intervention/claim/place) are deliberately written as full angle-bracket IRIs, not prefixed
-// names — a zaaknummer is external, untrusted-ish input (task contract), and a bracketed IRI needs
-// no prefixed-name-local-part validity check the way a prefixed token would.
+// turtlePreamble declares the prefixes every emitted candidate needs: gs: (TBox) and act: bound
+// to the activity concept namespace so mapActivity can emit the compact act:vellen token rather
+// than a full bracketed IRI. Instance IRIs (intervention/claim/place) are deliberately written as
+// full angle-bracket IRIs, not prefixed names — a zaaknummer is external, untrusted-ish input
+// (task contract), and a bracketed IRI needs no prefixed-name-local-part validity check the way a
+// prefixed token would.
 const turtlePreamble = `@prefix gs: <` + gsNS + `> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix act: <` + dataNS + `activity/> .
 
 `
@@ -151,19 +150,15 @@ func formatConfidence(c float64) string {
 }
 
 // renderLocatedAtAnnotations builds the RDF-star annotation body for item's locatedAt edge:
-// gs:confidence always (shape clause 1b requires it unconditionally), gs:caveat for each name
-// mapCaveats returns (zero or more), and gs:validFrom iff item.Pub.Available is non-empty (a
-// besluit with no dcterms:available date carries no validFrom annotation rather than a fabricated
-// one).
+// gs:confidence always (shape clause 1b requires it unconditionally) and gs:caveat for each name
+// mapCaveats returns (zero or more). locatedAt is a Flavour-1 refinable-metadata edge
+// (docs/RDF_STAR_RELATIONSHIPS.md): a permit's location holds, and only its confidence is refined
+// over transaction-time, so the edge never carries gs:validFrom/gs:validTo (design.md D3).
 func renderLocatedAtAnnotations(item AuditedBesluit) string {
 	parts := []string{"gs:confidence " + formatConfidence(item.Res.Confidence)}
 
 	for _, caveat := range mapCaveats(item.Res) {
 		parts = append(parts, "gs:caveat gs:"+caveat)
-	}
-
-	if item.Pub.Available != "" {
-		parts = append(parts, "gs:validFrom "+turtleString(item.Pub.Available)+"^^xsd:date")
 	}
 
 	return strings.Join(parts, " ; ")
