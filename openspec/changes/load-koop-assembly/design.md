@@ -135,9 +135,17 @@ A `koop_publications` table (schema-qualified via `current_schema()`, staging + 
 `raw jsonb` catch-all — the `load/bomen` pattern): `gmb_id` PK, `zaaknummer`, `kind`
 (aanvraag/besluit/…), `available` + parsed dates, `geometry(Point, 28992)` (the raw permit point),
 postcode, resolved buurt code, `resolved_confidence`, `caveats`, `resolved_geom geometry(Point, 28992)`,
-`resolved_tier`, an `unresolved` marker, `raw`. Keyed by publication id (**not** zaaknummer — a zaak
-has multiple publications; the inline note is right). The audited-besluit resolution is stored on the
-besluit's row. Geometry lives here only.
+`resolved_tier`, an `unresolved` marker, `loaded_at timestamptz` (the load run's timestamp), and `raw`.
+Keyed by publication id (**not** zaaknummer — a zaak has multiple publications; the inline note is
+right). The audited-besluit resolution is stored on the besluit's row. Geometry lives here only.
+
+`loaded_at` is stamped on every insert and every genuine update but is **excluded from the MERGE's
+change-detection** (`IS DISTINCT FROM` compares only the data + resolution columns), so an unchanged
+re-run is still a true no-op and does not touch `loaded_at`; it therefore reads as "when this row's
+content was last written", not "last time a load ran". No schema migration framework exists yet
+(greenfield; `ensureSchema` is idempotent `CREATE TABLE IF NOT EXISTS`, `--reset` rebuilds) — a
+versioned tool (goose / golang-migrate) is deferred to the k3s production phase; `koop_publications`
+is new, so `loaded_at` is simply part of its `CREATE`.
 
 `resolved_geom` + `resolved_tier` keep the resolver's **precise** output as silver: `resolved_geom`
 is the address-tier BAG point (`location.Result.Geom` when `PlaceLevel == address`; NULL at the
@@ -168,11 +176,14 @@ without it, the precise resolution P6 already computes would be discarded and th
   Use it as the resolution valid-time and `validFrom`; anchor elapsed-time reasoning downstream (P14)
   on the registry felling date, not permit dates.
 - **[per-record resilience]** A batch load must not be sunk by one bad record. → A single record that
-  fails to parse, whose besluit fails to resolve (infra error), whose IRIs are unsafe (dropped from
-  the graph candidate), or whose row fails to stage is **logged and skipped**, and the load continues
-  with the rest; the run logs skip counts. Only batch-level failures stay fatal: the koop dir cannot
-  be listed, the staging table cannot be truncated, or `load/graph.Load` rejects the whole assembled
-  candidate against the shapes (the SHACL gate is never weakened to a per-record skip).
+  fails to parse, whose IRIs are unsafe (dropped from the graph candidate only), or whose row fails to
+  stage is **logged and skipped**, and the load continues with the rest; the run logs skip counts. A
+  besluit whose resolution hits an **infra error** (a DB failure in the buurt lookup — not the normal
+  "nothing resolved", which is `Unresolved`) has its zaak's **full trail still persisted** (like a
+  pending zaak: rows written, no resolution, not graphed) and `resolveFailed` counted, so a transient
+  blip loses no history and self-heals on the next run. Only batch-level failures stay fatal: the koop
+  dir cannot be listed, the staging table cannot be truncated, or `load/graph.Load` rejects the whole
+  assembled candidate against the shapes (the SHACL gate is never weakened to a per-record skip).
 
 ## Migration Plan
 
@@ -187,8 +198,12 @@ registry entry. Integration tests run against the isolated Fuseki dataset + Post
   `load/geo/gates.go`) is the Noord test, cross-checked by the `Z….-N…` zaaknummer prefix.
 - **RESOLVED — P12b Place key (D6):** verified `identificatie`; the resolver's buurt PIP returns the
   same column, so `data:place/<BuurtID>` joins the skeleton exactly.
-- **Multiple besluiten / amendments per zaak:** if a case has a besluit + a later `Verlenging`/amendment,
-  v1 audits the primary besluit; is the DecisionPeriod (amendment) model needed in Phase 1 or deferred
-  to Phase 2?
+- **RESOLVED — Multiple besluiten / amendments per zaak (deferred to Phase 2):** a case can carry the
+  primary besluit plus a later `Verlenging`/amendment as separate publications under one zaaknummer.
+  v1 audits **only the primary besluit** (one `Intervention`); the other publications stay in the
+  PostGIS trail, ungraphed. The consequence — the graph does not model an extended/amended decision
+  period, so date-keyed reasoning (P14) can misjudge extended cases — and the deferred `DecisionPeriod`
+  model are written up as a finding + implication in `docs/IMPLEMENTATION_PLAN.md` (Temporal model →
+  Amend/repeal).
 - **Keyless remainder handling:** for the rare publication with no metadata sidecar, confirm the
   PostGIS-only fallback is sufficient for P14, or whether a heuristic zaak key is worth it.

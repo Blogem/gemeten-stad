@@ -126,6 +126,28 @@ for rows that change, e.g. a replant date filled in months later.
 `amends`/`supersedes` to the prior, each with its own validity — never an in-place edit. The
 `Assessment` model below is just the most active instance of this one general rule.
 
+**Finding (P13 `load koop`) — multiple decisions per case, and what v1 does not yet model.**
+Over the real KOOP corpus a single zaak (`OVERHEIDop.referentienummer`) often carries more than one
+publication under one `zaaknummer`: the primary **Besluit**, and sometimes a later **Verlenging**
+(the replant/decision term extended) or a **Rectificatie/amendment**. These arrive as distinct
+title-prefixed publications, not as edits to the original. **v1 audits only the primary besluit** as
+one `Intervention`; the aanvraag / verlenging / ingetrokken / rectificatie publications are retained
+verbatim in the PostGIS trail (`koop_publications`, one row per publication) but are **not** assembled
+into the graph.
+
+*Implication:* the graph today has no representation of an **extended or amended decision period** —
+a case whose replant term was later extended, or whose besluit was rectified, looks in the graph
+exactly like its original besluit. Any downstream reasoning keyed on the original besluit's dates
+(P14 elapsed-time / timeliness, legal-force checks) will therefore **misjudge cases whose term was
+changed by a Verlenging** — the change is invisible above the value store. No data is lost (the raw
+publications sit in PostGIS), so the model can be added later without re-harvesting; but P14 must not
+silently assume one decision per case.
+
+*Deferred to Phase 2:* representing this as a validity-stamped **decision period** (the
+`LegalStatusPeriod` / SCD-Type-2 node form above, or `amends`/`supersedes` decision entities) so the
+graph carries the current term and its history. Phase 1 stops at the primary besluit to stay lean;
+this note records the gap so it is reasoned about explicitly, not assumed away.
+
 **Reference data is bitemporal too — resolve at the intervention's valid-time.** This is not only
 an internal concern: **BAG itself is bitemporal** (Spike D, now `location/`) — every address is a
 sequence of *voorkomens* with valid-time (`beginGeldigheid`/`eindGeldigheid`) and transaction-time

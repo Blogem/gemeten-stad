@@ -115,15 +115,17 @@ caveat) SHALL be rejected with no partial write.
 
 The system SHALL store every publication of every in-scope zaak in a PostGIS table keyed by
 publication id. **In-scope** means the zaak is Noord-audited (its besluit resolves to a Noord buurt),
-or cannot yet be excluded (pending with no resolved besluit, unresolvable, or keyless); a zaak whose
-besluit positively resolves **outside** Noord SHALL be excluded entirely — no graph Intervention and
-no PostGIS row. Each in-scope row carries: the zaaknummer, the kind (aanvraag/besluit/verlenging/ingetrokken/…), the dates, the
+or cannot yet be excluded (pending with no resolved besluit, unresolvable, keyless, or a besluit whose
+resolution failed with a transient/infra error — retained ungraphed for retry); a zaak whose besluit
+positively resolves **outside** Noord SHALL be excluded entirely — no graph Intervention and no
+PostGIS row. Each in-scope row carries: the zaaknummer, the kind (aanvraag/besluit/verlenging/ingetrokken/…), the dates, the
 raw RD point geometry, postcode, resolved buurt code, resolution confidence and caveats, the
 resolver's precise resolved point (`resolved_geom`, the address-tier BAG point — NULL at the
 postcode/buurt tier) and the resolution tier (`resolved_tier`, address/postcode/buurt), an
-`unresolved` marker, and the raw record. A zaak's multiple publications SHALL each be their own row
-(the table is keyed by publication id, not zaaknummer). Geometry SHALL live only in PostGIS, never as
-an RDF literal.
+`unresolved` marker, the load run's timestamp (`loaded_at`, stamped on write but excluded from
+idempotency change-detection), and the raw record. A zaak's multiple publications SHALL each be their
+own row (the table is keyed by publication id, not zaaknummer). Geometry SHALL live only in PostGIS,
+never as an RDF literal.
 
 #### Scenario: The precise resolved point is kept as silver
 
