@@ -21,6 +21,7 @@
 @prefix gs:   <http://gemetenstad.nl/ns#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
 
 # ---------------------------------------------------------------------------
 # (1) Structure + confidence/caveat on the fuzzy locatedAt edge (Intervention).
@@ -35,6 +36,17 @@ gs:InterventionShape
         sh:minCount 1 ;
         sh:class    gs:Place ;
         sh:message  "An Intervention must be locatedAt at least one Place." ;
+    ] ;
+
+    # (1a') structure — an Intervention must carry exactly one dct:available publication date,
+    #       typed xsd:date (core SHACL; the besluit publication date is a plain literal on the
+    #       Intervention, not an annotation — see docs/RDF_MODELING.md §1).
+    sh:property [
+        sh:path     dct:available ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:date ;
+        sh:message  "An Intervention must carry exactly one dct:available publication date (xsd:date)." ;
     ] ;
 
     # (1b) confidence PRESENCE — every locatedAt edge must carry a gs:confidence annotation

@@ -32,24 +32,38 @@ import (
 const testDataset = "gs-test"
 
 const (
-	// A well-formed intervention: an exact (confidence 1.0) locatedAt edge needs no caveat. Note:
-	// deliberately carries NO gs:validFrom — it is an immutable-shaped fixture used for the
-	// structural/provenance/SPARQL-star assertions that predate the upsert layer.
+	// A well-formed intervention: an exact (confidence 1.0) locatedAt edge needs no caveat, and
+	// carries a dct:available publication date (InterventionShape now gates exactly one
+	// xsd:date, coverage-audit task 1b.2). Note: deliberately carries NO gs:validFrom — it is an
+	// immutable-shaped fixture used for the structural/provenance/SPARQL-star assertions that
+	// predate the upsert layer.
 	wellFormed = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
 @prefix data: <http://gemetenstad.nl/id/> .
 data:intv-it a gs:Intervention ;
+    dct:available "2022-06-01"^^xsd:date ;
     gs:locatedAt data:place-it {| gs:confidence 1.0 ; gs:evidence "exact BAG match" |} .
 data:place-it a gs:Place .`
 
-	// Missing structure: an Intervention with no locatedAt edge.
+	// Missing structure: an Intervention with no locatedAt edge. Carries dct:available so the
+	// rejection isolates the intended locatedAt violation, not a second unrelated one.
 	missingStructure = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
 @prefix data: <http://gemetenstad.nl/id/> .
-data:intv-it a gs:Intervention .`
+data:intv-it a gs:Intervention ;
+    dct:available "2022-06-01"^^xsd:date .`
 
-	// Missing confidence: a locatedAt edge written as if exact (no annotation).
+	// Missing confidence: a locatedAt edge written as if exact (no annotation). Carries
+	// dct:available so the rejection isolates the intended confidence violation.
 	missingConfidence = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
 @prefix data: <http://gemetenstad.nl/id/> .
-data:intv-it a gs:Intervention ; gs:locatedAt data:place-it .
+data:intv-it a gs:Intervention ;
+    dct:available "2022-06-01"^^xsd:date ;
+    gs:locatedAt data:place-it .
 data:place-it a gs:Place .`
 
 	// Out-of-vocab activity: references a concept not in the tree-audit scheme.
@@ -58,12 +72,20 @@ data:place-it a gs:Place .`
 data:obs-it gs:activity data:not-a-real-concept .`
 
 	// #3503 mixed: a valid RDF-star edge (data:good) alongside a real structural violation
-	// (data:bad has no confidence annotation). Must still report non-conforming.
+	// (data:bad has no confidence annotation). Must still report non-conforming. Both
+	// Interventions carry dct:available so the asserted violation stays isolated to the
+	// confidence annotation, not conflated with the new publication-date gate.
 	mixed3503 = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
 @prefix data: <http://gemetenstad.nl/id/> .
-data:good a gs:Intervention ; gs:locatedAt data:pg {| gs:confidence 1.0 ; gs:evidence "ok" |} .
+data:good a gs:Intervention ;
+    dct:available "2022-06-01"^^xsd:date ;
+    gs:locatedAt data:pg {| gs:confidence 1.0 ; gs:evidence "ok" |} .
 data:pg a gs:Place .
-data:bad a gs:Intervention ; gs:locatedAt data:pb .
+data:bad a gs:Intervention ;
+    dct:available "2022-06-01"^^xsd:date ;
+    gs:locatedAt data:pb .
 data:pb a gs:Place .`
 
 	// intvEvolvingIRI: the Intervention subject IRI the evolvingV1/evolvingV2 fixtures below
@@ -75,10 +97,13 @@ data:pb a gs:Place .`
 
 	// evolvingV1: an Intervention's locatedAt edge carrying a gs:validFrom annotation — the
 	// evolving/upsert-tracked form (design.md D4: gs:validFrom presence marks an entity evolving).
+	// Carries a dct:available publication date (InterventionShape, coverage-audit task 1b.2).
 	evolvingV1 = `@prefix gs: <http://gemetenstad.nl/ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
 @prefix data: <http://gemetenstad.nl/id/> .
 data:intv-eo a gs:Intervention ;
+    dct:available "2022-06-01"^^xsd:date ;
     gs:locatedAt data:place-eo-a {| gs:confidence 1.0 ; gs:evidence "exact BAG match" ;
                                     gs:validFrom "` + validFromV1Literal + `"^^xsd:date |} .
 data:place-eo-a a gs:Place .
@@ -88,8 +113,10 @@ data:place-eo-b a gs:Place .`
 	// a changed tracked field on an evolving entity (must open a new version and close the prior).
 	evolvingV2 = `@prefix gs: <http://gemetenstad.nl/ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
 @prefix data: <http://gemetenstad.nl/id/> .
 data:intv-eo a gs:Intervention ;
+    dct:available "2022-06-01"^^xsd:date ;
     gs:locatedAt data:place-eo-b {| gs:confidence 1.0 ; gs:evidence "corrected match" ;
                                     gs:validFrom "` + validFromV2Literal + `"^^xsd:date |} .
 data:place-eo-a a gs:Place .

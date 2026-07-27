@@ -27,14 +27,23 @@ explain the difference, and raise it for a decision. A well-grounded challenge i
 
 ## 1. The thin graph — what belongs in RDF at all
 
-The graph carries **identity, relations, provenance, and confidence only**. Every number and every
-geometry — tree counts, polygons, replant fractions, stamdiameter — lives in the Postgres/PostGIS
-value store, **never** as an RDF literal.
+The graph carries **identity, relations, provenance, and confidence**, plus descriptive-metadata
+literals. Every *quantitative* and *geometric* value — tree counts, polygons, replant fractions,
+stamdiameter — lives in the Postgres/PostGIS value store, **never** as an RDF literal.
 
 A class or property that looks like it wants a number is a modeling error: it should reference an
 entity that resolves to the value store instead. This is the single most important rule; internalize
-it before adding anything. (The two literal exceptions are structural, not domain values:
-`gs:confidence`/`gs:evidence` annotations and `gs:validFrom`/`gs:validTo` timestamps.)
+it before adding anything. Descriptive-metadata dates are a different thing and are legitimate graph
+literals: a besluit's publication date is carried on the `gs:Intervention` itself as `dct:available`
+(`xsd:date`), reusing Dublin Core Terms rather than minting a `gs:` term. (Alongside it, the other
+literal exceptions are structural, not domain values: `gs:confidence`/`gs:evidence` annotations and
+`gs:validFrom`/`gs:validTo` timestamps.)
+
+The line to hold onto: a first-class resource — the Intervention itself — carries its own
+descriptive dates in the graph, because that resource's identity and provenance are exactly what the
+graph is for. Bulk observation *values* — per-tree felling dates, counts, geometry — stay in
+PostGIS, reached only through an identity-only `gs:Observation` reference; the graph never grows a
+literal that is really data behind an entity it hasn't modeled.
 
 ## 2. Namespaces and IRI policy
 
