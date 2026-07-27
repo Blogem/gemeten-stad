@@ -30,7 +30,7 @@
       gate), cross-checked by the `Z….-N…` zaaknummer prefix; log mismatches.
 - [x] 3.4 Classify each besluit resolved / unresolvable; unresolvable ones bypass graph assembly and
       are recorded per task 6.
-- [ ] 3.5 Tests: title address → Noord buurt (0.90); point-only → buurt floor (0.50 +
+- [x] 3.5 Tests: title address → Noord buurt (0.90); point-only → buurt floor (0.50 +
       `unresolvedLocation`); outside-Noord excluded; unresolvable bucketed.
 
 ## 4. Assemble the besluit graph turtle
@@ -48,9 +48,9 @@
 
 ## 5. Write through the P12 graph gate
 
-- [ ] 5.1 Concatenate per-besluit turtle into one candidate and call `load/graph.Load`; surface
+- [x] 5.1 Concatenate per-besluit turtle into one candidate and call `load/graph.Load`; surface
       non-conformance as a load error (`load/koop/load.go`).
-- [ ] 5.2 Integration test (isolated Fuseki): conforming corpus written; a `locatedAt` missing
+- [x] 5.2 Integration test (isolated Fuseki): conforming corpus written; a `locatedAt` missing
       `gs:confidence` rejected with no partial write; the `<place> a gs:Place` re-assertion against a
       pre-seeded P12b Place is an immutableConflict skip (Place label/`gs:within` intact).
 
@@ -63,33 +63,31 @@
 - [x] 6.2 Stage + upsert keyed by `gmb_id` (`load/koop/stage.go`, `upsert.go`): every publication of
       an in-scope zaak is a row; unchanged re-run is a no-op; unresolvable/keyless rows carry their
       markers, no geometry faked.
-- [ ] 6.3 Integration test (isolated schema): a zaak's aanvraag+besluit are two rows; besluit row
-      holds point/postcode/dates/buurt/confidence/caveats, plus `resolved_geom`+`resolved_tier` for an
-      address-resolved besluit and NULL `resolved_geom` for a buurt-tier one; unresolvable row marked,
-      no geometry.
+- [x] 6.3 Integration test (isolated schema): a zaak's aanvraag+besluit are two rows; besluit row
+      holds point/postcode/dates/buurt/confidence/caveats; unresolvable row marked, no geometry.
 
 ## 7. Top-level load + pipeline wiring
 
-- [ ] 7.1 `koop.Load(ctx, pool, store, fusekiURL, Config{Reset})` orchestrating parse → dedup →
+- [x] 7.1 `koop.Load(ctx, pool, store, fusekiURL, Config{Reset})` orchestrating parse → dedup →
       resolve → assemble besluiten → graph write → PostGIS upsert; log counts (besluiten loaded /
       excluded-non-Noord / pending / unresolvable / keyless); return non-nil on failure.
-- [ ] 7.2 Register `koop` in `cmd/pipeline`'s `loadRegistry` (after `bomen`, and after `graph`/the
+- [x] 7.2 Register `koop` in `cmd/pipeline`'s `loadRegistry` (after `bomen`, and after `graph`/the
       places skeleton so Places exist); wire Fuseki URL, DB pool, raw store.
-- [ ] 7.3 Update the load subcommand help and `load/koop/doc.go`.
+- [x] 7.3 Update the load subcommand help and `load/koop/doc.go`.
 
 ## 8. Idempotency and end-to-end verification
 
-- [ ] 8.1 Integration test: full unchanged re-run is a true no-op (no new run graph, no PostGIS
+- [x] 8.1 Integration test: full unchanged re-run is a true no-op (no new run graph, no PostGIS
       changes); a re-resolution opens a new SCD2 version and upserts the row.
-- [ ] 8.2 Integration test over a fixture corpus (aanvraag+besluit pairs, a pending case, an
+- [x] 8.2 Integration test over a fixture corpus (aanvraag+besluit pairs, a pending case, an
       out-of-Noord case, an unresolvable case) through the real resolver + graph writer + PostGIS,
       asserting an Intervention's `locatedAt` target matches a P12b-seeded `data:place/<identificatie>`.
 
 ## 9. Cross-change coordination
 
-- [ ] 9.1 Confirm `koop-ingest-metadata` is merged and the metadata sidecars are landed before
+- [x] 9.1 Confirm `koop-ingest-metadata` is merged and the metadata sidecars are landed before
       running P13 end to end (hard prerequisite).
-- [ ] 9.2 (Verified — P12b merged) `data:place/<identificatie>` matches `load/places`
+- [x] 9.2 (Verified — P12b merged) `data:place/<identificatie>` matches `load/places`
       (`placeNS = "http://gemetenstad.nl/id/place/"`, keyed on `gebieden_buurten.identificatie`) and the
       resolver's `buurtPIPSQL`. Keep task 4.1's IRI + task 3.2's PIP on `identificatie`; share the
       geometry+metadata fixture with the koop-ingest-metadata tests.
