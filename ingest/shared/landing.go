@@ -100,12 +100,22 @@ func (s *RawStore) Land(name string, r io.Reader, sourceURL string, fetchedAt ti
 	if err != nil {
 		return Provenance{}, fmt.Errorf("shared: create artifact %q: %w", name, err)
 	}
-	defer func() { _ = dst.Close() }()
 
 	h := sha256.New()
 	size, err := io.Copy(dst, io.TeeReader(r, h))
+	// Close unconditionally and capture its error BEFORE recording provenance (mirrors
+	// LandVersion). A deferred-flush write failure — ENOSPC, a lost NFS/FUSE write — can surface
+	// only at Close, and appendProvenance below stamps ByteSize/ContentSHA256 from the in-memory
+	// TeeReader, not from disk. Dropping the Close error would record provenance claiming a
+	// complete, correct artifact over a truncated file, so downstream stages read corrupt bytes
+	// under a valid-looking checksum. Closing here (not via defer) also guarantees exactly one
+	// Close on every path, with no leak on the io.Copy error return below.
+	closeErr := dst.Close()
 	if err != nil {
 		return Provenance{}, fmt.Errorf("shared: write artifact %q: %w", name, err)
+	}
+	if closeErr != nil {
+		return Provenance{}, fmt.Errorf("shared: close artifact %q: %w", name, closeErr)
 	}
 
 	prov := Provenance{
