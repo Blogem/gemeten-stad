@@ -268,11 +268,19 @@ finest level we can establish, with confidence:
 | Kap permit | a **structured point geometry (RD+WGS84)** ~99% of the time (Spike B — the metadata is *not* thin), plus a free-text / reference address ("t.h.v. …") and sometimes a project area | the **smallest area we can confidently place it in** — point-in-polygon from the permit's own geometry first, the free-text address only as a fallback: BAG object (point/footprint) ideally, else whichever of {project polygon, postcode-6, buurt} is *smallest by actual area* and clears a confidence threshold — a project polygon may be smaller than a postcode-6, so compare areas, don't assume a fixed order |
 | `kapenherplant` | `dichtstbijzijndeBagAdres` + postcode, `gbdBuurtId`, and (via `boomId`→`stamgegevens`, with the `boomNieuwId` fallback for replanted rows — `DATA_SOURCES.md` §2a) a point | already pinned; point + buurt + nearest address |
 
-The join is then finest-common-granularity + count + time-window (+ project when
-extracted), and the resulting `AuditLink` stores the granularity used and a confidence.
-Reference addresses that don't exist in BAG (demolished in renewal areas) are **resolved
-during load** and written with an explicit `unresolvedLocation` marker + confidence — never
-written as if they were exact. No half-broken data enters the graph.
+The join settles as: for each besluit `Intervention`, candidate `kapenherplant` fellings in its
+buurt whose felling date falls in `[publication, +3yr]` — the publication date carried in the
+graph as `dct:available` on the `Intervention`, never read from the side store — scored on
+proximity of the permit's resolved point to the felling geometry (address/postcode/buurt tier +
+project when extracted), the registry's own felled count, and time; each **individual felling** is
+then assigned to its single best-scoring permit, exclusively (a felling covers at most one
+permit). The outcome is recorded as a stable per-permit `gs:AuditLink` **anchor**
+(`gs:coversIntervention`) plus versioned `gs:CoveragePeriod` nodes carrying the granularity used
+and a confidence (matched), or `gs:noSourceFound` (no match) — see
+`openspec/changes/derive-coverage-audit/design.md`. Reference addresses that don't exist in BAG
+(demolished in renewal areas) are **resolved during load** and written with an explicit
+`unresolvedLocation` marker + confidence — never written as if they were exact. No half-broken
+data enters the graph.
 
 **Preloading is feasible and preferred (verified):**
 - `kapenherplant` = **35,202 rows** total; `stamgegevens` = **323,728**. Both page/CSV-export

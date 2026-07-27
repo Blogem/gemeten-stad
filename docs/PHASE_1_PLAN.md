@@ -170,51 +170,59 @@ are already DONE, so the resolver and the registry half of `derive` need no new 
   (BAG/gebieden in PostGIS, for resolution). Reference: `IMPLEMENTATION_PLAN.md` §4,
   `DATA_SOURCES.md` §1/§8.
 
-## P14 · `derive` — coverage audit (permit ↔ registry linkage)
+## P14 · `derive` — coverage audit (permit ↔ registry linkage) · **DONE**
+
+**Landed as:** `derive/coverage` (change `derive-coverage-audit`, wired as `pipeline derive`,
+replacing the stub). Coverage is recorded as a stable per-permit `gs:AuditLink` **anchor**
+(`gs:coversIntervention`) plus versioned `gs:CoveragePeriod` nodes `gs:versionOf` the anchor,
+content-keyed so an unchanged re-run is a true no-op. The matching unit is the **individual
+felling** (`kapenherplant`), windowed against the besluit's **publication date** — now carried in
+the graph as `dct:available` on the `Intervention` — over `[publication, +3yr]`; each felling is
+assigned to **at most one** permit via exclusive greedy best-score assignment (Spike B's
+place-led model: proximity + registry count + time + ambiguity, τ=0.60). A period is either
+**matched** (`gs:linksObservation` → the permit's `Observation`, `gs:confidence`,
+`gs:granularity`, `gs:caveat gs:weakLink` below τ) or **no-source** (`gs:noSourceFound true`).
+Derived numbers (matched flag, assigned felling ids/count, candidate count, nearest distance, run
+id) persist to a slim PostGIS `audit_metrics` table — the link itself lives only in the graph. See
+`openspec/changes/derive-coverage-audit/design.md` D1–D10.
 
 - **Goal:** The gold step, **coverage only**: for each loaded permit, does a matching
   `kapenherplant` felling exist? Produce the `AuditLink` with confidence + evidence, or a
   provenanced *"no matching source found"* finding.
-- **Entails:** implement **Spike B's place-led confidence model (τ=0.60)** — candidate fellings by
-  finest-common place granularity + felling-date window; the registry's own felled **count** and the
-  finer BAG place disambiguate the ~3 candidate clusters a buurt+time match alone leaves (Spike B);
-  the count used here is the **registry** count, never a permit-text count. Store the `AuditLink`
-  with the **granularity used**, the confidence, the evidence it rests on, and
-  `prov:wasDerivedFrom` the permit + registry rows (§3 — derived and *stored*, not on-the-fly).
-  **P14 builds the AuditLink turtle** (the `{| … |}` annotation if the edge form is chosen below) —
-  construction lives here, not in the P12 writer, which takes turtle it is given.
-  - **Model prerequisites carried over from P8 (do these FIRST — P8 shipped `gs:AuditLink` as a
-    bare class and does NOT model how to attach or gate it, because P8 writes no AuditLinks):**
-    (a) **TBox additions** — object properties attaching an `AuditLink` to the spine (to its
-    permit-side `Intervention` and its registry-side `Observation`); only `gs:testedAgainst`
-    (Claim→Observation) exists today. (b) **`AuditLinkShape` in `shapes.ttl`** — a confidence/
-    caveat-presence gate mirroring `InterventionShape`'s, so a half-broken derived link is rejected
-    (D2 puts confidence+evidence on `locatedAt` AND `AuditLink`; today only `locatedAt` is gated, so
-    derive output passes the gate vacuously). **These two are coupled by one decision:** whether
-    `AuditLink` is a **reified node** (`gs:confidence`/`gs:evidence` as plain properties on the node
-    → core-SHACL `sh:minCount` presence check; the class declaration and §4's "the AuditLink
-    *stores*…" point this way) OR an **annotated edge** (a `gs:auditLink` property carrying the
-    `{| … |}` form → a `sh:sparql` presence check like `locatedAt`). Settle it collaboratively at
-    P14 design time (as the P8 model decisions were), then add the edges + shape to `ontology/`.
-  Anchor any elapsed-time reasoning on `kapmaatregelDatumUitgevoerd` (felling), never the
-  batch-assigned permit dates (Spike A). **Bucket matched vs unmatched** and keep pending separate.
-  **Explicitly NOT in P14:** the fulfilment estimate (`none`/`partial`/`fulfilled`), timeliness
-  beyond `deadlineUnknown`, and the permit-count cross-check — all Phase 2.
-- **Key decisions:** the exact candidate-generation query (buurt + window) and the τ=0.60 scoring
-  function port from spike-b · **`AuditLink` form — reified node vs annotated edge (see Model
-  prerequisites above); this one call drives both the TBox attachment edges and the
-  `AuditLinkShape`** · values/geometry to PostGIS · how the "no source found" finding is represented
-  so the Phase-3 UI can render it as first-class.
-- **Done when:** `derive` links the Noord corpus at ≈ Spike B rates (permit→registry ~90% place+time)
-  with per-link confidence; unmatched permits surface as grounded findings, not silent gaps;
-  re-running is a no-op on unchanged links and, when a link changes, opens a new version / closes the
-  prior's `validTo` (§3 D4, the P12 SCD2 upsert semantics), each run stamped by PROV; **an `AuditLink` missing its
-  confidence/evidence is rejected by the new `AuditLinkShape` (not written)** — the gate now covers
-  derive output, not just `locatedAt`. Unit tests on the scoring/candidate logic against spike-b's
-  labeled cases; integration test over a seeded permit + registry subset (incl. a malformed-link
-  reject case).
-- **Depends on:** P13 (permits in graph), P7 (`kapenherplant`/`stamgegevens` in PostGIS), P12 (graph
-  writer). Reference: `spikes/spike-b/`, `IMPLEMENTATION_PLAN.md` §4/§8.
+- **Entails:** implement Spike B's place-led confidence model (τ=0.60) over per-felling candidates
+  scoped by buurt + the `[publication,+3yr]` window; score on proximity (address/postcode/buurt
+  tier → `gs:granularity`), the **registry**'s own felled count (never a permit-text count), time,
+  and ambiguity; assign each felling exclusively to its single best-scoring permit. The
+  `gs:AuditLink` modeling prerequisite carried over from P8 landed with this change: TBox
+  `gs:coversIntervention`/`gs:CoveragePeriod`/`gs:linksObservation`/`gs:granularity`/
+  `gs:noSourceFound` (reusing `gs:versionOf` from `state-node-versioning`) + core-SHACL
+  `AuditLinkShape`/`CoveragePeriodShape`. Anchors elapsed-time reasoning on
+  `kapmaatregelDatumUitgevoerd` (felling) and the besluit's `dct:available` publication date
+  (Spike A), never the batch-assigned permit dates. **Bucket matched vs no-source**; fulfilment
+  and timeliness beyond this stay out of scope for Phase 1.
+- **Done when:** `derive` links the Noord corpus at ≈ Spike B rates (permit→registry ~90%
+  place+time) with per-link confidence; unmatched permits surface as grounded `noSourceFound`
+  findings, not silent gaps; re-running is a no-op on unchanged periods and, when an outcome
+  changes, opens a new period version and closes the prior's `gs:validTo`, each run stamped by
+  PROV; a period missing its confidence/evidence/outcome shape is rejected by
+  `CoveragePeriodShape` (not written). Unit tests on the scoring/candidate/assignment logic
+  against Spike B's labeled cases; integration test over a seeded permit + registry subset (incl.
+  a malformed-period reject case).
+- **Depends on:** P13 (permits in graph, incl. `dct:available`), P7 (`kapenherplant`/`stamgegevens`
+  in PostGIS), P12 (graph writer), `state-node-versioning` (node-form period versioning).
+  Reference: `spikes/spike-b/`, `IMPLEMENTATION_PLAN.md` §4,
+  `openspec/changes/derive-coverage-audit/design.md`.
+
+### Results — measured on first full run
+
+Populated from a real `pipeline derive` run over the Noord corpus and compared against the Spike B
+calibration; cells are placeholders until that run lands.
+
+| Resolution tier | Permits | Matched % | Median confidence |
+|---|---|---|---|
+| `address` | TBD | TBD | TBD |
+| `postcode` | TBD | TBD | TBD |
+| `buurt` | TBD | TBD | TBD |
 
 ## P15 · End-to-end thread on the real Noord corpus — the acceptance gate
 
