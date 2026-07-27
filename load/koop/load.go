@@ -60,7 +60,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 
 	var rows []PublicationRow
 	var audited []AuditedBesluit
-	var besluitenAudited, excludedNonNoord, pending, unresolvable, keyless, resolveFailed int
+	var besluitenAudited, excludedNonNoord, pending, unresolvable, keyless int
 
 	if keylessPubs, ok := groups[""]; ok {
 		for _, p := range keylessPubs {
@@ -84,15 +84,14 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 
 		res, err := resolveBesluit(ctx, pool, besluit)
 		if err != nil {
-			// Retained, not dropped: persist the whole trail like a pending zaak (no resolution
-			// attempted, every row's Res nil) so it's retry-friendly on a later run — same
-			// "persist the full trail" rule as the !ok pending branch above. Never graphed.
-			for _, p := range group {
-				rows = append(rows, PublicationRow{Pub: p, Res: nil})
-			}
-			slog.Warn("koop: zaak trail retained, resolution failed (will retry next run)", "zaak", zaaknummer, "err", err)
-			resolveFailed++
-			continue
+			// Fail loud, don't skip: resolveBesluit already converts the ONE expected "cannot be
+			// placed" outcome to Resolved{Unresolved: true} internally (via location.ErrNoCandidate),
+			// so any error it returns here is a genuine PostGIS fault — a wiped/missing gebieden/BAG
+			// reference table, or a lost connection — that hits every zaak, not one bad row.
+			// Swallowing it per-zaak would let a wholesale outage complete as a "successful" load
+			// that graphs nothing (the failure mode this whole path was hardened against). Abort the
+			// idempotent load so an operator fixes the infra and re-runs cleanly.
+			return fmt.Errorf("koop: load: resolve besluit for zaak %s: %w", zaaknummer, err)
 		}
 
 		switch {
@@ -153,7 +152,6 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 		"pending", pending,
 		"unresolvable", unresolvable,
 		"keyless", keyless,
-		"resolveFailed", resolveFailed,
 		"graphSkipped", len(graphSkipped),
 	)
 

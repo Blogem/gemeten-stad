@@ -224,11 +224,13 @@ func TestKoopLoad_UnchangedRerunIsANoOp(t *testing.T) {
 		"loaded_at must be excluded from MERGE change-detection — an unchanged re-run must not touch it")
 }
 
-// TestKoopLoad_ResolveInfraErrorRetainsTrail covers the resolve-error trail retention fix
-// (load-koop-assembly): when resolveBesluit returns a genuine infra error (not the normal
-// "unresolvable" outcome), koop.Load must retain the whole zaak's trail — each publication
-// persisted as a row with NULL resolution and unresolved == false, like a pending zaak — log +
-// count it, never graph it, and still return nil (the run itself must not abort).
+// TestKoopLoad_ResolveInfraErrorFailsLoud covers the fail-loud contract: when resolveBesluit
+// returns a genuine infra error (not the normal "unresolvable" outcome, which it already converts
+// to Resolved{Unresolved: true} internally via location.ErrNoCandidate), koop.Load must ABORT the
+// whole run with that error rather than swallow it per-zaak. A wholesale reference-data outage hits
+// every zaak, so a per-zaak skip-and-continue would let the load complete "successfully" while
+// graphing nothing — the failure mode this path is hardened against. The aborted run graphs no
+// intervention for the affected zaak.
 //
 // The infra error is forced the reachable way: seedGeo loads the FULL geo fixture so the Noord
 // besluit's title address (Örehof 8, 1024BB) still resolves via bag_* at the address tier
@@ -243,7 +245,7 @@ func TestKoopLoad_UnchangedRerunIsANoOp(t *testing.T) {
 // and buurtFor's subsequent point-in-polygon lookup (buurtByPointSQL's `ST_Contains(geom, ...)`)
 // fails outright with "column geom does not exist" — a genuine SQL/infra failure, not an
 // unresolvable-location outcome.
-func TestKoopLoad_ResolveInfraErrorRetainsTrail(t *testing.T) {
+func TestKoopLoad_ResolveInfraErrorFailsLoud(t *testing.T) {
 	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
 	dsURL := fusekiDatasetURL(t)
 	ctx := context.Background()
@@ -258,22 +260,12 @@ func TestKoopLoad_ResolveInfraErrorRetainsTrail(t *testing.T) {
 	_, err := pool.Exec(ctx, "ALTER TABLE gebieden_buurten DROP COLUMN geom CASCADE")
 	require.NoError(t, err, "break the address-tier buurt lookup's own geom column, in this test's isolated schema only")
 
-	require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: true}),
-		"a resolve infra error must not abort the whole run — Load still returns nil")
-
-	row, found := queryPublication(t, ctx, pool, gmbNoordBesluit)
-	require.True(t, found, "the besluit's own row must be retained as a pending, retry-able trail row, not dropped")
-	assert.Nil(t, row.ResolvedIdentificatie, "no resolution was reached — the column must stay NULL, never fabricated")
-	assert.Nil(t, row.ResolvedBuurtCode)
-	assert.Nil(t, row.ResolvedConfidence)
-	assert.Nil(t, row.ResolvedGeomWKT)
-	assert.Nil(t, row.ResolvedTier)
-	assert.False(t, row.Unresolved,
-		"a resolve infra error is not the same outcome as an unresolvable besluit — it must read as a pending row (unresolved=false), eligible for retry on the next run")
+	err = Load(ctx, pool, store, dsURL, Config{Reset: true})
+	require.Error(t, err, "a genuine resolve infra fault (broken buurt lookup) must abort the whole load, never be swallowed per-zaak")
 
 	assert.False(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
 ASK { GRAPH ?g { <`+noordInterventionIRI+`> a gs:Intervention } }`),
-		"a zaak whose resolve hit an infra error must never be graphed")
+		"a load aborted by a resolve infra error must never graph the affected zaak")
 }
 
 // reResolveNoordAddressSQL is the mid-test mutation that forces a re-resolution (task 8.1's other
