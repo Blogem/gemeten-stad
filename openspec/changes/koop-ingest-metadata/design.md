@@ -86,6 +86,14 @@ fetches (wasteful, and hammers a host that's already refusing us). It is **clean
 landed sidecars are already persisted and the cursor is not advanced on the abort error path, so a
 later re-run skips landed sidecars and retries the rest. Set the threshold to 0 to disable the guard.
 
+**HTTP timeout (essential).** The retry/backoff and breaker all assume a failed fetch *returns
+promptly*. The sidecar host, though, sometimes throttles by holding a connection OPEN rather than
+resetting — so a request on the default (timeout-less) client hangs for minutes, stalling the whole
+sequential harvest and defeating both mechanisms. Observed live: a healthy 0.66 s median gap between
+sidecars, punctuated by multi-minute stalls (up to ~42 min) that blew the ETA out to ~19 h. The
+`koopHTTPGet` client therefore carries a 30 s timeout (covering connect + body read), which converts
+a stall into a prompt failure the retry/breaker can act on.
+
 ## Risks / Trade-offs
 
 - **[Doubled fetch volume on backfill]** ~10.5k extra small requests on a clean volume. → Reuse the

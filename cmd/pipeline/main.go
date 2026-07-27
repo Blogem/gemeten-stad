@@ -208,6 +208,14 @@ func bomenHTTPGet(ctx context.Context, url string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+// koopHTTPClient bounds every koop request with a timeout (covering connect, response, and body
+// read). Without it, the sidecar host — which throttles by holding connections OPEN rather than
+// resetting — makes a stalled request hang for minutes, defeating ingest/koop's retry/backoff and
+// circuit breaker (which rely on failures returning promptly). With the timeout a stall fails fast
+// → a retry recovers a transient blip, or a persistent stall exhausts the chain and trips the
+// breaker for a clean, resumable abort.
+var koopHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 // koopHTTPGet is a real HTTP getter for ingest/koop.Ingest. KOOP's SRU endpoint needs no
 // authentication, so this is a plain unauthenticated GET (unlike bomenHTTPGet, no API-key
 // header is ever sent).
@@ -217,7 +225,7 @@ func koopHTTPGet(ctx context.Context, url string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("build request for %s: %w", url, err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := koopHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", url, err)
 	}
