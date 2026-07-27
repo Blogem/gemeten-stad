@@ -123,10 +123,21 @@ progression is captured as PostGIS rows, not graph versions.
 ### D8 — PostGIS: one row per publication (the trail), keyed by publication id
 A `koop_publications` table (schema-qualified via `current_schema()`, staging + upsert + `--reset`,
 `raw jsonb` catch-all — the `load/bomen` pattern): `gmb_id` PK, `zaaknummer`, `kind`
-(aanvraag/besluit/…), `available` + parsed dates, `geometry(Point, 28992)` (the RD point), postcode,
-resolved buurt code, `resolved_confidence`, `caveats`, an `unresolved` marker, `raw`. Keyed by
-publication id (**not** zaaknummer — a zaak has multiple publications; the inline note is right). The
-audited-besluit resolution is stored on the besluit's row. Geometry lives here only.
+(aanvraag/besluit/…), `available` + parsed dates, `geometry(Point, 28992)` (the raw permit point),
+postcode, resolved buurt code, `resolved_confidence`, `caveats`, `resolved_geom geometry(Point, 28992)`,
+`resolved_tier`, an `unresolved` marker, `raw`. Keyed by publication id (**not** zaaknummer — a zaak
+has multiple publications; the inline note is right). The audited-besluit resolution is stored on the
+besluit's row. Geometry lives here only.
+
+`resolved_geom` + `resolved_tier` keep the resolver's **precise** output as silver: `resolved_geom`
+is the address-tier BAG point (`location.Result.Geom` when `PlaceLevel == address`; NULL at the
+postcode tier — no single point — and at the buurt tier, where the buurt code already captures the
+place), and `resolved_tier` is the `PlaceLevel` (address/postcode/buurt). This is koop enriched by the
+BAG/gebieden **master data** (a fact about the permit itself), so it belongs on the source-load trail,
+unlike a cross-source audit derivation. It exists because P14's distance-graduated place matches a
+permit to a registry felling by proximity to this point (median 0 m at the address tier, Spike D) —
+without it, the precise resolution P6 already computes would be discarded and the graph's buurt-level
+`locatedAt` would be P14's only place signal.
 
 ## Risks / Trade-offs
 

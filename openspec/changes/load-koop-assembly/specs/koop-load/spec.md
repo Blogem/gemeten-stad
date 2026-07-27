@@ -115,9 +115,19 @@ caveat) SHALL be rejected with no partial write.
 
 The system SHALL store every publication of every in-scope zaak in a PostGIS table keyed by
 publication id: the zaaknummer, the kind (aanvraag/besluit/verlenging/ingetrokken/…), the dates, the
-RD point geometry, postcode, resolved buurt code, resolution confidence and caveats, an `unresolved`
-marker, and the raw record. A zaak's multiple publications SHALL each be their own row (the table is
-keyed by publication id, not zaaknummer). Geometry SHALL live only in PostGIS, never as an RDF literal.
+raw RD point geometry, postcode, resolved buurt code, resolution confidence and caveats, the
+resolver's precise resolved point (`resolved_geom`, the address-tier BAG point — NULL at the
+postcode/buurt tier) and the resolution tier (`resolved_tier`, address/postcode/buurt), an
+`unresolved` marker, and the raw record. A zaak's multiple publications SHALL each be their own row
+(the table is keyed by publication id, not zaaknummer). Geometry SHALL live only in PostGIS, never as
+an RDF literal.
+
+#### Scenario: The precise resolved point is kept as silver
+
+- **WHEN** a besluit resolves at the address tier to a BAG point
+- **THEN** its row carries `resolved_geom` (that point) and `resolved_tier` = `address`
+- **AND** a besluit that resolves only to its buurt carries a NULL `resolved_geom` with
+  `resolved_tier` = `buurt`, the buurt code still recording the place
 
 #### Scenario: All publications of a case are persisted
 
