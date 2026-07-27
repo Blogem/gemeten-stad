@@ -9,6 +9,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// ErrNoCandidate is the sentinel Resolve returns when a query establishes no place at any tier —
+// no address, postcode, or buurt candidate. It is the ONLY "expected, not a failure" error Resolve
+// produces; every other non-nil error is a genuine PostGIS fault (a missing gebieden/BAG table, a
+// lost connection). Callers swallow ErrNoCandidate as a benign "cannot be placed" outcome and must
+// fail loud on anything else — so a wholesale reference-data outage never masquerades as every
+// input being individually unresolvable.
+var ErrNoCandidate = errors.New("location: resolve: no address, postcode, or buurt candidate for query")
+
 // Resolve ladders q down to the smallest place it can confidently establish — address (0.90) →
 // postcode (0.70) → buurt (0.50) — entirely against the local PostGIS mirror (pool). It never
 // calls out to PDOK Locatieserver, and it never snaps a query's own point to a nearer
@@ -19,8 +27,11 @@ import (
 // preferred; if none is valid at that date, any best-known voorkomen is used and the result
 // carries the "timeMismatch" caveat (see TimeMatchFor).
 //
-// Resolve returns an error only when nothing resolves (no address, postcode, or buurt candidate);
-// a resolved-but-flagged result (any_time, unresolvedLocation) is not an error.
+// Resolve returns ErrNoCandidate — an expected, non-failure sentinel — when nothing resolves (no
+// address, postcode, or buurt candidate); a resolved-but-flagged result (any_time,
+// unresolvedLocation) is not an error. Any OTHER non-nil error is a genuine PostGIS fault (a
+// missing table, a lost connection) that a caller must not conflate with an unresolvable input —
+// distinguish the two with errors.Is(err, ErrNoCandidate).
 func Resolve(ctx context.Context, pool *pgxpool.Pool, q Query) (Result, error) {
 	var (
 		hasAddress, hasPostcode, hasBuurt bool
@@ -70,7 +81,7 @@ func Resolve(ctx context.Context, pool *pgxpool.Pool, q Query) (Result, error) {
 
 	level, confidence, ok := PlaceLevelFor(hasAddress, hasPostcode, hasBuurt)
 	if !ok {
-		return Result{}, fmt.Errorf("location: resolve: no address, postcode, or buurt candidate for query")
+		return Result{}, ErrNoCandidate
 	}
 
 	result := Result{

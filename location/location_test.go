@@ -1,11 +1,22 @@
 package location
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// A query that establishes no place at any tier (no postcode/huisnummer, street, or point) short-
+// circuits at PlaceLevelFor(false, false, false) BEFORE any PostGIS query runs, so Resolve returns
+// ErrNoCandidate with a nil pool. This pins the contract callers rely on: the no-candidate outcome
+// is a matchable sentinel (errors.Is), distinct from an infrastructure fault, so a caller can
+// swallow the former as benign while failing loud on the latter.
+func TestResolve_NoCandidateReturnsSentinel(t *testing.T) {
+	_, err := Resolve(context.Background(), nil, Query{})
+	require.ErrorIs(t, err, ErrNoCandidate)
+}
 
 // -- 7.3 PlaceLevelFor: the address > postcode > buurt ladder ----------------
 

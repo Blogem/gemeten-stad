@@ -133,6 +133,36 @@ func TestResolveBesluit_NoAddressAndPointOutsideEveryBuurtIsUnresolved(t *testin
 	assert.False(t, res.InNoord)
 }
 
+// A PostGIS infrastructure fault (an unreachable DB, a missing reference table) must FAIL the
+// resolve loudly, not resolve to a benign Unresolved. Regression guard for the failure mode that
+// once turned a wiped BAG into 4516 silently "unresolvable" besluiten. The fault is injected by
+// closing the pool before resolving — a state-independent way to force a non-ErrNoCandidate error
+// (a missing relation can't be simulated here: the test DB's search_path falls through to a
+// populated public). resolveBesluit must surface that error, and it must NOT be
+// location.ErrNoCandidate — the only error a caller may legitimately swallow.
+func TestResolveBesluit_InfraFaultFailsLoud(t *testing.T) {
+	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
+	ctx := context.Background()
+
+	pool := newSchemaPool(t, ctx, dsn)
+	seedGeo(t, ctx, pool)
+	pool.Close() // the DB is now unreachable to this pool; a resolver query must error, not miss
+
+	pub := Publication{
+		ID:         "gmb-2023-infra-fault",
+		Zaaknummer: "Z2023-N000001",
+		Kind:       KindBesluit,
+		Postcode:   "1024BB",
+		Huisnummer: 8, // forces the address-tier query, which now fails on the closed pool
+		Available:  "2023-03-01",
+	}
+
+	_, err := resolveBesluit(ctx, pool, pub)
+	require.Error(t, err, "an infrastructure fault must fail the resolve, not resolve to Unresolved")
+	assert.NotErrorIs(t, err, location.ErrNoCandidate,
+		"an infrastructure fault must never be reported as the benign no-candidate sentinel")
+}
+
 func TestResolveBesluit_PostcodeTierWithNoPointIsUnresolved(t *testing.T) {
 	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
 	ctx := context.Background()

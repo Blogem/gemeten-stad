@@ -52,9 +52,16 @@ func resolveBesluit(ctx context.Context, pool *pgxpool.Pool, pub Publication) (R
 		Date:       date,
 	})
 	if err != nil {
-		// Nothing resolved at all (no address, postcode, or buurt candidate) — the besluit
-		// cannot be placed. This is a normal outcome, not a failure.
-		return Resolved{Unresolved: true}, nil
+		if errors.Is(err, location.ErrNoCandidate) {
+			// Nothing resolved at all (no address, postcode, or buurt candidate) — the besluit
+			// cannot be placed. This is a normal outcome, not a failure.
+			return Resolved{Unresolved: true}, nil
+		}
+		// A genuine PostGIS fault (a missing gebieden/BAG reference table, a lost connection).
+		// Never mask it as an unresolvable input: fail the load loudly so a wholesale outage —
+		// e.g. the geo stage never ran, so EVERY besluit "can't be placed" — surfaces as an error
+		// instead of a silent zero-resolution run.
+		return Resolved{}, fmt.Errorf("koop: resolve besluit %s: %w", pub.ID, err)
 	}
 
 	identificatie, code, err := buurtFor(ctx, pool, result, pub.Point)
