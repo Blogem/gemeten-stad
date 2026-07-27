@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Blogem/gemeten-stad/derive/coverage"
 	"github.com/Blogem/gemeten-stad/dump"
 	"github.com/Blogem/gemeten-stad/ingest/bag"
 	"github.com/Blogem/gemeten-stad/ingest/bomen"
@@ -109,7 +110,7 @@ func newRootCmd() *cobra.Command {
 		newIngestCmd(),
 		newStageCmd("extract", "Extract structured facts from unstructured text (cached)"),
 		newLoadCmd(),
-		newStageCmd("derive", "Compute cross-source AuditLinks and replant progress (gold)"),
+		newDeriveCmd(),
 		newDumpCmd(),
 	)
 	return root
@@ -311,6 +312,67 @@ func runLoad(ctx context.Context, args []string, reset bool) error {
 	return nil
 }
 
+// deriveSource pairs a registered derive source name with its deriver function. deriveRegistry
+// below fixes the registration order that "run all sources" follows.
+type deriveSource struct {
+	name string
+	fn   func(ctx context.Context, reset bool) error
+}
+
+// deriveRegistry is the single, ordered source of truth for derive sources: name -> deriver. Its
+// only entry today is the P14 coverage audit (design.md D9).
+var deriveRegistry = []deriveSource{
+	{name: "coverage", fn: runCoverageDerive},
+}
+
+// deriveRegistryNames returns the deriveRegistry's source names, in registration order.
+func deriveRegistryNames() []string {
+	names := make([]string, 0, len(deriveRegistry))
+	for _, s := range deriveRegistry {
+		names = append(names, s.name)
+	}
+	return names
+}
+
+// newDeriveCmd computes cross-source audit results (gold): the P14 coverage audit joins the loaded
+// koop permits against the loaded bomen registry, scores and assigns candidate fellings, and
+// writes the coverage anchor/period nodes + derived audit_metrics numbers. With no arguments it
+// derives all registered sources; named arguments derive only those sources, in the given order.
+// --reset drops and recreates audit_metrics only — it never resets the shared graph run history.
+func newDeriveCmd() *cobra.Command {
+	var reset bool
+
+	cmd := &cobra.Command{
+		Use:   "derive [source ...]",
+		Short: "Compute cross-source AuditLinks and replant progress (gold)",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDerive(cmd.Context(), args, reset)
+		},
+	}
+	cmd.Flags().BoolVar(&reset, "reset", false, "drop and recreate audit_metrics before deriving")
+	return cmd
+}
+
+func runDerive(ctx context.Context, args []string, reset bool) error {
+	names, err := resolveSources(args, deriveRegistryNames())
+	if err != nil {
+		return err
+	}
+
+	sources := make(map[string]deriveSource, len(deriveRegistry))
+	for _, s := range deriveRegistry {
+		sources[s.name] = s
+	}
+
+	for _, name := range names {
+		if err := sources[name].fn(ctx, reset); err != nil {
+			return fmt.Errorf("derive %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // newDumpCmd is the parent for the two snapshot verbs: `dump export` writes a bundle, `dump
 // restore` rebuilds the stores from one. Store connection details are resolved from the same
 // GS_* env contract the rest of the pipeline uses (dump.ConfigFromEnv).
@@ -493,6 +555,34 @@ func runKoopLoad(ctx context.Context, reset bool) error {
 	cfg := loadkoop.Config{Reset: reset}
 	if err := loadkoop.Load(ctx, pool, store, fusekiURL, cfg); err != nil {
 		return fmt.Errorf("load koop: %w", err)
+	}
+	return nil
+}
+
+// runCoverageDerive runs the P14 coverage audit (design.md D5-D7, D9, D10): it enumerates besluit
+// Interventions from the graph, generates buurt+time-scoped candidate fellings from PostGIS,
+// scores and exclusively assigns them, writes the resulting anchor/period turtle through the
+// SHACL-gated graph loader, and persists the derived numbers to audit_metrics. It runs after koop
+// in the pipeline (load must have populated both the graph and koop_publications/kapenherplant
+// first); --reset here only drops audit_metrics, never the graph's run history.
+func runCoverageDerive(ctx context.Context, reset bool) error {
+	fusekiURL, err := shared.FusekiURL(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve fuseki url: %w", err)
+	}
+
+	dbURL, err := shared.DatabaseURL(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve database url: %w", err)
+	}
+	pool, err := shared.ConnectPostgres(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer pool.Close()
+
+	if err := coverage.Run(ctx, pool, fusekiURL, coverage.Config{Reset: reset}); err != nil {
+		return fmt.Errorf("derive coverage: %w", err)
 	}
 	return nil
 }
