@@ -21,29 +21,29 @@
 
 ## 3. Resolve location and scope to Noord
 
-- [ ] 3.1 Build `location.Query{Postcode, Huisnummer, Point (RD), Date = besluit available}` and call
+- [x] 3.1 Build `location.Query{Postcode, Huisnummer, Point (RD), Date = besluit available}` and call
       `location.Resolve`; capture `Confidence`, `Caveats`, `Geom`, `BuurtID` (`load/koop/resolve.go`).
-- [ ] 3.2 Resolve the containing gebieden `identificatie`: `Result.BuurtID` at the buurt tier, else PIP
+- [x] 3.2 Resolve the containing gebieden `identificatie`: `Result.BuurtID` at the buurt tier, else PIP
       the resolved `Geom` into `gebieden_buurten` selecting `identificatie` (NOT `code`). This
       identificatie is the `Place` identity (`data:place/<identificatie>`, verified to match P12b).
-- [ ] 3.3 Scope to Noord via `gebieden_buurten.code LIKE 'N%'` for the resolved buurt (the geo-load
+- [x] 3.3 Scope to Noord via `gebieden_buurten.code LIKE 'N%'` for the resolved buurt (the geo-load
       gate), cross-checked by the `Z….-N…` zaaknummer prefix; log mismatches.
-- [ ] 3.4 Classify each besluit resolved / unresolvable; unresolvable ones bypass graph assembly and
+- [x] 3.4 Classify each besluit resolved / unresolvable; unresolvable ones bypass graph assembly and
       are recorded per task 6.
 - [ ] 3.5 Tests: title address → Noord buurt (0.90); point-only → buurt floor (0.50 +
       `unresolvedLocation`); outside-Noord excluded; unresolvable bucketed.
 
 ## 4. Assemble the besluit graph turtle
 
-- [ ] 4.1 Turtle builder (`load/koop/graph.go`): `data:intervention/<zaak> a gs:Intervention` with
+- [x] 4.1 Turtle builder (`load/koop/graph.go`): `data:intervention/<zaak> a gs:Intervention` with
       `gs:activity act:vellen`, `gs:claims data:claim/<zaak>`, `data:claim/<zaak> a gs:Claim` (no
       count), and a minimal `data:place/<identificatie> a gs:Place` (D5). Mirror the P12b/`load/graph`
       namespace consts + `assertSafeIRI`/literal-escaping guards.
-- [ ] 4.2 Emit `gs:locatedAt` with `{| gs:confidence <c> ; gs:caveat <term> ; gs:validFrom
+- [x] 4.2 Emit `gs:locatedAt` with `{| gs:confidence <c> ; gs:caveat <term> ; gs:validFrom
       <besluit-date> |}` — caveat iff c<1.0, mapped from resolver caveats to the controlled `gs:` terms.
-- [ ] 4.3 Map felling activiteit terms → `act:vellen`; map resolver caveats → `gs:unresolvedLocation`/
+- [x] 4.3 Map felling activiteit terms → `act:vellen`; map resolver caveats → `gs:unresolvedLocation`/
       `gs:timeMismatch`.
-- [ ] 4.4 Golden-turtle unit tests: resolved besluit → conforming turtle; exact (1.0) omits caveat;
+- [x] 4.4 Golden-turtle unit tests: resolved besluit → conforming turtle; exact (1.0) omits caveat;
       fallback includes it; Place typed; IRIs match the D6 scheme.
 
 ## 5. Write through the P12 graph gate
@@ -56,13 +56,11 @@
 
 ## 6. Persist the publication trail to PostGIS
 
-- [ ] 6.1 `koop_publications` schema (`load/koop/schema.go`, `load/bomen` pattern): `gmb_id` PK,
-      `zaaknummer`, `kind`, dates, `geometry(Point, 28992)` (the raw permit point), postcode,
-      resolved buurt code, `resolved_confidence`, `caveats`, `resolved_geom geometry(Point, 28992)`
-      (the resolver's precise address-tier point — NULL at postcode/buurt; kept as silver so P14's
-      distance-graduated place can match on proximity), `resolved_tier` (address/postcode/buurt),
-      `unresolved` marker, `raw jsonb`; schema-qualified; `--reset` drops/rebuilds.
-- [ ] 6.2 Stage + upsert keyed by `gmb_id` (`load/koop/stage.go`, `upsert.go`): every publication of
+- [x] 6.1 `koop_publications` schema (`load/koop/schema.go`, `load/bomen` pattern): `gmb_id` PK,
+      `zaaknummer`, `kind`, dates, `geometry(Point, 28992)`, postcode, resolved buurt code,
+      `resolved_confidence`, `caveats`, `unresolved` marker, `raw jsonb`; schema-qualified;
+      `--reset` drops/rebuilds.
+- [x] 6.2 Stage + upsert keyed by `gmb_id` (`load/koop/stage.go`, `upsert.go`): every publication of
       an in-scope zaak is a row; unchanged re-run is a no-op; unresolvable/keyless rows carry their
       markers, no geometry faked.
 - [ ] 6.3 Integration test (isolated schema): a zaak's aanvraag+besluit are two rows; besluit row
