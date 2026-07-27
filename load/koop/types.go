@@ -38,4 +38,6 @@ type Resolved struct {
 	Caveats       []string // resolver caveat terms (e.g. "unresolvedLocation")
 	InNoord       bool     // resolved buurt.code LIKE 'N%'
 	Unresolved    bool     // true when no address resolved and no RD point in a Noord buurt
+	Geom          string   // EWKT of the resolver's precise point — set ONLY at the address tier; "" otherwise
+	Tier          string   // location.Result.PlaceLevel: "address"/"postcode"/"buurt"; "" when unresolvable
 }

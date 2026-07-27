@@ -65,14 +65,18 @@ func marshalRaw(p Publication) ([]byte, error) {
 // publicationInsertSQL is stagePublications' per-row INSERT, parameterized in the same order as
 // publicationColumns (see upsert.go) except that geom consumes two params ($5, $6 — x, y) rather
 // than one: ST_MakePoint is STRICT, so a nil Point (both args NULL) yields a NULL geom, exactly
-// like every other absent field below.
+// like every other absent field below. resolved_geom is bound as EWKT text through
+// ST_GeomFromEWKT ($12), also STRICT, so a NULL bind (Res == nil, unresolved, or Geom == "" at the
+// postcode/buurt tier) likewise yields a NULL geom.
 const publicationInsertSQL = `
 INSERT INTO %s (
     gmb_id, zaaknummer, kind, available, geom, postcode, huisnummer,
-    resolved_identificatie, resolved_buurt_code, resolved_confidence, caveats, in_noord, unresolved, raw
+    resolved_identificatie, resolved_buurt_code, resolved_confidence, resolved_geom, resolved_tier,
+    caveats, in_noord, unresolved, raw
 ) VALUES (
     $1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 28992), $7, $8,
-    $9, $10, $11, $12, $13, $14, $15
+    $9, $10, $11, ST_GeomFromEWKT($12), $13,
+    $14, $15, $16, $17
 )`
 
 // stagePublications loads rows into koop_publications_staging, replacing whatever was staged
@@ -99,19 +103,21 @@ func stagePublications(ctx context.Context, pool *pgxpool.Pool, schema string, r
 	return nil
 }
 
-// publicationArgs builds the 15 bind values for publicationInsertSQL from row: gmb_id, zaaknummer,
-// kind, available, geom's x/y, postcode, huisnummer, the four resolved_* fields, caveats, in_noord,
+// publicationArgs builds the 17 bind values for publicationInsertSQL from row: gmb_id, zaaknummer,
+// kind, available, geom's x/y, postcode, huisnummer, the six resolved_* fields, caveats, in_noord,
 // unresolved, and raw. A zero-value Go field (Huisnummer == 0, Point == nil, Available == "",
 // Res == nil) is bound as SQL NULL, matching Publication/Resolved's own "zero means absent" docs
 // (types.go) — except unresolved, which is NOT NULL and defaults to false when Res == nil (a
 // non-besluit trail row is not "unresolved", it simply was never subject to resolution).
 //
-// resolved_identificatie, resolved_buurt_code, resolved_confidence, caveats, and in_noord are only
-// populated when row.Res carries a real resolution (Res != nil && !Res.Unresolved). A keyless
-// publication or an unresolvable besluit (Res != nil && Res.Unresolved) is not a placement — its
-// resolution columns must stay NULL rather than fabricate empty-string/zero values, so callers can
-// tell "resolution attempted but failed" (unresolved=true, columns NULL) apart from "resolved"
-// (unresolved=false, columns populated).
+// resolved_identificatie, resolved_buurt_code, resolved_confidence, resolved_geom, resolved_tier,
+// caveats, and in_noord are only populated when row.Res carries a real resolution (Res != nil &&
+// !Res.Unresolved). A keyless publication or an unresolvable besluit (Res != nil &&
+// Res.Unresolved) is not a placement — its resolution columns must stay NULL rather than fabricate
+// empty-string/zero values, so callers can tell "resolution attempted but failed"
+// (unresolved=true, columns NULL) apart from "resolved" (unresolved=false, columns populated).
+// resolved_geom is further NULL whenever Res.Geom == "" (postcode/buurt tier — see resolve.go),
+// even though the resolution itself succeeded: only the address tier has a single precise point.
 func publicationArgs(row PublicationRow) ([]any, error) {
 	p := row.Pub
 
@@ -147,7 +153,7 @@ func publicationArgs(row PublicationRow) ([]any, error) {
 		huisnummer = p.Huisnummer
 	}
 
-	var identificatie, buurtCode, confidence, caveats, inNoord any
+	var identificatie, buurtCode, confidence, resolvedGeom, resolvedTier, caveats, inNoord any
 	unresolved := false
 	if row.Res != nil {
 		unresolved = row.Res.Unresolved
@@ -155,6 +161,10 @@ func publicationArgs(row PublicationRow) ([]any, error) {
 			identificatie = row.Res.Identificatie
 			buurtCode = row.Res.BuurtCode
 			confidence = row.Res.Confidence
+			if row.Res.Geom != "" {
+				resolvedGeom = row.Res.Geom
+			}
+			resolvedTier = row.Res.Tier
 			if len(row.Res.Caveats) > 0 {
 				caveats = row.Res.Caveats
 			}
@@ -173,6 +183,8 @@ func publicationArgs(row PublicationRow) ([]any, error) {
 		identificatie,
 		buurtCode,
 		confidence,
+		resolvedGeom,
+		resolvedTier,
 		caveats,
 		inNoord,
 		unresolved,

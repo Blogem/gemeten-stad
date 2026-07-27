@@ -69,6 +69,11 @@ func resolveBesluit(ctx context.Context, pool *pgxpool.Pool, pub Publication) (R
 	inNoord := strings.HasPrefix(code, "N")
 	warnIfNoordMismatch(pub.Zaaknummer, code, inNoord)
 
+	var geom string
+	if result.PlaceLevel == location.PlaceAddress {
+		geom = result.Geom
+	}
+
 	return Resolved{
 		Identificatie: identificatie,
 		BuurtCode:     code,
@@ -76,6 +81,8 @@ func resolveBesluit(ctx context.Context, pool *pgxpool.Pool, pub Publication) (R
 		Caveats:       result.Caveats,
 		InNoord:       inNoord,
 		Unresolved:    false,
+		Geom:          geom,
+		Tier:          string(result.PlaceLevel),
 	}, nil
 }
 

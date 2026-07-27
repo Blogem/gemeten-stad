@@ -25,6 +25,8 @@ var publicationColumns = []string{
 	"resolved_identificatie",
 	"resolved_buurt_code",
 	"resolved_confidence",
+	"resolved_geom",
+	"resolved_tier",
 	"caveats",
 	"in_noord",
 	"unresolved",
