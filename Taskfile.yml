@@ -39,7 +39,10 @@ tasks:
       Requires GS_TEST_DATABASE_URL, GS_TEST_FUSEKI_URL, FUSEKI_ADMIN_PASSWORD — see README.md.
       Typically run after `task compose:up`.
     cmds:
-      - go test -tags=integration ./...
+      # -p 1: run one package binary at a time. load/graph, load/koop, and derive/coverage
+      # all target the same shared `gs-test` Fuseki dataset, so parallel package binaries would
+      # race on it and fail non-deterministically. Mirrors .github/workflows/ci.yml.
+      - go test -tags=integration -p 1 ./...
 
   test:web:
     desc: Run the webapp unit tests
