@@ -154,8 +154,8 @@ func TestBuildCandidate_ResolvedAddressBesluit(t *testing.T) {
 
 	items := []AuditedBesluit{besluit(zaak, identificatie, 0.9, nil, "2022-05-31")}
 
-	turtle, err := buildCandidate(items)
-	require.NoError(t, err)
+	turtle, skipped := buildCandidate(items)
+	assert.Empty(t, skipped)
 	text := string(turtle)
 
 	// The Intervention and Claim are both keyed on the zaaknummer; gathering every line
@@ -200,8 +200,8 @@ func TestBuildCandidate_ExactConfidenceOmitsCaveat(t *testing.T) {
 
 	items := []AuditedBesluit{besluit(zaak, identificatie, 1.0, nil, "2022-06-01")}
 
-	turtle, err := buildCandidate(items)
-	require.NoError(t, err)
+	turtle, skipped := buildCandidate(items)
+	assert.Empty(t, skipped)
 	text := string(turtle)
 
 	assert.InDelta(t, 1.0, gtConfidenceValue(t, text), 1e-9)
@@ -217,8 +217,8 @@ func TestBuildCandidate_PointFloorCaveatPresent(t *testing.T) {
 
 	items := []AuditedBesluit{besluit(zaak, identificatie, 0.5, []string{"unresolvedLocation"}, "2022-06-02")}
 
-	turtle, err := buildCandidate(items)
-	require.NoError(t, err)
+	turtle, skipped := buildCandidate(items)
+	assert.Empty(t, skipped)
 	text := string(turtle)
 
 	assert.InDelta(t, 0.5, gtConfidenceValue(t, text), 1e-9)
@@ -250,8 +250,8 @@ func TestBuildCandidate_CaveatValueControlled(t *testing.T) {
 			identificatie := "0363020000000001"
 			items := []AuditedBesluit{besluit(zaak, identificatie, 0.7, tt.caveats, "2022-01-01")}
 
-			turtle, err := buildCandidate(items)
-			require.NoError(t, err)
+			turtle, skipped := buildCandidate(items)
+			assert.Empty(t, skipped)
 			text := string(turtle)
 
 			caveatLines := gtLinesContaining(text, "gs:caveat")
@@ -280,8 +280,8 @@ func TestBuildCandidate_IRIScheme(t *testing.T) {
 
 	items := []AuditedBesluit{besluit(zaak, identificatie, 0.9, nil, "2022-07-01")}
 
-	turtle, err := buildCandidate(items)
-	require.NoError(t, err)
+	turtle, skipped := buildCandidate(items)
+	assert.Empty(t, skipped)
 	text := string(turtle)
 
 	gtAssertUnderNamespace(t, text, gtInterventionNS, zaak)
@@ -299,8 +299,8 @@ func TestBuildCandidate_ClaimHasNoObligationCount(t *testing.T) {
 
 	items := []AuditedBesluit{besluit(zaak, identificatie, 1.0, nil, "2022-07-02")}
 
-	turtle, err := buildCandidate(items)
-	require.NoError(t, err)
+	turtle, skipped := buildCandidate(items)
+	assert.Empty(t, skipped)
 	text := string(turtle)
 
 	claimLines := gtLinesContaining(text, "a gs:Claim")
@@ -315,8 +315,9 @@ func TestBuildCandidate_ClaimHasNoObligationCount(t *testing.T) {
 // TestBuildCandidate_EmptyInput covers scenario 7: buildCandidate(nil) must not error, and (since
 // there is nothing to assemble) must emit no Intervention.
 func TestBuildCandidate_EmptyInput(t *testing.T) {
-	turtle, err := buildCandidate(nil)
-	require.NoError(t, err)
+	turtle, skipped := buildCandidate(nil)
+	assert.Empty(t, skipped)
+	assert.Nil(t, turtle, "empty items must yield a nil candidate")
 	assert.NotContains(t, string(turtle), "gs:Intervention", "no items means no Intervention triples")
 }
 
@@ -329,8 +330,8 @@ func TestBuildCandidate_MissingAvailableOmitsValidFrom(t *testing.T) {
 
 	items := []AuditedBesluit{besluit(zaak, identificatie, 0.7, []string{"timeMismatch"}, "")}
 
-	turtle, err := buildCandidate(items)
-	require.NoError(t, err)
+	turtle, skipped := buildCandidate(items)
+	assert.Empty(t, skipped)
 	text := string(turtle)
 
 	assert.NotContains(t, text, "gs:validFrom", "an absent besluit Available date must not fabricate a gs:validFrom")
@@ -339,4 +340,45 @@ func TestBuildCandidate_MissingAvailableOmitsValidFrom(t *testing.T) {
 	caveatLines := gtLinesContaining(text, "gs:caveat")
 	require.NotEmpty(t, caveatLines)
 	assert.Contains(t, strings.Join(caveatLines, "\n"), "timeMismatch")
+}
+
+// TestBuildCandidate_SkipsItemWithUnsafeIRI covers the resilience follow-up (load-koop-assembly):
+// buildCandidate must skip (not abort on) a single item whose zaaknummer would mint an unsafe
+// IRI, recording its gmb ID in skipped, while still rendering every other, valid item in the same
+// batch. The bad zaaknummer here contains a bare space — assertSafeIRI (graph.go) rejects any rune
+// <= 0x20, mirroring load/graph/signature.go's own assertSafeIRI.
+func TestBuildCandidate_SkipsItemWithUnsafeIRI(t *testing.T) {
+	goodZaak := "Z2022-N003100"
+	goodIdentificatie := "0363020000003100"
+	goodItem := besluit(goodZaak, goodIdentificatie, 0.9, nil, "2022-08-01")
+	goodItem.Pub.ID = "gmb-2022-900001"
+
+	badZaak := "Z2022 N1" // space: assertSafeIRI rejects any rune <= 0x20
+	badItem := besluit(badZaak, "0363020000009999", 0.9, nil, "2022-08-01")
+	badItem.Pub.ID = "gmb-2022-900002"
+
+	items := []AuditedBesluit{goodItem, badItem}
+
+	candidate, skipped := buildCandidate(items)
+	text := string(candidate)
+
+	require.Equal(t, []string{badItem.Pub.ID}, skipped,
+		"expected exactly the bad item's gmb ID in skipped, got turtle:\n%s", text)
+
+	gtAssertUnderNamespace(t, text, gtInterventionNS, goodZaak)
+	assert.NotContains(t, text, badZaak, "the skipped item's zaaknummer must not appear in the candidate")
+}
+
+// TestBuildCandidate_AllSkippedReturnsNil covers the "all items skipped" edge of the same
+// resilience follow-up: when the only item in the batch is unsafe, buildCandidate must return a
+// nil candidate (mirroring the empty-input case, scenario 7) rather than a preamble-only Turtle
+// document, while still reporting the skip.
+func TestBuildCandidate_AllSkippedReturnsNil(t *testing.T) {
+	badItem := besluit("Z2022 N1", "0363020000009999", 0.9, nil, "2022-08-01")
+	badItem.Pub.ID = "gmb-2022-900003"
+
+	candidate, skipped := buildCandidate([]AuditedBesluit{badItem})
+
+	assert.Nil(t, candidate, "candidate must be nil when every item is skipped")
+	assert.Equal(t, []string{badItem.Pub.ID}, skipped)
 }
