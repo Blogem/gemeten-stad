@@ -67,13 +67,14 @@ func provenanceTurtle(runID string, generatedAt time.Time) []byte {
 	return []byte(turtle)
 }
 
-// upsert runs the SCD2 idempotent-upsert pipeline (design.md D1-D6) for a candidate that has
-// already passed the SHACL gate (D7 — validation runs before this is ever called): stage the
-// candidate → extract its signatures (staging + live-open) → classify → close superseded priors →
-// verify the open-version invariant → copy the delta into a fresh run:load-<runID> graph and record
-// provenance. The staging graph is always dropped again before returning (defer, detached context,
-// mirroring (*client).validate's own cleanup) — including when the delta is empty, so a true no-op
-// run (D5) leaves no trace at all, not even a lingering staging graph.
+// upsert runs the SCD2 idempotent-upsert pipeline (design.md D1-D6, plus state-node-versioning's
+// D1) for a candidate that has already passed the SHACL gate (D7 — validation runs before this is
+// ever called): stage the candidate → extract its signatures (staging + live-open) → classify →
+// close superseded priors (annotation-form subjects AND node-form period series) → verify the
+// open-version invariant (both forms) → copy the delta into a fresh run:load-<runID> graph and
+// record provenance. The staging graph is always dropped again before returning (defer, detached
+// context, mirroring (*client).validate's own cleanup) — including when the delta is empty, so a
+// true no-op run (D5) leaves no trace at all, not even a lingering staging graph.
 func (c *client) upsert(ctx context.Context, runID string, candidate []byte, generatedAt time.Time) (err error) {
 	stageGraph := stageGraphFor(runID)
 	if stageErr := c.stageCandidate(ctx, runID, candidate); stageErr != nil {
@@ -98,14 +99,17 @@ func (c *client) upsert(ctx context.Context, runID string, candidate []byte, gen
 
 	// Security gate: every subject IRI in either signature map was read back out of the store
 	// (STR(?s) in signatureQuery) and is about to be re-embedded, unescaped, into `<...>` tokens
-	// by iriValuesList across closePriors/verifyOpenInvariant/copyDeltaAndRecordProvenance/
-	// stagingValidFrom below. The SHACL gate upstream does not constrain IRI/literal character
-	// content, so a conformant-looking candidate can still smuggle a Turtle IRIREF UCHAR payload
-	// that decodes to raw `>`/`}`/`;` sequences able to break out of a VALUES clause and chain
-	// arbitrary SPARQL Update. Validate BEFORE any query or update text is built, and write
-	// NOTHING on failure (no close, no run graph, no provenance) — the same no-partial-writes
-	// guarantee the SHACL gate gives. delta/changed are always subsets of these two maps' keys,
-	// so this single check covers every downstream iriValuesList call in this function.
+	// by iriValuesList across closePriors/closeSeriesPriors/verifyOpenInvariant/
+	// copyDeltaAndRecordProvenance/stagingValidFrom below. The SHACL gate upstream does not
+	// constrain IRI/literal character content, so a conformant-looking candidate can still smuggle
+	// a Turtle IRIREF UCHAR payload that decodes to raw `>`/`}`/`;` sequences able to break out of
+	// a VALUES clause and chain arbitrary SPARQL Update. Validate BEFORE any query or update text
+	// is built, and write NOTHING on failure (no close, no run graph, no provenance) — the same
+	// no-partial-writes guarantee the SHACL gate gives. delta/changed are always subsets of these
+	// two maps' keys, so this single check covers every downstream iriValuesList call keyed on a
+	// SUBJECT IRI in this function. A node-form period's gs:versionOf ANCHOR is a distinct IRI read
+	// back by a separate query (stagingPeriodAnchors) and is NOT a key of either map below — it
+	// gets its own assertSafeIRI check right where it is read, further down.
 	for id := range stagingSigs {
 		if err := assertSafeIRI(id); err != nil {
 			return fmt.Errorf("graph: reject unsafe candidate subject IRI: %w", err)
@@ -160,11 +164,39 @@ func (c *client) upsert(ctx context.Context, runID string, candidate []byte, gen
 			// do not re-wrap with the same phrase.
 			return err
 		}
-		// Verify BEFORE writing the new run graph / provenance (design.md risk "Open-version
-		// ambiguity"): on failure, Load has still written no run:load-... graph and no
-		// prov:Activity for this run — only the (correct, non-destructive) validTo stamps
-		// from the close above.
-		if err := c.verifyOpenInvariant(ctx, runID, changed); err != nil {
+	}
+
+	// state-node-versioning D1/D5: a changed period arrives as a NEW content-derived IRI (newIRIs),
+	// never a mutated one, so its series-close is driven off newIRIs — not `changed` — and must run
+	// even when `changed` is empty (e.g. the very first load after an anchor's prior period, with
+	// nothing else in the run touching an existing subject).
+	periods, err := c.stagingPeriodAnchors(ctx, runID, newIRIs)
+	if err != nil {
+		return fmt.Errorf("read candidate period anchors for series-close: %w", err)
+	}
+	for id, p := range periods {
+		// Same security gate as stagingSigs/liveSigs above (design.md's injection risk): the
+		// anchor IRI was read back out of the store and is about to be re-embedded into
+		// closeSeriesPriors' VALUES clause.
+		if err := assertSafeIRI(p.anchor); err != nil {
+			return fmt.Errorf("graph: reject unsafe candidate anchor IRI for period %s: %w", id, err)
+		}
+	}
+	if len(periods) > 0 {
+		if err := c.closeSeriesPriors(ctx, periods); err != nil {
+			// closeSeriesPriors already passes "close prior periods in series" as the
+			// (*client).update action — do not re-wrap with the same phrase.
+			return err
+		}
+	}
+
+	// Verify BEFORE writing the new run graph / provenance (design.md risk "Open-version
+	// ambiguity"): on failure, Load has still written no run:load-... graph and no prov:Activity
+	// for this run — only the (correct, non-destructive) validTo stamps from the closes above.
+	// Runs whenever either form has work to check, so a period-only run (no annotation-form
+	// `changed`) still gets its invariant enforced.
+	if len(changed) > 0 || len(periods) > 0 {
+		if err := c.verifyOpenInvariant(ctx, runID, changed, periods); err != nil {
 			return err
 		}
 	}
@@ -181,7 +213,9 @@ func (c *client) upsert(ctx context.Context, runID string, candidate []byte, gen
 // than being left ambiguous. It never DELETEs; only INSERTs the validTo stamp, so history is never
 // destroyed (design.md D3). closeStamps maps each changed subject IRI to its new version's
 // gs:validFrom, already rendered as a SPARQL literal term (see literalTerm) — read back from the
-// staging graph by the caller, never invented by the writer itself.
+// staging graph by the caller, never invented by the writer itself. This closes ANNOTATION-form
+// priors only, keyed on the subject itself; the node-form period series close is closeSeriesPriors
+// below, keyed on the series' gs:versionOf anchor instead.
 func (c *client) closePriors(ctx context.Context, closeStamps map[iri]string) error {
 	if len(closeStamps) == 0 {
 		return nil
@@ -210,18 +244,92 @@ WHERE {
 	return c.update(ctx, update, "close prior versions")
 }
 
-// verifyOpenInvariant confirms, for each changed subject, that exactly one open version would exist
-// once the delta copy below actually runs: it counts open annotated edges across every run:load-*
-// graph (post-close — should be zero for a healthy close) UNION the not-yet-copied new version
-// still sitting in the run's staging graph (always exactly one). Running BEFORE the delta
-// copy/provenance write means a failure here still leaves no run:load-... graph and no
-// prov:Activity for this run (task 3.2) — the anomaly is surfaced loudly instead of writing
-// ambiguous history.
-func (c *client) verifyOpenInvariant(ctx context.Context, runID string, changed []iri) error {
-	if len(changed) == 0 {
+// closeSeriesPriors stamps gs:validTo on every currently-open PRIOR node-form period in each new
+// period's series, keyed on the shared gs:versionOf anchor rather than the subject itself
+// (state-node-versioning design.md D1: a changed period is a NEW content-derived IRI, so there is
+// no single subject to key a close on the way closePriors does). periods maps each NEW period IRI
+// (?p) to its (?a anchor, ?vf validFrom) — both already validated/rendered by the caller
+// (assertSafeIRI on the anchor, literalTerm on validFrom via stagingPeriodAnchors). This is the
+// exact SPARQL Update shape design.md D1 specifies: for each (?p ?a ?vf), find every OTHER (?old !=
+// ?p) open period (no gs:validTo) sharing the same anchor across run:load-* graphs, and stamp its
+// gs:validTo = ?vf. It never DELETEs — only INSERTs — so history is retained exactly like
+// closePriors (design.md D3), and self-heals a stray extra-open period the same way.
+func (c *client) closeSeriesPriors(ctx context.Context, periods map[iri]periodAnchor) error {
+	if len(periods) == 0 {
 		return nil
 	}
 
+	ids := make([]iri, 0, len(periods))
+	for id := range periods {
+		ids = append(ids, id)
+	}
+	sortIRIs(ids) // deterministic query text; not semantically required.
+
+	triples := make([]string, 0, len(periods))
+	for _, id := range ids {
+		p := periods[id]
+		triples = append(triples, "(<"+string(id)+"> <"+string(p.anchor)+"> "+p.validFrom+")")
+	}
+
+	update := fmt.Sprintf(`
+PREFIX gs: <%s>
+INSERT {
+  GRAPH ?g { ?old gs:validTo ?vf }
+}
+WHERE {
+  VALUES (?p ?a ?vf) { %s }
+  GRAPH ?g {
+    ?old gs:versionOf ?a ; gs:validFrom ?ovf .
+    FILTER NOT EXISTS { ?old gs:validTo ?any }
+    FILTER(?old != ?p)
+  }
+  FILTER(STRSTARTS(STR(?g), "%s"))
+}`, gsNS, strings.Join(triples, " "), runGraphPrefix)
+
+	return c.update(ctx, update, "close prior periods in series")
+}
+
+// verifyOpenInvariant confirms that, once the delta copy below actually runs, exactly one open
+// version exists per changed annotation-form SUBJECT and per touched node-form gs:versionOf
+// ANCHOR: it counts open annotated edges / open periods across every run:load-* graph (post-close —
+// should be zero for a healthy close) UNION the not-yet-copied new version still sitting in the
+// run's staging graph (always exactly one). periods supplies the node-form anchors to check (the
+// caller's newIRIs that turned out to be period nodes — see stagingPeriodAnchors); pass an empty
+// map to check the annotation form only. Running BEFORE the delta copy/provenance write means a
+// failure here still leaves no run:load-... graph and no prov:Activity for this run (task 3.2) —
+// the anomaly is surfaced loudly instead of writing ambiguous history.
+func (c *client) verifyOpenInvariant(ctx context.Context, runID string, changed []iri, periods map[iri]periodAnchor) error {
+	if len(changed) == 0 && len(periods) == 0 {
+		return nil
+	}
+
+	var violations []string
+
+	if len(changed) > 0 {
+		v, err := c.verifyOpenAnnotationInvariant(ctx, runID, changed)
+		if err != nil {
+			return err
+		}
+		violations = append(violations, v...)
+	}
+
+	if len(periods) > 0 {
+		v, err := c.verifyOpenPeriodInvariant(ctx, runID, periods)
+		if err != nil {
+			return err
+		}
+		violations = append(violations, v...)
+	}
+
+	if len(violations) > 0 {
+		return fmt.Errorf("open-version invariant violated for %d entit(ies)/anchor(s), expected exactly one open version each: %v", len(violations), violations)
+	}
+	return nil
+}
+
+// verifyOpenAnnotationInvariant is the annotation-form half of verifyOpenInvariant: for each changed
+// subject, exactly one open `<<s,p,o>> gs:validFrom` version must exist post-close.
+func (c *client) verifyOpenAnnotationInvariant(ctx context.Context, runID string, changed []iri) ([]string, error) {
 	query := fmt.Sprintf(`
 PREFIX gs: <%s>
 SELECT ?s (COUNT(*) AS ?openCount) WHERE {
@@ -246,12 +354,55 @@ HAVING (COUNT(*) != 1)
 
 	violations, err := c.selectColumn(ctx, query, "s")
 	if err != nil {
-		return fmt.Errorf("verify open-version invariant: %w", err)
+		return nil, fmt.Errorf("verify open-version invariant: %w", err)
 	}
-	if len(violations) > 0 {
-		return fmt.Errorf("open-version invariant violated for %d entit(ies), expected exactly one open version each: %v", len(violations), violations)
+	return violations, nil
+}
+
+// verifyOpenPeriodInvariant is the node-form half of verifyOpenInvariant: for each touched
+// gs:versionOf anchor, exactly one open period must exist post-close — counted the same way as
+// verifyOpenAnnotationInvariant (open across run:load-* graphs UNION the one new period still in
+// staging), just grouped by ?a instead of ?s. The anchor set is deduplicated before rendering the
+// VALUES clause: a duplicate anchor in the raw VALUES list would double-join the GRAPH pattern and
+// inflate ?openCount, producing a false-positive violation rather than a true one.
+func (c *client) verifyOpenPeriodInvariant(ctx context.Context, runID string, periods map[iri]periodAnchor) ([]string, error) {
+	anchorSet := make(map[iri]bool, len(periods))
+	for _, p := range periods {
+		anchorSet[p.anchor] = true
 	}
-	return nil
+	anchors := make([]iri, 0, len(anchorSet))
+	for a := range anchorSet {
+		anchors = append(anchors, a)
+	}
+	sortIRIs(anchors) // deterministic query text; not semantically required.
+
+	query := fmt.Sprintf(`
+PREFIX gs: <%s>
+SELECT ?a (COUNT(*) AS ?openCount) WHERE {
+  VALUES ?a { %s }
+  {
+    GRAPH ?g {
+      ?p gs:versionOf ?a ; gs:validFrom ?vf .
+      FILTER NOT EXISTS { ?p gs:validTo ?vt }
+    }
+    FILTER(STRSTARTS(STR(?g), "%s"))
+  }
+  UNION
+  {
+    GRAPH <%s> {
+      ?p2 gs:versionOf ?a ; gs:validFrom ?vf2 .
+    }
+  }
+}
+GROUP BY ?a
+HAVING (COUNT(*) != 1)
+`, gsNS, iriValuesList(anchors), runGraphPrefix, stageGraphFor(runID))
+
+	violations, err := c.selectColumn(ctx, query, "a")
+	if err != nil {
+		return nil, fmt.Errorf("verify open-period invariant: %w", err)
+	}
+	return violations, nil
 }
 
 // copyDeltaAndRecordProvenance copies every delta (new ∪ changed) entity's triples and RDF-star
