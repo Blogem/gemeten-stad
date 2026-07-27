@@ -372,7 +372,7 @@ ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> } }
 		// address-tier confidence (0.90) it was written with in run 1.
 		assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
 ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> .
-                 << <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> >> gs:confidence 0.9 } } }`),
+                 << <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> >> gs:confidence 0.9 } }`),
 			"the stored gs:locatedAt to the original Place is retained after the skip-and-warn")
 
 		// No new locatedAt edge was opened at the newly resolved Place -- a changed resolution
