@@ -167,6 +167,12 @@ without it, the precise resolution P6 already computes would be discarded and th
 - **[valid-time source]** Only `dcterms:available` (besluit publication date) is reliable (Spike A). →
   Use it as the resolution valid-time and `validFrom`; anchor elapsed-time reasoning downstream (P14)
   on the registry felling date, not permit dates.
+- **[per-record resilience]** A batch load must not be sunk by one bad record. → A single record that
+  fails to parse, whose besluit fails to resolve (infra error), whose IRIs are unsafe (dropped from
+  the graph candidate), or whose row fails to stage is **logged and skipped**, and the load continues
+  with the rest; the run logs skip counts. Only batch-level failures stay fatal: the koop dir cannot
+  be listed, the staging table cannot be truncated, or `load/graph.Load` rejects the whole assembled
+  candidate against the shapes (the SHACL gate is never weakened to a per-record skip).
 
 ## Migration Plan
 
