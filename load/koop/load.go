@@ -61,7 +61,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 
 	var rows []PublicationRow
 	var audited []AuditedBesluit
-	var besluitenLoaded, excludedNonNoord, pending, unresolvable, keyless, resolveFailed int
+	var besluitenAudited, excludedNonNoord, pending, unresolvable, keyless, resolveFailed int
 
 	if keylessPubs, ok := groups[""]; ok {
 		for _, p := range keylessPubs {
@@ -85,7 +85,13 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 
 		res, err := resolveBesluit(ctx, pool, besluit)
 		if err != nil {
-			slog.Warn("koop: skipping zaak (resolve failed)", "zaak", zaaknummer, "err", err)
+			// Retained, not dropped: persist the whole trail like a pending zaak (no resolution
+			// attempted, every row's Res nil) so it's retry-friendly on a later run — same
+			// "persist the full trail" rule as the !ok pending branch above. Never graphed.
+			for _, p := range group {
+				rows = append(rows, PublicationRow{Pub: p, Res: nil})
+			}
+			slog.Warn("koop: zaak trail retained, resolution failed (will retry next run)", "zaak", zaaknummer, "err", err)
 			resolveFailed++
 			continue
 		}
@@ -102,7 +108,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 		default:
 			appendTrail(&rows, group, besluit, res)
 			audited = append(audited, AuditedBesluit{Pub: besluit, Res: res})
-			besluitenLoaded++
+			besluitenAudited++
 		}
 	}
 
@@ -143,7 +149,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 	}
 
 	slog.Info("koop: load complete",
-		"besluitenLoaded", besluitenLoaded,
+		"besluitenAudited", besluitenAudited,
 		"excludedNonNoord", excludedNonNoord,
 		"pending", pending,
 		"unresolvable", unresolvable,

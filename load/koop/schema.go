@@ -73,6 +73,10 @@ func dropTargets(ctx context.Context, pool *pgxpool.Pool, schema string) error {
 // raw is the change-detection anchor: it snapshots the publication's own fields (not its
 // resolution — the resolved_* columns are compared separately by upsertPublications' MERGE), so any
 // source field this schema doesn't model explicitly is never silently dropped.
+//
+// loaded_at (target table only — never staged) records when the row's content was last written by
+// upsertPublications' MERGE; it is excluded from change-detection so idempotent re-runs don't touch
+// it (see publicationsMergeSQL).
 func ensureSchema(ctx context.Context, pool *pgxpool.Pool, schema string) error {
 	stmt := fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS %s (
@@ -91,7 +95,8 @@ CREATE TABLE IF NOT EXISTS %s (
     caveats                 text[],
     in_noord                boolean,
     unresolved              boolean NOT NULL DEFAULT false,
-    raw                     jsonb NOT NULL
+    raw                     jsonb NOT NULL,
+    loaded_at               timestamptz NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS %s (

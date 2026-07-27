@@ -34,14 +34,18 @@ var publicationColumns = []string{
 }
 
 // publicationsMergeSQL builds the MERGE statement that reconciles koop_publications against its
-// staging snapshot for schema.
+// staging snapshot for schema. The statement takes exactly one bind parameter, $1 (loadTS), reused
+// for both the INSERT value and the UPDATE SET of loaded_at.
 //
 // Unlike load/bomen (whose `id` is a mutable key compared only via its `raw` column), a koop
 // publication row's mutable content spans two independent things that can each change on their own
 // re-run: the publication itself (kind/available/geom/... — captured in raw) and its resolution
 // (resolved_*/in_noord/unresolved, recomputed by resolve.go without the publication changing). The
-// WHEN MATCHED guard below therefore compares every non-key column, not just raw, so either kind of
-// change — and only an actual change — triggers an update; an unchanged re-run touches nothing.
+// WHEN MATCHED guard below therefore compares every non-key column in publicationColumns, not just
+// raw, so either kind of change — and only an actual change — triggers an update; an unchanged
+// re-run touches nothing. loaded_at is deliberately NOT part of that guard (it is stamped, not
+// staged, so it can never differ from itself) — it is added only to the INSERT/UPDATE column lists
+// below, so a genuine insert/update stamps it while a true no-op re-run leaves it untouched.
 //
 // koop keeps no source_deleted_at / WHEN NOT MATCHED BY SOURCE clause, unlike load/bomen: the
 // publication corpus only grows (a KOOP gmb-id, once published, is never retracted from the SRU
@@ -60,6 +64,9 @@ func publicationsMergeSQL(schema string) string {
 		changeChecks = append(changeChecks, fmt.Sprintf("t.%s IS DISTINCT FROM s.%s", col, col))
 		refreshSets = append(refreshSets, fmt.Sprintf("%s = s.%s", col, col))
 	}
+	names = append(names, "loaded_at")
+	values = append(values, "$1")
+	refreshSets = append(refreshSets, "loaded_at = $1")
 
 	target := qualify(schema, publicationsTable)
 	source := qualify(schema, publicationsStagingTable)
@@ -82,12 +89,11 @@ WHEN NOT MATCHED THEN
 }
 
 // upsertPublications reconciles koop_publications against koop_publications_staging (see
-// publicationsMergeSQL). loadTS is accepted to mirror load/bomen's upsertAll signature and leave
-// room for a future soft-delete pass, but is currently unused: koop has no source_deleted_at column
-// to stamp (see publicationsMergeSQL's doc comment).
+// publicationsMergeSQL). loadTS is bound as the MERGE's $1: loaded_at records when the row's
+// content was last written, is excluded from change-detection, so idempotent re-runs don't touch
+// it.
 func upsertPublications(ctx context.Context, pool *pgxpool.Pool, schema string, loadTS time.Time) error {
-	_ = loadTS
-	if _, err := pool.Exec(ctx, publicationsMergeSQL(schema)); err != nil {
+	if _, err := pool.Exec(ctx, publicationsMergeSQL(schema), loadTS); err != nil {
 		return fmt.Errorf("koop: upsert %s: %w", publicationsTable, err)
 	}
 	return nil
