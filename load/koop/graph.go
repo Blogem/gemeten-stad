@@ -200,11 +200,14 @@ func renderAuditedBesluit(b *strings.Builder, item AuditedBesluit) error {
 	return nil
 }
 
-// buildCandidate is a PURE function (no DB, no network, no clock) from audited besluiten to a
-// Turtle candidate (task 4): one shared prefix preamble followed by one block per item, in input
-// order. An empty items returns nil, nil — the caller (load.go, task 5) skips the graph write
-// entirely rather than POSTing a preamble-only candidate with no triples.
-func buildCandidate(items []AuditedBesluit) ([]byte, error) {
+// buildCandidate renders each audited besluit into the shared candidate, skipping (not failing on)
+// any item whose IRIs are unsafe; skipped holds the gmb IDs of those items so the caller can log
+// them. Returns nil candidate when items is empty OR every item was skipped.
+//
+// buildCandidate is a PURE function (no DB, no network, no clock, no logging — the caller logs
+// skipped) from audited besluiten to a Turtle candidate (task 4): one shared prefix preamble
+// followed by one block per rendered item, in input order.
+func buildCandidate(items []AuditedBesluit) (candidate []byte, skipped []string) {
 	if len(items) == 0 {
 		return nil, nil
 	}
@@ -212,11 +215,17 @@ func buildCandidate(items []AuditedBesluit) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString(turtlePreamble)
 
+	rendered := 0
 	for _, item := range items {
 		if err := renderAuditedBesluit(&b, item); err != nil {
-			return nil, err
+			skipped = append(skipped, item.Pub.ID)
+			continue
 		}
+		rendered++
 	}
 
-	return []byte(b.String()), nil
+	if rendered == 0 {
+		return nil, skipped
+	}
+	return []byte(b.String()), skipped
 }

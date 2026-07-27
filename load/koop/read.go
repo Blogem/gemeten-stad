@@ -2,6 +2,7 @@ package koop
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,6 +31,10 @@ var gmbIDPattern = regexp.MustCompile(`^gmb-\d{4}-\d+$`)
 //
 // A record with no sidecar file on disk is a keyless publication: Zaaknummer == "" and
 // RawMetadata == nil.
+//
+// A per-record failure (unreadable record, unparseable record, an unreadable sidecar, or an
+// unparseable zaaknummer) skips that one record with a slog.Warn rather than aborting the whole
+// run — only a failure to enumerate the landing directory at all (os.ReadDir) is fatal.
 func readPublications(store *shared.RawStore) ([]Publication, error) {
 	koopDir := filepath.Join(store.BasePath, "koop")
 	entries, err := os.ReadDir(koopDir)
@@ -38,6 +43,7 @@ func readPublications(store *shared.RawStore) ([]Publication, error) {
 	}
 
 	var pubs []Publication
+	var skipped int
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -65,12 +71,16 @@ func readPublications(store *shared.RawStore) ([]Publication, error) {
 		recordPath := filepath.Join(koopDir, name)
 		rawRecord, err := os.ReadFile(recordPath)
 		if err != nil {
-			return nil, fmt.Errorf("koop: read record %s: %w", name, err)
+			slog.Warn("koop: skipping unreadable record", "id", id, "err", err)
+			skipped++
+			continue
 		}
 
 		title, available, activiteit, point, err := parseRecord(rawRecord)
 		if err != nil {
-			return nil, fmt.Errorf("koop: parse record %s: %w", name, err)
+			slog.Warn("koop: skipping unparseable record", "id", id, "err", err)
+			skipped++
+			continue
 		}
 
 		var rawMetadata []byte
@@ -81,13 +91,17 @@ func readPublications(store *shared.RawStore) ([]Publication, error) {
 		case err == nil:
 			zaaknummer, err = parseZaaknummer(rawMetadata)
 			if err != nil {
-				return nil, fmt.Errorf("koop: parse metadata sidecar %s: %w", id+".metadata.xml", err)
+				slog.Warn("koop: skipping record with unparseable zaaknummer", "id", id, "err", err)
+				skipped++
+				continue
 			}
 		case os.IsNotExist(err):
 			rawMetadata = nil
 			zaaknummer = ""
 		default:
-			return nil, fmt.Errorf("koop: read metadata sidecar %s: %w", id+".metadata.xml", err)
+			slog.Warn("koop: skipping record with unreadable metadata sidecar", "id", id, "err", err)
+			skipped++
+			continue
 		}
 
 		postcode, huisnummer, street := extractAddress(title)
@@ -108,5 +122,6 @@ func readPublications(store *shared.RawStore) ([]Publication, error) {
 		})
 	}
 
+	slog.Info("koop: read publications", "loaded", len(pubs), "skipped", skipped)
 	return pubs, nil
 }

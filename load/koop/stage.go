@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -82,6 +83,10 @@ INSERT INTO %s (
 // stagePublications loads rows into koop_publications_staging, replacing whatever was staged
 // there before: the staging table always reflects exactly the latest assembled batch, so
 // upsertPublications can diff against it.
+//
+// Each row is inserted independently (no transaction), so a single unstageable or rejected row is
+// skipped with a slog.Warn rather than aborting the whole batch — only the initial TRUNCATE
+// failure is batch-level and returned as an error.
 func stagePublications(ctx context.Context, pool *pgxpool.Pool, schema string, rows []PublicationRow) error {
 	stagingTable := qualify(schema, publicationsStagingTable)
 
@@ -91,15 +96,22 @@ func stagePublications(ctx context.Context, pool *pgxpool.Pool, schema string, r
 	}
 
 	stmt := fmt.Sprintf(publicationInsertSQL, stagingTable)
+	var staged, skipped int
 	for _, row := range rows {
 		args, err := publicationArgs(row)
 		if err != nil {
-			return fmt.Errorf("koop: stage row gmb_id=%s: %w", row.Pub.ID, err)
+			slog.Warn("koop: skipping unstageable row", "id", row.Pub.ID, "err", err)
+			skipped++
+			continue
 		}
 		if _, err := pool.Exec(ctx, stmt, args...); err != nil {
-			return fmt.Errorf("koop: insert into %s: %w", stagingTable, err)
+			slog.Warn("koop: skipping unstageable row", "id", row.Pub.ID, "err", err)
+			skipped++
+			continue
 		}
+		staged++
 	}
+	slog.Info("koop: staged publications", "staged", staged, "skipped", skipped)
 	return nil
 }
 

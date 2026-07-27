@@ -61,7 +61,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 
 	var rows []PublicationRow
 	var audited []AuditedBesluit
-	var besluitenLoaded, excludedNonNoord, pending, unresolvable, keyless int
+	var besluitenLoaded, excludedNonNoord, pending, unresolvable, keyless, resolveFailed int
 
 	if keylessPubs, ok := groups[""]; ok {
 		for _, p := range keylessPubs {
@@ -85,7 +85,9 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 
 		res, err := resolveBesluit(ctx, pool, besluit)
 		if err != nil {
-			return fmt.Errorf("koop: load: zaak %s: %w", zaaknummer, err)
+			slog.Warn("koop: skipping zaak (resolve failed)", "zaak", zaaknummer, "err", err)
+			resolveFailed++
+			continue
 		}
 
 		switch {
@@ -126,14 +128,15 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 		return fmt.Errorf("koop: load: %w", err)
 	}
 
-	candidate, err := buildCandidate(audited)
-	if err != nil {
-		return fmt.Errorf("koop: load: %w", err)
+	candidate, graphSkipped := buildCandidate(audited)
+	for _, id := range graphSkipped {
+		slog.Warn("koop: besluit skipped from graph (unsafe IRI)", "id", id)
 	}
 	if len(candidate) > 0 {
 		// Reset is always false: koop's own cfg.Reset governs only koop_publications above.
 		// Forwarding it would let a koop-only --reset clear every run graph in Fuseki, destroying
-		// bomen/places data unrelated to this load (see Load's doc comment).
+		// bomen/places data unrelated to this load (see Load's doc comment). A rejected candidate
+		// here is still a batch-level, fatal failure — the SHACL gate is never weakened.
 		if err := loadgraph.Load(ctx, fusekiURL, candidate, loadgraph.Config{Reset: false}); err != nil {
 			return fmt.Errorf("koop: load: %w", err)
 		}
@@ -145,6 +148,8 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusek
 		"pending", pending,
 		"unresolvable", unresolvable,
 		"keyless", keyless,
+		"resolveFailed", resolveFailed,
+		"graphSkipped", len(graphSkipped),
 	)
 
 	return nil
