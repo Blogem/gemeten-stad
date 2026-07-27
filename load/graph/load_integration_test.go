@@ -182,6 +182,125 @@ data:period-conflict-b gs:versionOf data:period-anchor-conflict ;
     rdfs:label "conflict B"@nl .`
 )
 
+// --- coverage-audit (state-node-versioning): additional node-form scenarios beyond task 3.1/3.2's
+// single open/close/no-op and two-open-conflict coverage above. These exercise: a chain of THREE+
+// versions for one anchor (not just open->close once); TWO independent anchors in the same
+// dataset (proving the close is series-scoped, not global); closeSeriesPriors' documented
+// self-healing of MULTIPLE stray opens for one anchor; and anchor-IRI injection (mirroring
+// injection_integration_test.go's subject-IRI case, but for the gs:versionOf object).
+
+// periodAnchorChainIRI: anchor for the three-version chain (below). A distinct anchor from
+// periodAnchorIRI above so this test's fixtures never interact with task 3.1's.
+const periodAnchorChainIRI = "http://gemetenstad.nl/id/period-anchor-chain"
+
+const (
+	periodChainT1 = "2024-01-01"
+	periodChainT2 = "2024-06-01"
+	periodChainT3 = "2024-12-01"
+)
+
+// periodChainV1/V2/V3: three successive periods for periodAnchorChainIRI, each a distinct
+// content-derived-style IRI (data:period-chain-v1/v2/v3, D2) simulating three real outcome
+// changes over time — e.g. an audit's coverage state moving through three re-derivations. Loading
+// them in order must produce a CONTIGUOUS chain: v1 closes at t2 (v2's validFrom), v2 closes at t3
+// (v3's validFrom), v3 stays open — and all three remain queryable throughout (history retained).
+const periodChainV1 = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-chain-v1 gs:versionOf data:period-anchor-chain ;
+    gs:validFrom "` + periodChainT1 + `"^^xsd:date ;
+    rdfs:label "chain content A"@nl .`
+
+const periodChainV2 = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-chain-v2 gs:versionOf data:period-anchor-chain ;
+    gs:validFrom "` + periodChainT2 + `"^^xsd:date ;
+    rdfs:label "chain content B"@nl .`
+
+const periodChainV3 = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-chain-v3 gs:versionOf data:period-anchor-chain ;
+    gs:validFrom "` + periodChainT3 + `"^^xsd:date ;
+    rdfs:label "chain content C"@nl .`
+
+// periodAnchorMultiAIRI/periodAnchorMultiBIRI: two INDEPENDENT anchors seeded in the same dataset
+// (below) to prove closeSeriesPriors' anchor scoping — a load touching only A's series must never
+// close or otherwise disturb B's.
+const (
+	periodAnchorMultiAIRI = "http://gemetenstad.nl/id/period-anchor-multi-a"
+	periodAnchorMultiBIRI = "http://gemetenstad.nl/id/period-anchor-multi-b"
+)
+
+const periodMultiT1 = "2024-01-01"
+const periodMultiT2 = "2024-07-01"
+
+// periodMultiSeed: a single Load seeding ONE open period each for anchors A and B — a valid
+// initial state (two DIFFERENT anchors, each with exactly one open period; not the task-3.2
+// two-open-for-ONE-anchor conflict).
+const periodMultiSeed = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-multi-a-v1 gs:versionOf data:period-anchor-multi-a ;
+    gs:validFrom "` + periodMultiT1 + `"^^xsd:date ;
+    rdfs:label "multi A v1"@nl .
+data:period-multi-b-v1 gs:versionOf data:period-anchor-multi-b ;
+    gs:validFrom "` + periodMultiT1 + `"^^xsd:date ;
+    rdfs:label "multi B v1"@nl .`
+
+// periodMultiNewA: a NEW period for anchor A ONLY — anchor B must come out of this load
+// completely untouched (still open, no gs:validTo, unchanged content).
+const periodMultiNewA = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-multi-a-v2 gs:versionOf data:period-anchor-multi-a ;
+    gs:validFrom "` + periodMultiT2 + `"^^xsd:date ;
+    rdfs:label "multi A v2"@nl .`
+
+// periodAnchorSelfHealIRI: anchor for the self-healing fixture below.
+const periodAnchorSelfHealIRI = "http://gemetenstad.nl/id/period-anchor-selfheal"
+
+const (
+	periodSelfHealStrayT1 = "2024-01-01"
+	periodSelfHealStrayT2 = "2024-02-01"
+	periodSelfHealNewT    = "2024-03-01"
+)
+
+// periodSelfHealStrays: TWO period nodes for the SAME anchor, BOTH open (no gs:validTo) — a state
+// Load itself can never produce (task 3.2's TestLoadNodeFormTwoOpenPeriodsForOneAnchorFailsWith...
+// proves Load rejects any candidate that would create it). closeSeriesPriors is nonetheless
+// documented (write.go) to close "EVERY other open period sharing an anchor, not just one" if this
+// stray state ever arises by some other means (e.g. data landed outside this writer, or a
+// historical bug) — so this fixture is written DIRECTLY into a run:load-... graph via postGraph,
+// bypassing Load/upsert entirely, to actually construct the stray state and exercise that claim.
+const periodSelfHealStrays = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-selfheal-stray-a gs:versionOf data:period-anchor-selfheal ;
+    gs:validFrom "` + periodSelfHealStrayT1 + `"^^xsd:date ;
+    rdfs:label "selfheal stray A"@nl .
+data:period-selfheal-stray-b gs:versionOf data:period-anchor-selfheal ;
+    gs:validFrom "` + periodSelfHealStrayT2 + `"^^xsd:date ;
+    rdfs:label "selfheal stray B"@nl .`
+
+// periodSelfHealNew: a genuinely NEW period for the self-heal anchor, loaded normally through
+// Load — closeSeriesPriors must close BOTH strays above (not just the "most recent" one), leaving
+// exactly this period open.
+const periodSelfHealNew = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-selfheal-new gs:versionOf data:period-anchor-selfheal ;
+    gs:validFrom "` + periodSelfHealNewT + `"^^xsd:date ;
+    rdfs:label "selfheal new"@nl .`
+
 // testClient returns a client and the dataset URL for the gs-test dataset. GS_TEST_FUSEKI_URL is
 // the bare server root; the dataset segment is appended here and guarded against production names.
 func testClient(t *testing.T) (*client, string) {
@@ -644,4 +763,153 @@ func TestLoadNodeFormTwoOpenPeriodsForOneAnchorFailsWithNothingWritten(t *testin
 	assert.ElementsMatch(t, beforeGraphs, afterGraphs, "no run graph written when the open-period invariant would be violated")
 	assert.Equal(t, beforeProv, c.countProvActivities(t), "no prov:Activity written when the open-period invariant would be violated")
 	assert.Equal(t, 0, c.countOpenNodePeriods(t, periodConflictAnchorIRI), "neither conflicting period is left open in the store — nothing written")
+}
+
+// coverage-audit: a multi-version chain (>=3 periods) for one anchor. Task 3.1's
+// TestLoadNodeFormPeriodOpensClosesAndNoOps only exercises a single open->close transition
+// (v1->v2); this proves the chain generalizes to three-plus versions, that intervals stay
+// contiguous throughout (not just pairwise), and that "current state" — the one period with no
+// gs:validTo — is unambiguously the LATEST version, not merely "some" open period.
+func TestLoadNodeFormMultiVersionChainRetainsHistory(t *testing.T) {
+	c, base := testClient(t)
+	ctx := context.Background()
+
+	require.NoError(t, Load(ctx, base, nil, Config{Reset: true}))
+
+	// v1: first period, opens the series.
+	require.NoError(t, Load(ctx, base, []byte(periodChainV1), Config{}))
+	require.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorChainIRI), "exactly one open period after v1")
+
+	// v2: supersedes v1 — v1 closes at v2's validFrom (contiguous), v2 is the sole open period.
+	require.NoError(t, Load(ctx, base, []byte(periodChainV2), Config{}))
+	require.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorChainIRI), "exactly one open period after v2")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v1 gs:validTo "`+periodChainT2+`"^^xsd:date } }`),
+		"v1 is closed with gs:validTo equal to v2's gs:validFrom")
+
+	// v3: supersedes v2 — v2 closes at v3's validFrom; v1 remains closed at t2 (untouched by the
+	// v3 load, proving the close only ever touches the immediately-open prior, not the whole
+	// history); v3 is the sole open period.
+	require.NoError(t, Load(ctx, base, []byte(periodChainV3), Config{}))
+	require.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorChainIRI), "exactly one open period after v3")
+
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v1 gs:validTo "`+periodChainT2+`"^^xsd:date } }`),
+		"v1 remains closed at t2 (its own close) — the v3 load did not re-touch it")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v2 gs:validTo "`+periodChainT3+`"^^xsd:date } }`),
+		"v2 is closed with gs:validTo equal to v3's gs:validFrom (contiguous)")
+
+	// history retained: all three period nodes and their distinct content are still queryable.
+	assert.True(t, c.ask(t, `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v1 rdfs:label "chain content A"@nl } }`), "v1 content retained")
+	assert.True(t, c.ask(t, `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v2 rdfs:label "chain content B"@nl } }`), "v2 content retained")
+	assert.True(t, c.ask(t, `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v3 rdfs:label "chain content C"@nl } }`), "v3 content retained")
+
+	// current state (the NOT-EXISTS-gs:validTo period) is EXACTLY v3 — not v1 or v2.
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v3 gs:versionOf data:period-anchor-chain .
+                 FILTER NOT EXISTS { data:period-chain-v3 gs:validTo ?vt } } }`),
+		"v3 is the open period")
+	assert.False(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v1 gs:versionOf data:period-anchor-chain .
+                 FILTER NOT EXISTS { data:period-chain-v1 gs:validTo ?vt } } }`),
+		"v1 is not open")
+	assert.False(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-chain-v2 gs:versionOf data:period-anchor-chain .
+                 FILTER NOT EXISTS { data:period-chain-v2 gs:validTo ?vt } } }`),
+		"v2 is not open")
+}
+
+// coverage-audit: two INDEPENDENT gs:versionOf anchors in the same dataset. Proves
+// closeSeriesPriors' close is series-scoped (keyed on the touched anchor), not global: a load that
+// opens a new period for anchor A must never close or otherwise touch anchor B's series.
+func TestLoadNodeFormClosesOnlyTouchedAnchorLeavesOthersOpen(t *testing.T) {
+	c, base := testClient(t)
+	ctx := context.Background()
+
+	require.NoError(t, Load(ctx, base, nil, Config{Reset: true}))
+
+	// Seed one open period each for anchors A and B in a single load.
+	require.NoError(t, Load(ctx, base, []byte(periodMultiSeed), Config{}))
+	require.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorMultiAIRI), "anchor A: exactly one open period after seeding")
+	require.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorMultiBIRI), "anchor B: exactly one open period after seeding")
+
+	// Load a new period for anchor A ONLY.
+	require.NoError(t, Load(ctx, base, []byte(periodMultiNewA), Config{}))
+
+	// Anchor A: prior closed, new one open — the ordinary open/close behaviour.
+	assert.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorMultiAIRI), "anchor A: still exactly one open period after its new version")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-multi-a-v1 gs:validTo "`+periodMultiT2+`"^^xsd:date } }`),
+		"anchor A's prior period is closed")
+
+	// Anchor B: completely UNTOUCHED — still open, no gs:validTo stamped, content unchanged. This
+	// is the crux of the test: proves the close is scoped to the touched anchor, not dataset-wide.
+	assert.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorMultiBIRI), "anchor B: untouched, still exactly one open period")
+	assert.False(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-multi-b-v1 gs:validTo ?vt } }`),
+		"anchor B's period was NOT closed by a load that only touched anchor A")
+	assert.True(t, c.ask(t, `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-multi-b-v1 rdfs:label "multi B v1"@nl } }`),
+		"anchor B's period content is unchanged")
+}
+
+// coverage-audit: closeSeriesPriors' documented self-healing claim (write.go: "it closes EVERY
+// other open period sharing an anchor, not just one") exercised against a REAL stray-open state
+// rather than just trusted from the comment. Load itself can never produce two simultaneous open
+// periods for one anchor (task 3.2 proves that candidate is rejected outright), so the stray state
+// is constructed directly via (*client).postGraph — an in-package, low-level write straight into a
+// run:load-... graph, bypassing Load/upsert entirely — mirroring how dropRunGraphs/testClient
+// already reach into the client's unexported surface for setup/teardown.
+func TestLoadNodeFormSelfHealsMultipleStrayOpenPeriods(t *testing.T) {
+	c, base := testClient(t)
+	ctx := context.Background()
+
+	require.NoError(t, Load(ctx, base, nil, Config{Reset: true}))
+
+	// Seed TWO open periods for the SAME anchor directly into a run:load-... graph (picked up by
+	// testClient's dropRunGraphs cleanup like any other run graph, since it shares the prefix).
+	require.NoError(t, c.postGraph(ctx, runGraph("seed-selfheal"), []byte(periodSelfHealStrays)))
+	require.Equal(t, 2, c.countOpenNodePeriods(t, periodAnchorSelfHealIRI), "both seeded strays are open before Load runs")
+
+	// Load a genuinely new period for that anchor through the normal path.
+	require.NoError(t, Load(ctx, base, []byte(periodSelfHealNew), Config{}), "closeSeriesPriors must self-heal both strays, satisfying the open-period invariant")
+
+	// closeSeriesPriors must have closed BOTH strays (not just the most-recently-added one) —
+	// exactly one open period remains, and it is the new one.
+	assert.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorSelfHealIRI), "self-healing closed every stray open period, leaving exactly the new one")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-selfheal-stray-a gs:validTo "`+periodSelfHealNewT+`"^^xsd:date } }`),
+		"stray A was closed by the self-healing close")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-selfheal-stray-b gs:validTo "`+periodSelfHealNewT+`"^^xsd:date } }`),
+		"stray B was ALSO closed by the self-healing close — not just one of the two")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-selfheal-new gs:versionOf data:period-anchor-selfheal .
+                 FILTER NOT EXISTS { data:period-selfheal-new gs:validTo ?vt } } }`),
+		"the new period is the one left open")
 }
