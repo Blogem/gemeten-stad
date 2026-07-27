@@ -58,6 +58,12 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fusekiURL string, cfg Config) 
 
 	for _, p := range permits {
 		assigned := assignment[p.Zaaknummer]
+		if assigned == nil {
+			// A permit with zero fellings assigned (no-source outcome) must still
+			// carry a non-nil AssignedFellingIDs: audit_metrics.assigned_felling_ids
+			// is NOT NULL, and pgx stages a nil []string as SQL NULL, not "{}".
+			assigned = []string{}
+		}
 
 		var outcome Outcome
 		var evidence string

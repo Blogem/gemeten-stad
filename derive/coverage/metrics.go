@@ -138,10 +138,18 @@ INSERT INTO %s
 VALUES ($1, $2, $3, $4, $5, $6, $7)`, stagingTable)
 
 	for _, row := range rows {
+		assignedFellingIDs := row.AssignedFellingIDs
+		if assignedFellingIDs == nil {
+			// Defensive: audit_metrics.assigned_felling_ids is NOT NULL, and pgx
+			// stages a nil []string as SQL NULL, not "{}" — coerce any caller's
+			// nil slice to an empty one so the MERGE's INSERT never violates the
+			// constraint (belt-and-braces alongside coverage.go's own nil-guard).
+			assignedFellingIDs = []string{}
+		}
 		if _, err := tx.Exec(ctx, insertSQL,
 			row.Zaaknummer,
 			row.Matched,
-			row.AssignedFellingIDs,
+			assignedFellingIDs,
 			row.AssignedFellingCount,
 			row.CandidateCount,
 			row.NearestDistM,
