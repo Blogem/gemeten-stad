@@ -45,10 +45,22 @@ provenance note / empty-marker), so P13 can fall back to heuristic handling for 
 rather than the harvest failing. *Alternative rejected:* dropping publications without a sidecar —
 loses auditable data.
 
-### D4 — URL source
+### D4 — URL source: the sidecar is the ONLY source of the zaaknummer (probed)
 Use `https://zoek.officielebekendmakingen.nl/<id>/metadata.xml` (the documented sidecar URL,
-`DATA_SOURCES.md` §1). *Alternative:* the `repository.overheid.nl` FRBR path — heavier (full
-document); the zoek metadata URL is the minimal authoritative source for the fields P13 needs.
+`DATA_SOURCES.md` §1). This was **empirically confirmed as the only viable source** for
+`OVERHEIDop.referentienummer` (see `/tmp/koop-e2e/probe_sru.sh`):
+- `repository.overheid.nl/sru` (our harvest endpoint, default `gzd`, and queried by identifier):
+  returns the full record — geometry, activiteit, gebiedsmarkering, `meta`/`owmskern`/`owmsmantel` —
+  but **no `referentienummer`** anywhere. There is no `recordSchema`/parameter that adds it.
+- `zoek.officielebekendmakingen.nl/sru/Search` (the website's search backend, the bulk-API
+  alternative): **deprecated/broken** — returns HTTP 500 (a generic error page) for every query
+  *including KOOP's own documented example and `operation=explain`*; the bare `/sru` path is 404.
+  Consistent with KOOP's notice that the lokale-bekendmakingen SRU collection was phased out.
+- `metadata.xml`: HTTP 200, carries `OVERHEIDop.referentienummer` (probed: `Z2022-W000579`).
+
+So there is **no bulk-SRU shortcut**; the per-publication sidecar fetch (D5) is the only path, which
+is why D5's pacing/retry matters. *Alternative rejected:* the `repository.overheid.nl` FRBR full
+document — heavier and equally lacking a shortcut.
 
 ### D5 — Rate-limit + retry the sidecar fetch; distinguish 404 from transient (added during apply)
 A full backfill issues ~10k individual sidecar fetches, and the host **resets connections under
