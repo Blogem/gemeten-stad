@@ -32,7 +32,8 @@ type Permit struct {
 	Zaaknummer      string
 	InterventionIRI string    // data:intervention/<zaaknummer>
 	PublicationDate time.Time // from dct:available in the graph (D10)
-	BuurtCode       string    // koop_publications.resolved_buurt_code == kapenherplant.gbdBuurtId
+	GbdBuurtID      string    // koop_publications.resolved_identificatie == kapenherplant.gbdBuurtId (the join key: 14-digit GBD buurt identificatie)
+	BuurtCode       string    // koop_publications.resolved_buurt_code — the short, human-readable Amsterdam buurtcode (e.g. "NC02"); NOT the join key, used only for gs:evidence text
 	Tier            Tier      // resolved_tier
 	HasPoint        bool      // resolved_geom present
 	Candidates      []CandidateFelling
@@ -46,9 +47,12 @@ PREFIX dct: <http://purl.org/dc/terms/>
 SELECT ?intervention ?date WHERE { GRAPH ?g { ?intervention a gs:Intervention ; dct:available ?date . } }`
 
 // GenerateCandidates implements D6(1) (tasks 2.1-2.3, 6.3): enumerate besluit Interventions from the
-// graph, join koop_publications by zaaknummer for the resolved buurt code / point / tier, and
-// generate buurt+time-scoped candidate fellings from kapenherplant per permit. Assignment (D6(2)) and
-// scoring (D5) are downstream of this — GenerateCandidates only produces the candidate set.
+// graph, join koop_publications by zaaknummer for the resolved buurt identificatie / point / tier, and
+// generate buurt+time-scoped candidate fellings from kapenherplant per permit, joining on the GBD
+// buurt identificatie (the same 14-digit identifier kapenherplant."gbdBuurtId" carries) — never on
+// the short, human-readable buurtcode, which is a different Amsterdam code system with no overlap.
+// Assignment (D6(2)) and scoring (D5) are downstream of this — GenerateCandidates only produces the
+// candidate set.
 func GenerateCandidates(ctx context.Context, pool *pgxpool.Pool, schema, fusekiURL string) ([]Permit, error) {
 	permits, err := enumeratePermits(ctx, fusekiURL)
 	if err != nil {
@@ -57,25 +61,26 @@ func GenerateCandidates(ctx context.Context, pool *pgxpool.Pool, schema, fusekiU
 
 	out := make([]Permit, 0, len(permits))
 	for _, p := range permits {
-		buurtCode, tier, geomWKB, found, err := resolvePublication(ctx, pool, schema, p.Zaaknummer)
+		gbdBuurtID, buurtCode, tier, geomWKB, found, err := resolvePublication(ctx, pool, schema, p.Zaaknummer)
 		if err != nil {
 			return nil, err
 		}
 		if !found {
-			// No audited-besluit row (or no resolved buurt code) in koop_publications for this
-			// zaaknummer. Kept in the output with zero candidates rather than dropped: D3 requires
-			// every enumerated permit to end up with a coverage outcome (matched or no-source), and
-			// an unresolved permit is a genuine no-source case, not an omission.
-			log.Printf("coverage: permit %s has no resolved buurt code in koop_publications; recording with no candidates", p.Zaaknummer)
+			// No audited-besluit row (or no resolved buurt identificatie) in koop_publications for
+			// this zaaknummer. Kept in the output with zero candidates rather than dropped: D3
+			// requires every enumerated permit to end up with a coverage outcome (matched or
+			// no-source), and an unresolved permit is a genuine no-source case, not an omission.
+			log.Printf("coverage: permit %s has no resolved buurt identificatie in koop_publications; recording with no candidates", p.Zaaknummer)
 			out = append(out, p)
 			continue
 		}
 
+		p.GbdBuurtID = gbdBuurtID
 		p.BuurtCode = buurtCode
 		p.Tier = tier
 		p.HasPoint = len(geomWKB) > 0
 
-		candidates, err := candidateFellings(ctx, pool, schema, buurtCode, geomWKB, p.PublicationDate)
+		candidates, err := candidateFellings(ctx, pool, schema, gbdBuurtID, geomWKB, p.PublicationDate)
 		if err != nil {
 			return nil, err
 		}
@@ -145,31 +150,35 @@ func zaaknummerFromIRI(iri string) (string, bool) {
 }
 
 // publicationQuery reads the audited besluit row for a zaaknummer — the one row in the trail
-// (aanvraag/besluit/ontwerpbesluit/...) that carries a resolved buurt code (design.md D8 in
-// derive-coverage-audit's parent koop-publications context). ST_AsBinary hands the point back to Go
-// as portable WKB bytes rather than requiring a PostGIS-aware pgx type; candidateFellings below
+// (aanvraag/besluit/ontwerpbesluit/...) that carries a resolved place (design.md D8 in
+// derive-coverage-audit's parent koop-publications context). resolved_identificatie is the 14-digit
+// GBD buurt identificatie — the actual join key against kapenherplant."gbdBuurtId" — while
+// resolved_buurt_code is the short, human-readable Amsterdam buurtcode kept only for gs:evidence text;
+// the two are different Amsterdam code systems with no overlap. ST_AsBinary hands the point back to
+// Go as portable WKB bytes rather than requiring a PostGIS-aware pgx type; candidateFellings below
 // round-trips it via ST_GeomFromWKB.
-const publicationQuery = `SELECT resolved_buurt_code, resolved_tier, ST_AsBinary(resolved_geom) AS geom_wkb
+const publicationQuery = `SELECT resolved_identificatie, resolved_buurt_code, resolved_tier, ST_AsBinary(resolved_geom) AS geom_wkb
 FROM %s
-WHERE zaaknummer = $1 AND resolved_buurt_code IS NOT NULL
+WHERE zaaknummer = $1 AND resolved_identificatie IS NOT NULL
 LIMIT 1`
 
-// resolvePublication joins koop_publications by zaaknummer for the resolved buurt code, tier, and
-// point (as WKB, nil when the permit has no resolved_geom). found=false when no audited-besluit row
-// exists for this zaaknummer.
-func resolvePublication(ctx context.Context, pool *pgxpool.Pool, schema, zaaknummer string) (buurtCode string, tier Tier, geomWKB []byte, found bool, err error) {
+// resolvePublication joins koop_publications by zaaknummer for the resolved GBD buurt identificatie
+// (the join key), the short human-readable buurt code (evidence text only), the tier, and the point
+// (as WKB, nil when the permit has no resolved_geom). found=false when no audited-besluit row exists
+// for this zaaknummer.
+func resolvePublication(ctx context.Context, pool *pgxpool.Pool, schema, zaaknummer string) (gbdBuurtID, buurtCode string, tier Tier, geomWKB []byte, found bool, err error) {
 	table := pgx.Identifier{schema, "koop_publications"}.Sanitize()
 	query := fmt.Sprintf(publicationQuery, table)
 
 	var tierText string
-	err = pool.QueryRow(ctx, query, zaaknummer).Scan(&buurtCode, &tierText, &geomWKB)
+	err = pool.QueryRow(ctx, query, zaaknummer).Scan(&gbdBuurtID, &buurtCode, &tierText, &geomWKB)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", "", nil, false, nil
+			return "", "", "", nil, false, nil
 		}
-		return "", "", nil, false, fmt.Errorf("coverage: resolve publication for %s: %w", zaaknummer, err)
+		return "", "", "", nil, false, fmt.Errorf("coverage: resolve publication for %s: %w", zaaknummer, err)
 	}
-	return buurtCode, tierFromText(tierText), geomWKB, true, nil
+	return gbdBuurtID, buurtCode, tierFromText(tierText), geomWKB, true, nil
 }
 
 // tierFromText maps koop_publications.resolved_tier's text values to Tier.
@@ -186,9 +195,12 @@ func tierFromText(s string) Tier {
 
 // candidateFellingsQuery is D6(1)'s buurt+time SQL: felled kapenherplant rows in the permit's buurt
 // whose felling date falls in [publication, +3yr] (inWindow/windowEnd below define this window; kept
-// in agreement with this BETWEEN). source_deleted_at IS NULL excludes soft-deleted rows. The
-// per-candidate distance is computed only when the permit carries a resolved point ($2 non-NULL);
-// otherwise every DistanceM is nil and the buurt+time filter alone governs recall.
+// in agreement with this BETWEEN). The join key ($1) is the GBD buurt identificatie — the same
+// 14-digit value koop_publications.resolved_identificatie carries, NOT the short human-readable
+// buurtcode — since kapenherplant."gbdBuurtId" is minted in that identificatie system. source_deleted_at
+// IS NULL excludes soft-deleted rows. The per-candidate distance is computed only when the permit
+// carries a resolved point ($2 non-NULL); otherwise every DistanceM is nil and the buurt+time filter
+// alone governs recall.
 const candidateFellingsQuery = `SELECT id, "boomId", "kapmaatregelDatumUitgevoerd",
        CASE WHEN $2::bytea IS NULL THEN NULL
             ELSE ST_Distance(ST_Transform("resolvedGeom", 28992), ST_GeomFromWKB($2::bytea, 28992))
@@ -199,16 +211,17 @@ WHERE "gbdBuurtId" = $1
   AND "kapmaatregelDatumUitgevoerd" BETWEEN $3 AND $4
   AND source_deleted_at IS NULL`
 
-// candidateFellings runs candidateFellingsQuery for one permit's buurt + publication date window.
-// geomWKB is nil for a point-less permit, yielding a nil DistanceM for every candidate (buurt+time
-// filter only, recall preserved per D6).
-func candidateFellings(ctx context.Context, pool *pgxpool.Pool, schema, buurtCode string, geomWKB []byte, pubDate time.Time) ([]CandidateFelling, error) {
+// candidateFellings runs candidateFellingsQuery for one permit's GBD buurt identificatie + publication
+// date window. gbdBuurtID must be the identificatie (koop_publications.resolved_identificatie), not the
+// short buurtcode. geomWKB is nil for a point-less permit, yielding a nil DistanceM for every candidate
+// (buurt+time filter only, recall preserved per D6).
+func candidateFellings(ctx context.Context, pool *pgxpool.Pool, schema, gbdBuurtID string, geomWKB []byte, pubDate time.Time) ([]CandidateFelling, error) {
 	table := pgx.Identifier{schema, "kapenherplant"}.Sanitize()
 	query := fmt.Sprintf(candidateFellingsQuery, table)
 
-	rows, err := pool.Query(ctx, query, buurtCode, geomWKB, pubDate, windowEnd(pubDate))
+	rows, err := pool.Query(ctx, query, gbdBuurtID, geomWKB, pubDate, windowEnd(pubDate))
 	if err != nil {
-		return nil, fmt.Errorf("coverage: query candidate fellings for buurt %s: %w", buurtCode, err)
+		return nil, fmt.Errorf("coverage: query candidate fellings for buurt identificatie %s: %w", gbdBuurtID, err)
 	}
 	defer rows.Close()
 
@@ -223,7 +236,7 @@ func candidateFellings(ctx context.Context, pool *pgxpool.Pool, schema, buurtCod
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("coverage: iterate candidate fellings for buurt %s: %w", buurtCode, err)
+		return nil, fmt.Errorf("coverage: iterate candidate fellings for buurt identificatie %s: %w", gbdBuurtID, err)
 	}
 	return out, nil
 }
