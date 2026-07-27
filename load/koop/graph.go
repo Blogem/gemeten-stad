@@ -59,23 +59,6 @@ func assertSafeIRI(id string) error {
 	return nil
 }
 
-// literalEscaper escapes a literal's lexical value for safe embedding inside a Turtle
-// double-quoted string, in a single left-to-right pass — backslash first, so the backslash
-// introduced by escaping a quote/control char is never itself re-escaped (mirrors
-// load/graph/signature.go's literalEscaper and load/places/render.go's literalEscaper).
-var literalEscaper = strings.NewReplacer(
-	`\`, `\\`,
-	`"`, `\"`,
-	"\n", `\n`,
-	"\r", `\r`,
-	"\t", `\t`,
-)
-
-// turtleString renders s as a quoted Turtle string literal with its lexical value escaped.
-func turtleString(s string) string {
-	return `"` + literalEscaper.Replace(s) + `"`
-}
-
 // mintInterventionIRI, mintClaimIRI, mintPlaceIRI return the full instance IRI for a besluit's
 // zaaknummer / a resolved buurt identificatie. Callers must validate the input via assertSafeIRI
 // first (buildCandidate does this once per item before any minting) — these are pure string
