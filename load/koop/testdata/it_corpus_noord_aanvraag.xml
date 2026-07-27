@@ -1,0 +1,25 @@
+<!--
+Integration corpus fixture (tasks 3.5, 6.3, 8.2): the Noord zaak's aanvraag, landed as
+gmb-2023-810001 (see load_integration_test.go's corpus builder). Same address/zaak as
+it_corpus_noord_besluit.xml (gmb-2023-810002), earlier in the process. Inner-XML shape mirrors
+besluit_record.xml: no xmlns declarations, prefixes not bound to any namespace.
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2023-810001</dcterms:identifier>
+          <dcterms:title>Aanvraag omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Örehof 8 1024BB Amsterdam</dcterms:title>
+        </overheidwetgeving:owmskern>
+        <overheidwetgeving:owmsmantel>
+          <dcterms:available>2023-01-15</dcterms:available>
+        </overheidwetgeving:owmsmantel>
+      </overheidwetgeving:meta>
+      <overheidop:openbaarmaking>
+        <overheidop:activiteit>kappen</overheidop:activiteit>
+        <overheidwetgeving:geometrie>POINT(122000 490000)</overheidwetgeving:geometrie>
+      </overheidop:openbaarmaking>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>

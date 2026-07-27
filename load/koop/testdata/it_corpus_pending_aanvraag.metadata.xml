@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Integration corpus fixture: metadata sidecar for gmb-2023-820001 (the pending zaak's sole
+aanvraag). Referentienummer Z2023-N020000 -- the "N" prefix is deliberate (a Noord zaak still
+pending its besluit), so this fixture also proves pending-ness is decided by kind (no
+besluit/ontwerpbesluit in the zaak), not by the Noord scope.
+-->
+<metadata_pakket>
+  <metadata name="DC.identifier" content="gmb-2023-820001"/>
+  <metadata name="DC.title" content="Aanvraag omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Twiskeweg 12 1034CD Amsterdam"/>
+  <metadata name="OVERHEIDop.referentienummer" content="Z2023-N020000"/>
+  <metadata name="OVERHEIDop.activiteit" content="kappen"/>
+</metadata_pakket>

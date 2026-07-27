@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Integration corpus fixture: metadata sidecar for gmb-2023-830001 (the out-of-Noord besluit).
+Referentienummer Z2023-A030000 -- the "A" segment matches the resolved non-Noord scope, so no
+Noord-mismatch warning is logged.
+-->
+<metadata_pakket>
+  <metadata name="DC.identifier" content="gmb-2023-830001"/>
+  <metadata name="DC.title" content="Besluit omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Zuidstraat 3 1077ZZ Amsterdam"/>
+  <metadata name="OVERHEIDop.referentienummer" content="Z2023-A030000"/>
+  <metadata name="OVERHEIDop.activiteit" content="kappen"/>
+</metadata_pakket>

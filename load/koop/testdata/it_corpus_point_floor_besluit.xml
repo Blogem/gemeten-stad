@@ -1,0 +1,26 @@
+<!--
+Integration corpus fixture (tasks 3.5, 5.2, 6.3, 8.2): a Noord besluit with no extractable title
+address, only a point, landed as gmb-2023-850001. The point (120850, 486850) falls inside
+koop_geo_seed.sql's N01BUURT polygon but at no seeded address, so this resolves at the buurt
+floor (0.50, gs:unresolvedLocation) rather than the address tier -- the "point-only -> buurt
+floor 0.50" scenario.
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2023-850001</dcterms:identifier>
+          <dcterms:title>Besluit omgevingsvergunning kappen boom diverse locaties Amsterdam-Noord</dcterms:title>
+        </overheidwetgeving:owmskern>
+        <overheidwetgeving:owmsmantel>
+          <dcterms:available>2023-06-01</dcterms:available>
+        </overheidwetgeving:owmsmantel>
+      </overheidwetgeving:meta>
+      <overheidop:openbaarmaking>
+        <overheidop:activiteit>kappen</overheidop:activiteit>
+        <overheidwetgeving:geometrie>POINT(120850 486850)</overheidwetgeving:geometrie>
+      </overheidop:openbaarmaking>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>

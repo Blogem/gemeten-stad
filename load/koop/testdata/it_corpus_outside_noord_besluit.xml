@@ -1,0 +1,26 @@
+<!--
+Integration corpus fixture (tasks 3.5, 6.3, 8.2): a besluit whose title address resolves OUTSIDE
+Noord, landed as gmb-2023-830001. Zuidstraat 3 1077ZZ resolves via the address tier (0.90)
+against koop_geo_seed.sql's vbo-zuidstraat-3, inside A01BUURT (code "A01", not Noord). Per the
+scoping policy, a zaak whose besluit resolves outside Noord is excluded entirely: no PostGIS
+rows, no graph.
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2023-830001</dcterms:identifier>
+          <dcterms:title>Besluit omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Zuidstraat 3 1077ZZ Amsterdam</dcterms:title>
+        </overheidwetgeving:owmskern>
+        <overheidwetgeving:owmsmantel>
+          <dcterms:available>2023-04-01</dcterms:available>
+        </overheidwetgeving:owmsmantel>
+      </overheidwetgeving:meta>
+      <overheidop:openbaarmaking>
+        <overheidop:activiteit>kappen</overheidop:activiteit>
+        <overheidwetgeving:geometrie>POINT(130050 490050)</overheidwetgeving:geometrie>
+      </overheidop:openbaarmaking>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>

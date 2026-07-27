@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Integration corpus fixture: metadata sidecar for gmb-2023-850001 (the point-floor Noord
+besluit). Referentienummer Z2023-N050000.
+-->
+<metadata_pakket>
+  <metadata name="DC.identifier" content="gmb-2023-850001"/>
+  <metadata name="DC.title" content="Besluit omgevingsvergunning kappen boom diverse locaties Amsterdam-Noord"/>
+  <metadata name="OVERHEIDop.referentienummer" content="Z2023-N050000"/>
+  <metadata name="OVERHEIDop.activiteit" content="kappen"/>
+</metadata_pakket>

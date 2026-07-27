@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Integration corpus fixture: metadata sidecar for gmb-2023-810002 (the Noord zaak's besluit).
+Referentienummer Z2023-N010001 matches it_corpus_noord_aanvraag.metadata.xml -- the two
+publications dedup into one zaak (load/koop/dedup.go), the besluit gets audited, both rows
+persist to koop_publications (task 6.3).
+-->
+<metadata_pakket>
+  <metadata name="DC.identifier" content="gmb-2023-810002"/>
+  <metadata name="DC.title" content="Besluit omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Örehof 8 1024BB Amsterdam"/>
+  <metadata name="OVERHEIDop.referentienummer" content="Z2023-N010001"/>
+  <metadata name="OVERHEIDop.activiteit" content="kappen"/>
+</metadata_pakket>

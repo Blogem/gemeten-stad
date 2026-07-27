@@ -1,0 +1,26 @@
+<!--
+Integration corpus fixture (tasks 3.5, 5.2, 6.3, 8.2): the Noord zaak's besluit, landed as
+gmb-2023-810002. Title address (Örehof 8 1024BB) resolves via the address tier (0.90) against
+koop_geo_seed.sql's vbo-orehof-8, inside N01BUURT -- the "title address -> Noord buurt at 0.90"
+scenario. The record's own geometrie point is a coarse Gebiedsmarkering outside every seeded
+buurt polygon (D3: address wins over the point when both are present).
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2023-810002</dcterms:identifier>
+          <dcterms:title>Besluit omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Örehof 8 1024BB Amsterdam</dcterms:title>
+        </overheidwetgeving:owmskern>
+        <overheidwetgeving:owmsmantel>
+          <dcterms:available>2023-03-01</dcterms:available>
+        </overheidwetgeving:owmsmantel>
+      </overheidwetgeving:meta>
+      <overheidop:openbaarmaking>
+        <overheidop:activiteit>kappen</overheidop:activiteit>
+        <overheidwetgeving:geometrie>POINT(122000 490000)</overheidwetgeving:geometrie>
+      </overheidop:openbaarmaking>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>

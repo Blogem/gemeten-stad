@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Integration corpus fixture: metadata sidecar for gmb-2023-840001 (the unresolvable besluit).
+Referentienummer Z2023-X040000 -- the "X" segment is neither Noord nor a real stadsdeel letter,
+deliberately: this zaak's location never resolves, so the Noord scope is never even evaluated.
+-->
+<metadata_pakket>
+  <metadata name="DC.identifier" content="gmb-2023-840001"/>
+  <metadata name="DC.title" content="Besluit omgevingsvergunning kappen boom diverse locaties Amsterdam"/>
+  <metadata name="OVERHEIDop.referentienummer" content="Z2023-X040000"/>
+  <metadata name="OVERHEIDop.activiteit" content="kappen"/>
+</metadata_pakket>

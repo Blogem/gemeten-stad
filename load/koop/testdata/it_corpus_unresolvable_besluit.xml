@@ -1,0 +1,24 @@
+<!--
+Integration corpus fixture (tasks 3.5, 6.3, 8.2): a besluit with no extractable title address and
+a point far outside every seeded buurt polygon, landed as gmb-2023-840001 -- the unresolvable
+bucket (location.Resolve finds no address/postcode/buurt candidate at all).
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2023-840001</dcterms:identifier>
+          <dcterms:title>Besluit omgevingsvergunning kappen boom diverse locaties Amsterdam</dcterms:title>
+        </overheidwetgeving:owmskern>
+        <overheidwetgeving:owmsmantel>
+          <dcterms:available>2023-05-01</dcterms:available>
+        </overheidwetgeving:owmsmantel>
+      </overheidwetgeving:meta>
+      <overheidop:openbaarmaking>
+        <overheidop:activiteit>kappen</overheidop:activiteit>
+        <overheidwetgeving:geometrie>POINT(999000 999000)</overheidwetgeving:geometrie>
+      </overheidop:openbaarmaking>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>
