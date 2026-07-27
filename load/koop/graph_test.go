@@ -15,6 +15,12 @@ import (
 // concurrent coder agent and is not visible here. Assertions are written tolerant of formatting
 // (full angle-bracket IRIs vs a dedicated/shared prefix, whitespace) per design.md D6, mirroring
 // load/places/render_test.go's approach for its own IRI-tolerant checks.
+//
+// Per openspec/changes/state-node-versioning (specs/koop-load/spec.md, design.md D3), the
+// gs:locatedAt annotation is a refinable edge carrying gs:confidence (+ gs:caveat when
+// confidence < 1.0) and MUST NOT carry gs:validFrom/gs:validTo — the Intervention holds no
+// evolving edge at all. Tests below assert this directly rather than the earlier (now-removed)
+// validFrom-stamping behavior.
 
 // gtGSNS/gtInterventionNS/gtClaimNS/gtPlaceNS/gtActivityNS are re-derived from design.md D6 here
 // (not imported from graph.go) so the test asserts against the documented IRI scheme, not
@@ -178,9 +184,10 @@ func TestBuildCandidate_ResolvedAddressBesluit(t *testing.T) {
 
 	assert.InDelta(t, 0.9, gtConfidenceValue(t, text), 1e-9, "expected gs:confidence 0.9")
 
-	validFromLines := gtLinesContaining(text, "gs:validFrom")
-	require.NotEmpty(t, validFromLines, "expected a gs:validFrom stamped from the besluit's Available date")
-	assert.Contains(t, strings.Join(validFromLines, "\n"), "2022-05-31")
+	locatedAtBlock := strings.Join(locatedAtLines, "\n")
+	assert.Contains(t, locatedAtBlock, "gs:confidence", "the locatedAt annotation must carry gs:confidence")
+	assert.NotContains(t, text, "gs:validFrom",
+		"gs:locatedAt is a refinable edge (design.md D3): it holds and is never valid-time-versioned")
 
 	caveatLines := gtLinesContaining(text, "gs:caveat")
 	assert.NotEmpty(t, caveatLines, "confidence 0.9 < 1.0 must carry a gs:caveat (shapes.ttl rule 1d)")
@@ -321,25 +328,44 @@ func TestBuildCandidate_EmptyInput(t *testing.T) {
 	assert.NotContains(t, string(turtle), "gs:Intervention", "no items means no Intervention triples")
 }
 
-// TestBuildCandidate_MissingAvailableOmitsValidFrom covers scenario 8: when the besluit's
-// Available date is absent, buildCandidate must not fabricate a gs:validFrom — the rest of the
-// locatedAt annotation (confidence, caveat) still renders normally.
-func TestBuildCandidate_MissingAvailableOmitsValidFrom(t *testing.T) {
-	zaak := "Z2022-N003005"
-	identificatie := "0363020000003005"
+// TestBuildCandidate_LocatedAtNeverCarriesValidFrom covers scenario 8 under the
+// state-node-versioning contract (specs/koop-load/spec.md, design.md D3): gs:locatedAt is a
+// refinable-metadata edge, not a valid-time one, so buildCandidate must NEVER emit gs:validFrom
+// on it — regardless of whether the besluit's Available date is present or absent. (Available
+// presence used to determine whether a validFrom was stamped; now it must have no bearing on
+// locatedAt's shape at all.) The rest of the annotation (confidence, caveat) still renders
+// normally in both cases.
+func TestBuildCandidate_LocatedAtNeverCarriesValidFrom(t *testing.T) {
+	tests := []struct {
+		name      string
+		available string
+	}{
+		{"Available date present", "2022-05-31"},
+		{"Available date absent", ""},
+	}
 
-	items := []AuditedBesluit{besluit(zaak, identificatie, 0.7, []string{"timeMismatch"}, "")}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			zaak := "Z2022-N003005"
+			identificatie := "0363020000003005"
 
-	turtle, skipped := buildCandidate(items)
-	assert.Empty(t, skipped)
-	text := string(turtle)
+			items := []AuditedBesluit{besluit(zaak, identificatie, 0.7, []string{"timeMismatch"}, tt.available)}
 
-	assert.NotContains(t, text, "gs:validFrom", "an absent besluit Available date must not fabricate a gs:validFrom")
+			turtle, skipped := buildCandidate(items)
+			assert.Empty(t, skipped)
+			text := string(turtle)
 
-	assert.InDelta(t, 0.7, gtConfidenceValue(t, text), 1e-9)
-	caveatLines := gtLinesContaining(text, "gs:caveat")
-	require.NotEmpty(t, caveatLines)
-	assert.Contains(t, strings.Join(caveatLines, "\n"), "timeMismatch")
+			assert.NotContains(t, text, "gs:validFrom",
+				"gs:locatedAt is a refinable edge (design.md D3) and must never carry gs:validFrom, regardless of Available")
+			assert.NotContains(t, text, "gs:validTo",
+				"gs:locatedAt must never carry gs:validTo either — it is never a valid-time edge")
+
+			assert.InDelta(t, 0.7, gtConfidenceValue(t, text), 1e-9)
+			caveatLines := gtLinesContaining(text, "gs:caveat")
+			require.NotEmpty(t, caveatLines)
+			assert.Contains(t, strings.Join(caveatLines, "\n"), "timeMismatch")
+		})
+	}
 }
 
 // TestBuildCandidate_SkipsItemWithUnsafeIRI covers the resilience follow-up (load-koop-assembly):

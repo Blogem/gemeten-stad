@@ -295,17 +295,21 @@ const (
 	n03PlaceIRI           = "http://gemetenstad.nl/id/place/N03BUURT"
 )
 
-// TestKoopLoad_ReResolutionOpensNewVersion is task 8.1's re-resolution scenario -- the other half
-// of TestKoopLoad_UnchangedRerunIsANoOp above: WHEN a besluit's resolved location changes between
-// runs (specs/koop-load/spec.md's "A re-resolution opens a new version"), THEN:
+// TestKoopLoad_ChangedResolutionIsSurfacedNotVersioned is task 8.1's re-resolution scenario -- the
+// other half of TestKoopLoad_UnchangedRerunIsANoOp above. Under the state-node-versioning contract
+// (specs/koop-load/spec.md's "A changed resolution is surfaced, not versioned"; design.md D3),
+// gs:locatedAt is a refinable-metadata edge that holds -- it carries no gs:validFrom/gs:validTo at
+// all, so a changed resolution is an immutable-content change, not a new valid-time version. WHEN
+// a besluit's resolved location changes between runs (no --reset), THEN:
 //
 //   - PostGIS: the besluit's koop_publications row is upserted IN PLACE (same gmb_id, no second
-//     row), its resolved_identificatie/resolved_buurt_code/resolved_geom refreshed to the newly
-//     resolved buurt.
-//   - Graph: a new gs:locatedAt version opens, targeting the new Place; the prior version (to the
-//     original Place) is retained -- never deleted -- but stamped with gs:validTo, i.e. closed, so
-//     exactly one open version remains.
-func TestKoopLoad_ReResolutionOpensNewVersion(t *testing.T) {
+//     row), its resolved_identificatie/resolved_buurt_code/resolved_geom/resolved_tier refreshed to
+//     the newly resolved buurt, and loaded_at is bumped.
+//   - Graph: the writer retains the stored gs:locatedAt (still targeting the ORIGINAL Place) and
+//     surfaces a skip-and-warn diagnostic -- no new version is opened at the new Place, and no
+//     gs:validTo is stamped anywhere on the edge (it was never valid-time to begin with). Applying
+//     the new resolution to the graph requires an explicit --reset rebuild (not exercised here).
+func TestKoopLoad_ChangedResolutionIsSurfacedNotVersioned(t *testing.T) {
 	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
 	dsURL := fusekiDatasetURL(t)
 	ctx := context.Background()
@@ -362,29 +366,36 @@ ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> } }
 			"loaded_at must be bumped on a genuine change -- a re-resolution is not excluded from change-detection, only loaded_at's own column is")
 	})
 
-	t.Run("graph: a new locatedAt version opens at the new Place, the prior version is closed", func(t *testing.T) {
-		// The new version is open (no gs:validTo) and targets the new Place, carrying the same
-		// address-tier confidence (0.90) as before.
+	t.Run("graph: the stored locatedAt is retained, no new version is opened at the new Place", func(t *testing.T) {
+		// The stored gs:locatedAt still targets the ORIGINAL Place -- the writer skip-and-warns on
+		// the immutable-content change rather than superseding it, and retains the same
+		// address-tier confidence (0.90) it was written with in run 1.
 		assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
-ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+n03PlaceIRI+`> .
-                 << <`+noordInterventionIRI+`> gs:locatedAt <`+n03PlaceIRI+`> >> gs:confidence 0.9 .
-                 FILTER NOT EXISTS { << <`+noordInterventionIRI+`> gs:locatedAt <`+n03PlaceIRI+`> >> gs:validTo ?vt } } }`),
-			"a new, open gs:locatedAt version targets the newly resolved Place")
-
-		// The prior version's triple is retained -- history is never deleted -- but is now closed:
-		// stamped with gs:validTo rather than left open.
-		assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
-ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> } }`),
-			"the prior version's triple is retained, not deleted")
-		assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
-ASK { GRAPH ?g { << <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> >> gs:validTo ?vt } }`),
-			"the prior version is stamped with gs:validTo -- closed, not left open")
-
-		// The prior version is no longer the OPEN one: re-running the same "open" pattern against
-		// it (locatedAt with no validTo) must now fail, since only the new Place's version is open.
-		assert.False(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
 ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> .
-                 FILTER NOT EXISTS { << <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> >> gs:validTo ?vt } } }`),
-			"the original version is no longer the open one")
+                 << <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> >> gs:confidence 0.9 } } }`),
+			"the stored gs:locatedAt to the original Place is retained after the skip-and-warn")
+
+		// No new locatedAt edge was opened at the newly resolved Place -- a changed resolution
+		// without --reset is surfaced, not versioned.
+		assert.False(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+n03PlaceIRI+`> } }`),
+			"no new gs:locatedAt version was opened at the new Place -- the change was surfaced, not versioned")
+
+		// locatedAt is never a valid-time edge, so gs:validTo must never appear on it -- neither on
+		// the retained original edge (nothing to close) nor anywhere else.
+		assert.False(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { << <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> >> gs:validTo ?vt } }`),
+			"gs:locatedAt is never valid-time -- it must never be stamped with gs:validTo")
+		assert.False(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt ?anyValidToPlace .
+                 << <`+noordInterventionIRI+`> gs:locatedAt ?anyValidToPlace >> gs:validTo ?vt } }`),
+			"no locatedAt annotation anywhere carries gs:validTo")
+
+		// Exactly the original edge remains -- no other locatedAt target exists for this
+		// Intervention (in particular, not the new Place).
+		assert.False(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt ?otherPlace .
+                 FILTER(?otherPlace != <`+noordPlaceIRI+`>) } }`),
+			"exactly the original locatedAt edge remains -- no other target was added")
 	})
 }
