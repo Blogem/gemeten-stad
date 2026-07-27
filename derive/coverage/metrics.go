@@ -82,11 +82,16 @@ func DropAuditMetrics(ctx context.Context, pool *pgxpool.Pool, schema string) er
 }
 
 // auditMetricsMergeSQL builds the MERGE statement upserting the staging table's rows into the
-// target, keyed by zaaknummer. A matched-but-unchanged row satisfies neither WHEN clause and is
-// left untouched — re-upserting identical rows is a no-op (design.md D8/task 4.5's idempotency
-// requirement), mirroring load/bomen/upsert.go's mergeSQL "matched AND changed" pattern (there is
-// no soft-delete concept here, so there is no NOT MATCHED BY SOURCE clause: a permit's current
-// derive-run numbers simply replace its prior ones).
+// target, keyed by zaaknummer. The WHEN MATCHED change-detection predicate deliberately excludes
+// run_id: run_id is stamped fresh from time.Now() on every coverage.Run call (coverage.go), so
+// including it in the comparison would make every re-run rewrite every row regardless of whether
+// its numbers actually changed, contradicting design.md D8/task 4.5's idempotency requirement — a
+// matched-and-unchanged row (by the real columns) satisfies neither WHEN clause and is left
+// untouched, so its run_id keeps tracking whichever run last actually changed its numbers. This
+// mirrors load/bomen/upsert.go's mergeSQL, which keeps its own per-run loadTS out of the "matched
+// AND changed" comparison for the same reason (there is no soft-delete concept here, so there is
+// no NOT MATCHED BY SOURCE clause: a permit's current derive-run numbers simply replace its prior
+// ones).
 func auditMetricsMergeSQL(schema string) string {
 	target := qualify(schema, auditMetricsTable)
 	source := qualify(schema, auditMetricsStagingTable)
@@ -100,8 +105,7 @@ WHEN MATCHED AND (
   t.assigned_felling_ids IS DISTINCT FROM s.assigned_felling_ids OR
   t.assigned_felling_count IS DISTINCT FROM s.assigned_felling_count OR
   t.candidate_count IS DISTINCT FROM s.candidate_count OR
-  t.nearest_dist_m IS DISTINCT FROM s.nearest_dist_m OR
-  t.run_id IS DISTINCT FROM s.run_id
+  t.nearest_dist_m IS DISTINCT FROM s.nearest_dist_m
 ) THEN
   UPDATE SET
     matched = s.matched,
