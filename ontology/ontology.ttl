@@ -72,7 +72,13 @@ gs:AuditLink
     a owl:Class ;
     rdfs:label "AuditLink"@en ;
     rdfs:comment
-        "A DERIVED, stored link joining a permit-side Intervention to registry-side trees  (finest-common-granularity + count + time-window, per §4). A fuzzy edge: it carries  gs:confidence + gs:evidence and may carry caveat flags. prov:wasDerivedFrom its inputs."@en .
+        "The stable, write-once, timeless per-permit ANCHOR node — 'the coverage audit of  this permit', one per Intervention. Carries gs:coversIntervention to the audited  Intervention and never itself moves: the derived, time-varying coverage state (a  match's confidence/evidence/granularity or a no-source verdict) lives on its  gs:CoveragePeriod versions, opened/closed as re-derivation updates the picture (§3 D4,  the node-form valid-time mechanism via gs:versionOf). The anchor never carries  gs:confidence or gs:evidence directly."@en .
+
+gs:CoveragePeriod
+    a owl:Class ;
+    rdfs:label "CoveragePeriod"@en ;
+    rdfs:comment
+        "A DERIVED, dated coverage state for one gs:AuditLink anchor — one period per  re-derived outcome, opened/closed via gs:versionOf its anchor plus  gs:validFrom/gs:validTo (the node-form valid-time mechanism, §3 D4). Carries  gs:evidence and, when a registry match was found, gs:linksObservation to the matched  gs:Observation + gs:confidence in [0,1] + gs:granularity (the place-resolution tier the  match rests on) + optional gs:caveat; or, when no match was found, gs:noSourceFound  true (a match was attempted and none found). Unlike the RDF-star annotation convention  used elsewhere (§3), gs:confidence and gs:evidence here are PLAIN properties directly on  the period node — the period node itself is the thing being annotated, so there is no  base edge to annotate over."@en .
 
 gs:Assessment
     a owl:Class ;
@@ -133,6 +139,29 @@ gs:testedAgainst
     rdfs:range  gs:Observation ;
     rdfs:comment "Relates a Claim (obligation) to the Observation (registry reality) that tests it."@en .
 
+gs:coversIntervention
+    a owl:ObjectProperty ;
+    rdfs:label "covers intervention"@en ;
+    rdfs:domain gs:AuditLink ;
+    rdfs:range  gs:Intervention ;
+    rdfs:comment
+        "Relates a gs:AuditLink anchor to the permit-side gs:Intervention it is the coverage  audit of. Required (minCount 1, shapes.ttl) — an anchor with no audited Intervention is  meaningless."@en .
+
+gs:linksObservation
+    a owl:ObjectProperty ;
+    rdfs:label "links observation"@en ;
+    rdfs:domain gs:CoveragePeriod ;
+    rdfs:range  gs:Observation ;
+    rdfs:comment
+        "Relates a matched gs:CoveragePeriod to the registry-side gs:Observation the permit was  found to cover. Present only on the 'matched' outcome branch — absent when  gs:noSourceFound is true (shapes.ttl gs:CoveragePeriodShape, sh:xone)."@en .
+
+gs:granularity
+    a owl:ObjectProperty ;
+    rdfs:label "granularity"@en ;
+    rdfs:domain gs:CoveragePeriod ;
+    rdfs:comment
+        "The place-resolution tier the matched coverage link rests on — one of gs:address,  gs:postcode, or gs:buurt (finest to coarsest, §4). Present only on a matched  gs:CoveragePeriod; its value is controlled (sh:in, shapes.ttl)."@en .
+
 # The activity/species/status of an intervention or its trees resolve to SKOS concepts in
 # vocab.ttl. Identity stays in codes/IRIs, never names (§3). Controlled by the shapes.
 
@@ -166,6 +195,26 @@ gs:caveat
     rdfs:range  gs:Caveat ;
     rdfs:comment
         "Flags an explicit, controlled reason a fuzzy edge (locatedAt / AuditLink) is not exact.  Written as an RDF-star annotation alongside gs:confidence:  :i gs:locatedAt :p {| gs:confidence 0.6 ; gs:caveat gs:timeMismatch |}.  Its value MUST be one of the four gs:Caveat individuals below (controlled, shapes.ttl)."@en .
+
+gs:noSourceFound
+    a owl:DatatypeProperty ;
+    rdfs:label "no source found"@en ;
+    rdfs:range  xsd:boolean ;
+    rdfs:comment
+        "Marks a gs:CoveragePeriod as a NO-SOURCE outcome: a registry match was attempted for  the audited Intervention and none was found (value true). Present only on the  'no-source' outcome branch — absent (never false) when a gs:linksObservation match  exists (shapes.ttl gs:CoveragePeriodShape, sh:xone)."@en .
+
+# The three controlled gs:granularity values — the place-resolution tier a matched coverage
+# link rests on (finest to coarsest, §4). Kept minimal (label only, no Granularity class or
+# SKOS scheme): a fixed, small, model-level enum bound by shapes.ttl (sh:in).
+
+gs:address
+    rdfs:label "address"@en .
+
+gs:postcode
+    rdfs:label "postcode"@en .
+
+gs:buurt
+    rdfs:label "buurt"@en .
 
 # ============================================================================
 # 3. Uncertainty convention — RDF-star annotation terms (§3, D2)

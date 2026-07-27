@@ -147,3 +147,96 @@ gs:StatusValueShape
         sh:node gs:ConceptInSchemeShape ;
         sh:message "gs:status must reference a concept in the tree-audit vocabulary." ;
     ] .
+
+# ---------------------------------------------------------------------------
+# (3) Coverage anchor + coverage-period — derive-coverage-audit. Pure core SHACL: the
+#     anchor/period values are plain properties on the node (no RDF-star annotation), so no
+#     sh:sparql is needed here (unlike (1) above).
+# ---------------------------------------------------------------------------
+gs:AuditLinkShape
+    a sh:NodeShape ;
+    sh:targetClass gs:AuditLink ;
+    sh:property [
+        sh:path     gs:coversIntervention ;
+        sh:minCount 1 ;
+        sh:class    gs:Intervention ;
+        sh:message  "A gs:AuditLink anchor must have gs:coversIntervention pointing at a gs:Intervention." ;
+    ] .
+
+gs:CoveragePeriodShape
+    a sh:NodeShape ;
+    sh:targetClass gs:CoveragePeriod ;
+
+    sh:property [
+        sh:path     gs:versionOf ;
+        sh:minCount 1 ;
+        sh:class    gs:AuditLink ;
+        sh:message  "A gs:CoveragePeriod must have gs:versionOf pointing at its gs:AuditLink anchor." ;
+    ] ;
+
+    sh:property [
+        sh:path     gs:validFrom ;
+        sh:minCount 1 ;
+        sh:message  "A gs:CoveragePeriod must have a gs:validFrom." ;
+    ] ;
+
+    sh:property [
+        sh:path     gs:evidence ;
+        sh:minCount 1 ;
+        sh:message  "A gs:CoveragePeriod must have a gs:evidence statement." ;
+    ] ;
+
+    sh:property [
+        sh:path        gs:confidence ;
+        sh:datatype    xsd:decimal ;
+        sh:minInclusive 0 ;
+        sh:maxInclusive 1 ;
+        sh:message     "gs:confidence on a gs:CoveragePeriod must be a decimal in [0,1]." ;
+    ] ;
+
+    sh:property [
+        sh:path    gs:granularity ;
+        sh:in      ( gs:address gs:postcode gs:buurt ) ;
+        sh:message "gs:granularity must be one of gs:address, gs:postcode, gs:buurt." ;
+    ] ;
+
+    # Exactly one outcome branch: matched (linksObservation + confidence, no noSourceFound) XOR
+    # no-source (noSourceFound = true, no linksObservation/confidence).
+    sh:xone (
+        [
+            sh:property [
+                sh:path     gs:linksObservation ;
+                sh:minCount 1 ;
+                sh:class    gs:Observation ;
+                sh:message  "A matched gs:CoveragePeriod must have gs:linksObservation pointing at a gs:Observation." ;
+            ] ;
+            sh:property [
+                sh:path     gs:confidence ;
+                sh:minCount 1 ;
+                sh:message  "A matched gs:CoveragePeriod must have a gs:confidence." ;
+            ] ;
+            sh:property [
+                sh:path     gs:noSourceFound ;
+                sh:maxCount 0 ;
+                sh:message  "A matched gs:CoveragePeriod must not have gs:noSourceFound." ;
+            ] ;
+        ]
+        [
+            sh:property [
+                sh:path     gs:noSourceFound ;
+                sh:minCount 1 ;
+                sh:hasValue true ;
+                sh:message  "A no-source gs:CoveragePeriod must have gs:noSourceFound true." ;
+            ] ;
+            sh:property [
+                sh:path     gs:linksObservation ;
+                sh:maxCount 0 ;
+                sh:message  "A no-source gs:CoveragePeriod must not have gs:linksObservation." ;
+            ] ;
+            sh:property [
+                sh:path     gs:confidence ;
+                sh:maxCount 0 ;
+                sh:message  "A no-source gs:CoveragePeriod must not have gs:confidence." ;
+            ] ;
+        ]
+    ) .
