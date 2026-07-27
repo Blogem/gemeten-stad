@@ -102,16 +102,24 @@ state.**
   *evolving*. Do not temporalize these — over-stamping is a real anti-pattern (every query
   then drags time filters for no gain). This is the lean rule applied to time.
 - **Evolving state carries valid time.** Legal force (in-force → repealed), fulfilment
-  assessments, resolved-location links, revisable attributes → `validFrom`/`validTo`.
+  assessments, and other genuinely time-bounded relationships → `validFrom`/`validTo`. A
+  resolved-location link is *not* one of these (see below) — refining its confidence is a
+  correction, not a change in the world.
 
-**Two mechanisms, chosen by shape (not one-size-fits-all):**
-- **RDF-star statement annotation** for a single evolving fact that also carries confidence —
-  `<< :permit :legalStatus :inForce >> :validFrom … ; :validTo … ; :confidence …`. Used for
-  the location link and simple status facts.
-- **A state/period node** (the n-ary / "fluent" pattern) when the evolving thing has several
-  attributes that move together and you want to query the periods as objects — e.g. the
-  `Assessment` below, or a permit's `LegalStatusPeriod`. This is the KG form of the
-  data-warehouse **SCD Type 2** pattern.
+**Two mechanisms, chosen by shape (not one-size-fits-all) — see `docs/RDF_STAR_RELATIONSHIPS.md`
+for the authoritative decision guide:**
+- **RDF-star statement annotation** carries *refinable metadata* — confidence, evidence, a
+  caveat — about a fact that itself holds timelessly. It is **transaction-time only** (the
+  latest run's annotation is current) and **never carries valid time**. This is the location
+  link's mechanism: `gs:locatedAt` is annotated with `gs:confidence`/`gs:caveat` only, no
+  `validFrom`/`validTo` — resolving it better later is a correction, not a new world-state.
+- **A state/period node** (the n-ary / "fluent" pattern) carries **valid time** when the
+  relationship's existence or state itself changes over the world — e.g. legal force
+  (in-force → repealed) or a fulfilment assessment. Each period is its own node, grouped by a
+  stable `gs:versionOf` series anchor; the writer keeps exactly one **open** period per anchor,
+  closing the prior when a new one appears — the `Assessment` below, a permit's
+  `LegalStatusPeriod`, and `gs:AuditLink`'s coverage periods are all instances of this. This is
+  the KG form of the data-warehouse **SCD Type 2** pattern.
 
 **Two time dimensions — and one is free.** Valid time (world) comes from the mechanisms above.
 **Transaction time (when *we* recorded it) is exactly PROV-O**, which we already commit to:
