@@ -233,10 +233,16 @@ func TestKoopLoad_UnchangedRerunIsANoOp(t *testing.T) {
 // The infra error is forced the reachable way: seedGeo loads the FULL geo fixture so the Noord
 // besluit's title address (Örehof 8, 1024BB) still resolves via bag_* at the address tier
 // (location.Resolve never touches gebieden_buurten — see location/resolve.go, the buurt-PIP tier
-// only runs when address AND postcode both miss), but then DROP TABLE gebieden_buurten (this
-// test's own isolated schema only) breaks buurtFor's subsequent point-in-polygon lookup
-// (buurtByPointSQL), which is what actually determines the containing buurt for an address-tier
-// result. That is a genuine SQL/infra failure, not an unresolvable-location outcome.
+// only runs when address AND postcode both miss). We then break the schema-local
+// gebieden_buurten table itself (ALTER ... DROP COLUMN geom) rather than dropping it outright:
+// with search_path=<schema>,public, dropping the table entirely would make the unqualified
+// reference in buurtFor's SQL fall through to public.gebieden_buurten (the dev DB's real
+// Amsterdam buurten), which would resolve the Örehof point into a real, non-Noord buurt and hit
+// the (working) exclusion path instead of an infra error. Keeping the table but dropping its geom
+// column means the unqualified reference still resolves to the schema-local table (no fallback),
+// and buurtFor's subsequent point-in-polygon lookup (buurtByPointSQL's `ST_Contains(geom, ...)`)
+// fails outright with "column geom does not exist" — a genuine SQL/infra failure, not an
+// unresolvable-location outcome.
 func TestKoopLoad_ResolveInfraErrorRetainsTrail(t *testing.T) {
 	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
 	dsURL := fusekiDatasetURL(t)
@@ -249,8 +255,8 @@ func TestKoopLoad_ResolveInfraErrorRetainsTrail(t *testing.T) {
 
 	resetFusekiRunGraphs(t, ctx, dsURL)
 
-	_, err := pool.Exec(ctx, "DROP TABLE gebieden_buurten")
-	require.NoError(t, err, "drop the address-tier buurt lookup's own table, in this test's isolated schema only")
+	_, err := pool.Exec(ctx, "ALTER TABLE gebieden_buurten DROP COLUMN geom CASCADE")
+	require.NoError(t, err, "break the address-tier buurt lookup's own geom column, in this test's isolated schema only")
 
 	require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: true}),
 		"a resolve infra error must not abort the whole run — Load still returns nil")
