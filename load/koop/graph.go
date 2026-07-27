@@ -39,6 +39,8 @@ const (
 const turtlePreamble = `@prefix gs: <` + gsNS + `> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix act: <` + dataNS + `activity/> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 `
 
@@ -148,11 +150,20 @@ func renderLocatedAtAnnotations(item AuditedBesluit) string {
 }
 
 // renderAuditedBesluit validates item's zaaknummer and resolved identificatie, then writes its
-// Turtle block into b: the Intervention (with gs:activity, gs:claims, and the annotated
-// gs:locatedAt edge), the bare Claim, and the bare Place (task 4.1 — the type triple lets the edge
-// satisfy InterventionShape's sh:class gs:Place check against a candidate-only validation; against
-// an already-seeded P12b Place of the same identificatie it becomes a harmless immutableConflict
-// skip in load/graph, design.md D5).
+// Turtle block into b: the Intervention (with dct:available, gs:activity, gs:claims, and the
+// annotated gs:locatedAt edge), the bare Claim, and the bare Place (task 4.1 — the type triple lets
+// the edge satisfy InterventionShape's sh:class gs:Place check against a candidate-only validation;
+// against an already-seeded P12b Place of the same identificatie it becomes a harmless
+// immutableConflict skip in load/graph, design.md D5).
+//
+// dct:available carries the besluit's publication date (Publication.Available, already
+// "YYYY-MM-DD") as a timeless descriptive-metadata literal — reusing Dublin Core Terms per
+// docs/RDF_MODELING.md §3, not a minted gs: term, and deliberately carrying no
+// gs:validFrom/gs:validTo (it never evolves). koop_publications.available is 100% populated for
+// audited besluiten (task contract) — Available is written verbatim, never guarded against empty:
+// an empty value would be an upstream programming error, and this function has no way to recover
+// from it (there is no sensible fallback date), so silently coining one or skipping the item would
+// hide the bug rather than surface it.
 func renderAuditedBesluit(b *strings.Builder, item AuditedBesluit) error {
 	zaaknummer := item.Pub.Zaaknummer
 	identificatie := item.Res.Identificatie
@@ -169,6 +180,7 @@ func renderAuditedBesluit(b *strings.Builder, item AuditedBesluit) error {
 	placeIRI := mintPlaceIRI(identificatie)
 
 	fmt.Fprintf(b, "<%s> a gs:Intervention ;\n", interventionIRI)
+	fmt.Fprintf(b, "    dct:available \"%s\"^^xsd:date ;\n", item.Pub.Available)
 	fmt.Fprintf(b, "    gs:activity %s ;\n", mapActivity(item.Pub.Activiteit))
 	fmt.Fprintf(b, "    gs:claims <%s> ;\n", claimIRI)
 	fmt.Fprintf(b, "    gs:locatedAt <%s> {| %s |} .\n", placeIRI, renderLocatedAtAnnotations(item))

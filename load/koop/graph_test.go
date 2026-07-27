@@ -171,6 +171,11 @@ func TestBuildCandidate_ResolvedAddressBesluit(t *testing.T) {
 	assert.Contains(t, zaakBlock, "gs:claims", "expected a gs:claims edge from the Intervention to its Claim")
 	assert.Contains(t, zaakBlock, "gs:Claim", "expected a gs:Claim declaration for %s", zaak)
 
+	dctLines := gtLinesContaining(text, "dct:available")
+	require.NotEmpty(t, dctLines, "expected a dct:available triple on the Intervention")
+	assert.Contains(t, strings.Join(dctLines, "\n"), `"2022-05-31"^^xsd:date`,
+		"expected the besluit's publication date on the Intervention as dct:available")
+
 	activityLines := gtLinesContaining(text, "gs:activity")
 	require.NotEmpty(t, activityLines, "expected a gs:activity triple")
 	assert.Contains(t, strings.Join(activityLines, "\n"), "vellen", "kappen must map to the act:vellen activity concept")
@@ -294,6 +299,34 @@ func TestBuildCandidate_IRIScheme(t *testing.T) {
 	gtAssertUnderNamespace(t, text, gtInterventionNS, zaak)
 	gtAssertUnderNamespace(t, text, gtClaimNS, zaak)
 	gtAssertUnderNamespace(t, text, gtPlaceNS, identificatie)
+}
+
+// TestBuildCandidate_PublicationDateAsDctAvailable covers the "Intervention carries its
+// publication date as dct:available" scenario (openspec/changes/derive-coverage-audit,
+// specs/koop-load/spec.md): the Intervention asserts dct:available "YYYY-MM-DD"^^xsd:date, sourced
+// verbatim from Publication.Available (Dublin Core Terms, reused — not a minted gs: term), and this
+// triple carries no gs:validFrom/gs:validTo — a timeless descriptive fact, never evolving state.
+func TestBuildCandidate_PublicationDateAsDctAvailable(t *testing.T) {
+	zaak := "Z2022-N003006"
+	identificatie := "0363020000003006"
+	available := "2022-09-15"
+
+	items := []AuditedBesluit{besluit(zaak, identificatie, 1.0, nil, available)}
+
+	turtle, skipped := buildCandidate(items)
+	assert.Empty(t, skipped)
+	text := string(turtle)
+
+	dctLines := gtLinesContaining(text, "dct:available")
+	require.NotEmpty(t, dctLines, "expected a dct:available triple on the Intervention")
+	dctBlock := strings.Join(dctLines, "\n")
+	assert.Contains(t, dctBlock, `"`+available+`"^^xsd:date`,
+		"expected the besluit's publication date rendered as an xsd:date literal")
+
+	assert.NotContains(t, text, "gs:validFrom",
+		"dct:available is a timeless descriptive fact (design.md / RDF_MODELING.md §1): never gs:validFrom-stamped")
+	assert.NotContains(t, text, "gs:validTo",
+		"dct:available must never carry gs:validTo either")
 }
 
 // TestBuildCandidate_ClaimHasNoObligationCount covers scenario 6: this phase carries no
