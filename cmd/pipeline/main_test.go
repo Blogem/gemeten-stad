@@ -20,14 +20,14 @@ func TestRootRegistersStages(t *testing.T) {
 	assert.ElementsMatch(t, []string{"ingest", "extract", "load", "derive", "dump"}, got)
 }
 
-// TestStageIsNoOp confirms the stub stages (extract, derive) run, exit
-// without error, and report that they are not yet implemented. ingest, load,
+// TestStageIsNoOp confirms the stub stages (extract) run, exit without
+// error, and report that they are not yet implemented. ingest, load, derive,
 // and dump are wired to real work and are covered by
 // TestIngestAndLoadAreWired/TestDumpIsWired instead — running their RunE here
 // would require network/DB access.
 func TestStageIsNoOp(t *testing.T) {
 	for name := range map[string]bool{
-		"extract": true, "derive": true,
+		"extract": true,
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := newRootCmd()
