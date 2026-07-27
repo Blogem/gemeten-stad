@@ -105,6 +105,13 @@ func stagePublications(ctx context.Context, pool *pgxpool.Pool, schema string, r
 // Res == nil) is bound as SQL NULL, matching Publication/Resolved's own "zero means absent" docs
 // (types.go) — except unresolved, which is NOT NULL and defaults to false when Res == nil (a
 // non-besluit trail row is not "unresolved", it simply was never subject to resolution).
+//
+// resolved_identificatie, resolved_buurt_code, resolved_confidence, caveats, and in_noord are only
+// populated when row.Res carries a real resolution (Res != nil && !Res.Unresolved). A keyless
+// publication or an unresolvable besluit (Res != nil && Res.Unresolved) is not a placement — its
+// resolution columns must stay NULL rather than fabricate empty-string/zero values, so callers can
+// tell "resolution attempted but failed" (unresolved=true, columns NULL) apart from "resolved"
+// (unresolved=false, columns populated).
 func publicationArgs(row PublicationRow) ([]any, error) {
 	p := row.Pub
 
@@ -143,14 +150,16 @@ func publicationArgs(row PublicationRow) ([]any, error) {
 	var identificatie, buurtCode, confidence, caveats, inNoord any
 	unresolved := false
 	if row.Res != nil {
-		identificatie = row.Res.Identificatie
-		buurtCode = row.Res.BuurtCode
-		confidence = row.Res.Confidence
-		if len(row.Res.Caveats) > 0 {
-			caveats = row.Res.Caveats
-		}
-		inNoord = row.Res.InNoord
 		unresolved = row.Res.Unresolved
+		if !row.Res.Unresolved {
+			identificatie = row.Res.Identificatie
+			buurtCode = row.Res.BuurtCode
+			confidence = row.Res.Confidence
+			if len(row.Res.Caveats) > 0 {
+				caveats = row.Res.Caveats
+			}
+			inNoord = row.Res.InNoord
+		}
 	}
 
 	return []any{
