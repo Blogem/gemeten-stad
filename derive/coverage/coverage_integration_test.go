@@ -283,16 +283,9 @@ func TestCoverageEndToEnd(t *testing.T) {
 			assert.Equal(t, before.AssignedFellingCount, after.AssignedFellingCount, "assigned felling count unchanged for %s", zaaknummer)
 			assert.Equal(t, before.CandidateCount, after.CandidateCount, "candidate count unchanged for %s", zaaknummer)
 			assert.Equal(t, before.NearestDistM, after.NearestDistM, "nearest_dist_m unchanged for %s", zaaknummer)
-			// NOTE (tester, pass 2): run_id is intentionally excluded from this equality check. It
-			// is stamped fresh from time.Now() on every coverage.Run call (coverage.go), and
-			// UpsertAuditMetrics' MERGE explicitly treats "run_id IS DISTINCT FROM" as a
-			// change-detection condition alongside the real numbers — so run_id itself WILL differ
-			// between run #1 and this re-run whenever they land in different seconds (the
-			// overwhelmingly likely case for two real Fuseki+Postgres round trips). Whether that
-			// is a genuine "audit_metrics change" the spec's "no audit_metrics change occurs"
-			// language means to forbid, or an accepted bookkeeping exception (run_id always
-			// tracks "the run that last computed this row's numbers"), is a spec-reading question
-			// flagged in this test's handoff report rather than silently resolved here.
+			// run_id is excluded from the MERGE's change-detection predicate (metrics.go), so an
+			// unchanged row keeps the run_id of whichever run last actually changed its numbers.
+			assert.Equal(t, before.RunID, after.RunID, "run_id unchanged (retained) on a no-op re-run for %s", zaaknummer)
 		}
 	})
 
