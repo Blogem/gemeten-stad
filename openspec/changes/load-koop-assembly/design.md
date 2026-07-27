@@ -89,6 +89,16 @@ against the `Z….-N…` `referentienummer` prefix and log mismatches. (Note: P1
 `identificatie`, not `code`; P13 looks up the resolved buurt's `code` from `gebieden_buurten` for the
 Noord test.) *Alternative rejected:* the spike's tree-vote hack — we have the authoritative polygons.
 
+**Scope of "in-scope" (PostGIS retention):** the harvest is deliberately Amsterdam-wide, but vertical 1
+is Noord only, so a zaak whose besluit **positively resolves outside Noord** is dropped entirely — no
+graph Intervention *and* no `koop_publications` row. The trail PostGIS retains is therefore the
+**in-scope** history: Noord-audited besluiten and their full publication trail, plus the zaken we
+cannot yet exclude — pending (no besluit resolved yet), unresolvable, and keyless publications (each
+carrying its marker for P14). This keeps the value store scoped to the audit target rather than
+mirroring the whole-city corpus. *Alternative rejected:* retain every harvested publication as history
+— it would bloat the table with city-wide permits vertical 1 never audits, against the "build lean"
+rule.
+
 ### D5 — Depend on P12b for the Place; still emit `<place> a gs:Place` for the gate
 Per the decision **not to decouple**, P13 depends on P12b: the buurt `Place` (label + `gs:within` +
 `gs:active`) is P12b's, referenced by the shared IRI. But `InterventionShape`'s `sh:class gs:Place`
