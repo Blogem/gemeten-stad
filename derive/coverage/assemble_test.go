@@ -105,9 +105,15 @@ func TestAssemble_WeakLinkMatchedPeriod(t *testing.T) {
 	assert.Regexp(t, `gs:confidence 0\.43($|[^0-9])`, turtle)
 	assert.Contains(t, turtle, "gs:granularity gs:buurt")
 
-	// Plus the weakLink caveat for the below-tau score.
-	assert.Contains(t, turtle, "gs:caveat gs:weakLink")
-	assert.Contains(t, turtle, "gs:caveat gs:countUnknown")
+	// Plus the weakLink caveat for the below-tau score. Both caveats may be
+	// rendered as a single idiomatic Turtle predicate-object list
+	// (`gs:caveat gs:countUnknown, gs:weakLink`), which expands to the same
+	// two triples as two separate `gs:caveat` statements — so assert the
+	// predicate appears and that both caveat objects are present, rather
+	// than pinning a `gs:caveat <one-value>` substring per caveat.
+	assert.Contains(t, turtle, "gs:caveat ")
+	assert.Contains(t, turtle, "gs:weakLink")
+	assert.Contains(t, turtle, "gs:countUnknown")
 
 	assert.NotContains(t, turtle, "gs:noSourceFound")
 }
