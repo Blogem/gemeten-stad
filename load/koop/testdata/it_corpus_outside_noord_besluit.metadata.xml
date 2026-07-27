@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Integration corpus fixture: metadata sidecar for gmb-2023-830001 (the out-of-Noord besluit).
-Referentienummer Z2023-A030000 -- the "A" segment matches the resolved non-Noord scope, so no
+Referentienummer Z2023-A030000 — the "A" segment matches the resolved non-Noord scope, so no
 Noord-mismatch warning is logged.
 -->
 <metadata_pakket>

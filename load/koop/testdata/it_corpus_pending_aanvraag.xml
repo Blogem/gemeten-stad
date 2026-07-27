@@ -1,6 +1,6 @@
 <!--
-Integration corpus fixture (tasks 6.3, 8.2): a zaak with only an aanvraag -- no besluit has
-landed yet -- landed as gmb-2023-820001. Per design.md D2, a zaak with no besluit has no graph
+Integration corpus fixture (tasks 6.3, 8.2): a zaak with only an aanvraag — no besluit has
+landed yet — landed as gmb-2023-820001. Per design.md D2, a zaak with no besluit has no graph
 Intervention; it is retained in the PostGIS trail (pending) until a besluit lands.
 -->
 <srw:recordData>

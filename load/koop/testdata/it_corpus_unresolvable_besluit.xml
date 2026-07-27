@@ -1,6 +1,6 @@
 <!--
 Integration corpus fixture (tasks 3.5, 6.3, 8.2): a besluit with no extractable title address and
-a point far outside every seeded buurt polygon, landed as gmb-2023-840001 -- the unresolvable
+a point far outside every seeded buurt polygon, landed as gmb-2023-840001 — the unresolvable
 bucket (location.Resolve finds no address/postcode/buurt candidate at all).
 -->
 <srw:recordData>

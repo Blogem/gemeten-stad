@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Integration corpus fixture: metadata sidecar for gmb-2023-820001 (the pending zaak's sole
-aanvraag). Referentienummer Z2023-N020000 -- the "N" prefix is deliberate (a Noord zaak still
+aanvraag). Referentienummer Z2023-N020000 — the "N" prefix is deliberate (a Noord zaak still
 pending its besluit), so this fixture also proves pending-ness is decided by kind (no
 besluit/ontwerpbesluit in the zaak), not by the Noord scope.
 -->

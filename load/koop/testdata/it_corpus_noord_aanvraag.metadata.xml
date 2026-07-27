@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Integration corpus fixture: metadata sidecar for gmb-2023-810001 (the Noord zaak's aanvraag).
-Referentienummer Z2023-N010001 ties it to it_corpus_noord_besluit.metadata.xml's besluit -- the
+Referentienummer Z2023-N010001 ties it to it_corpus_noord_besluit.metadata.xml's besluit — the
 "N" segment cross-checks the resolved Noord scope (design.md D4).
 -->
 <metadata_pakket>

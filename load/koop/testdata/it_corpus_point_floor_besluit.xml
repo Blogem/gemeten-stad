@@ -2,7 +2,7 @@
 Integration corpus fixture (tasks 3.5, 5.2, 6.3, 8.2): a Noord besluit with no extractable title
 address, only a point, landed as gmb-2023-850001. The point (120850, 486850) falls inside
 koop_geo_seed.sql's N01BUURT polygon but at no seeded address, so this resolves at the buurt
-floor (0.50, gs:unresolvedLocation) rather than the address tier -- the "point-only -> buurt
+floor (0.50, gs:unresolvedLocation) rather than the address tier — the "point-only -> buurt
 floor 0.50" scenario.
 -->
 <srw:recordData>

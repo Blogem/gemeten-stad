@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Integration corpus fixture: metadata sidecar for gmb-2023-810002 (the Noord zaak's besluit).
-Referentienummer Z2023-N010001 matches it_corpus_noord_aanvraag.metadata.xml -- the two
+Referentienummer Z2023-N010001 matches it_corpus_noord_aanvraag.metadata.xml — the two
 publications dedup into one zaak (load/koop/dedup.go), the besluit gets audited, both rows
 persist to koop_publications (task 6.3).
 -->
