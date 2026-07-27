@@ -56,16 +56,16 @@
 
 ## 6. Persist the publication trail to PostGIS
 
-- [ ] 6.1 `koop_publications` schema (`load/koop/schema.go`, `load/bomen` pattern): `gmb_id` PK,
+- [x] 6.1 `koop_publications` schema (`load/koop/schema.go`, `load/bomen` pattern): `gmb_id` PK,
       `zaaknummer`, `kind`, dates, `geometry(Point, 28992)` (the raw permit point), postcode,
       resolved buurt code, `resolved_confidence`, `caveats`, `resolved_geom geometry(Point, 28992)`
       (the resolver's precise address-tier point — NULL at postcode/buurt; kept as silver so P14's
       distance-graduated place can match on proximity), `resolved_tier` (address/postcode/buurt),
       `unresolved` marker, `raw jsonb`; schema-qualified; `--reset` drops/rebuilds.
-- [ ] 6.2 Stage + upsert keyed by `gmb_id` (`load/koop/stage.go`, `upsert.go`): every publication of
+- [x] 6.2 Stage + upsert keyed by `gmb_id` (`load/koop/stage.go`, `upsert.go`): every publication of
       an in-scope zaak is a row; unchanged re-run is a no-op; unresolvable/keyless rows carry their
       markers, no geometry faked.
-- [ ] 6.3 Integration test (isolated schema): a zaak's aanvraag+besluit are two rows; besluit row
+- [x] 6.3 Integration test (isolated schema): a zaak's aanvraag+besluit are two rows; besluit row
       holds point/postcode/dates/buurt/confidence/caveats, plus `resolved_geom`+`resolved_tier` for an
       address-resolved besluit and NULL `resolved_geom` for a buurt-tier one; unresolvable row marked,
       no geometry.
