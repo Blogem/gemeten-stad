@@ -9,17 +9,19 @@ import (
 )
 
 // TestLoadRegistryShape asserts the load registry exposes exactly the names
-// geo, bomen, and graph, in that order — the value-store loaders (geo, bomen)
-// then the SHACL-gated graph writer. It reads the unexported loadRegistry
-// directly (fine within package main) rather than executing any loader,
-// since loaders require a live database / triplestore connection.
+// geo, bomen, graph, and koop, in that order — the value-store loaders (geo,
+// bomen), then the SHACL-gated graph writer, then the koop permit assembler,
+// which runs last because it depends on the gs:Place skeleton already
+// existing in the graph. It reads the unexported loadRegistry directly (fine
+// within package main) rather than executing any loader, since loaders
+// require a live database / triplestore connection.
 func TestLoadRegistryShape(t *testing.T) {
 	var names []string
 	for _, s := range loadRegistry {
 		names = append(names, s.name)
 	}
 
-	assert.Equal(t, []string{"geo", "bomen", "graph"}, names)
+	assert.Equal(t, []string{"geo", "bomen", "graph", "koop"}, names)
 }
 
 // TestLoadCmd_UnknownSourceFailsFast exercises the load subcommand
