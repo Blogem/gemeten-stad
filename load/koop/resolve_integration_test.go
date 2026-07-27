@@ -46,6 +46,9 @@ func TestResolveBesluit_TitleAddressResolvesNoordBuurtAt090(t *testing.T) {
 	assert.Equal(t, 0.90, res.Confidence, "address tier confidence")
 	assert.True(t, res.InNoord, "N01 code must scope to Noord")
 	assert.Empty(t, res.Caveats, "an exact, valid-at-date address match carries no resolver caveat")
+	assert.Equal(t, "address", res.Tier, "address-tier resolution")
+	assert.Contains(t, res.Geom, "121000", "the address tier's precise BAG point is vbo-orehof-8 (121000, 487000)")
+	assert.Contains(t, res.Geom, "487000")
 }
 
 func TestResolveBesluit_PointOnlyResolvesBuurtFloorAt050WithUnresolvedLocationCaveat(t *testing.T) {
@@ -74,6 +77,8 @@ func TestResolveBesluit_PointOnlyResolvesBuurtFloorAt050WithUnresolvedLocationCa
 	assert.Equal(t, 0.50, res.Confidence, "buurt-floor confidence")
 	assert.True(t, res.InNoord)
 	assert.Contains(t, res.Caveats, "unresolvedLocation")
+	assert.Equal(t, "buurt", res.Tier, "buurt-floor resolution")
+	assert.Empty(t, res.Geom, "the buurt floor carries no precise resolved point")
 }
 
 func TestResolveBesluit_TitleAddressResolvesOutsideNoordAt090(t *testing.T) {

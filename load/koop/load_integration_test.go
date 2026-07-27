@@ -76,6 +76,14 @@ func TestKoopLoad_EndToEndCorpus(t *testing.T) {
 		require.NotNil(t, besluit.GeomWKT, "geom is the record's own landed point")
 		assert.Contains(t, *besluit.GeomWKT, "122000")
 		assert.Contains(t, *besluit.GeomWKT, "490000")
+		// The address tier resolves to vbo-orehof-8's own precise BAG point (121000, 487000, per
+		// koop_geo_seed.sql), kept as silver in resolved_geom — distinct from the record's own
+		// coarse landed point (122000, 490000) asserted just above.
+		require.NotNil(t, besluit.ResolvedTier)
+		assert.Equal(t, "address", *besluit.ResolvedTier)
+		require.NotNil(t, besluit.ResolvedGeomWKT, "address tier carries the precise resolved point")
+		assert.Contains(t, *besluit.ResolvedGeomWKT, "121000")
+		assert.Contains(t, *besluit.ResolvedGeomWKT, "487000")
 	})
 
 	t.Run("PostGIS: pending zaak persists its aanvraag only", func(t *testing.T) {
@@ -101,6 +109,9 @@ func TestKoopLoad_EndToEndCorpus(t *testing.T) {
 		// The record's own landed point is real data (not a fabricated resolution) and is kept.
 		require.NotNil(t, row.GeomWKT)
 		assert.Contains(t, *row.GeomWKT, "999000")
+		// Unresolvable: both resolution columns stay NULL, never fabricated.
+		assert.Nil(t, row.ResolvedGeomWKT)
+		assert.Nil(t, row.ResolvedTier)
 	})
 
 	t.Run("PostGIS: point-floor zaak resolves at the buurt floor with unresolvedLocation", func(t *testing.T) {
@@ -114,6 +125,11 @@ func TestKoopLoad_EndToEndCorpus(t *testing.T) {
 		require.NotNil(t, row.InNoord)
 		assert.True(t, *row.InNoord)
 		assert.False(t, row.Unresolved)
+		// Buurt tier: the buurt code records the place, but there is no precise BAG point to keep
+		// as silver, so resolved_geom stays NULL while resolved_tier records "buurt".
+		require.NotNil(t, row.ResolvedTier)
+		assert.Equal(t, "buurt", *row.ResolvedTier)
+		assert.Nil(t, row.ResolvedGeomWKT, "buurt tier carries no precise resolved point")
 	})
 
 	t.Run("PostGIS: total row count matches the scoping policy (out-of-Noord excluded)", func(t *testing.T) {

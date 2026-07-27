@@ -278,10 +278,16 @@ type pubRow struct {
 	ResolvedIdentificatie *string
 	ResolvedBuurtCode     *string
 	ResolvedConfidence    *float64
-	Caveats               []string
-	InNoord               *bool
-	Unresolved            bool
-	Raw                   []byte
+	// ResolvedGeomWKT is the resolver's precise address-tier BAG point (ST_AsText(resolved_geom));
+	// NULL at the postcode/buurt tier and for unresolvable/keyless rows (spec's "precise resolved
+	// point is kept as silver" scenario).
+	ResolvedGeomWKT *string
+	// ResolvedTier is resolved_tier ("address"/"postcode"/"buurt"); NULL when unresolvable/keyless.
+	ResolvedTier *string
+	Caveats      []string
+	InNoord      *bool
+	Unresolved   bool
+	Raw          []byte
 }
 
 // queryPublication reads back koop_publications' row for gmbID. found is false (with a zero
@@ -289,11 +295,13 @@ type pubRow struct {
 func queryPublication(t *testing.T, ctx context.Context, pool *pgxpool.Pool, gmbID string) (row pubRow, found bool) {
 	t.Helper()
 	const q = `SELECT gmb_id, zaaknummer, kind, available, ST_AsText(geom), postcode, huisnummer,
-		resolved_identificatie, resolved_buurt_code, resolved_confidence, caveats, in_noord, unresolved, raw
+		resolved_identificatie, resolved_buurt_code, resolved_confidence, ST_AsText(resolved_geom), resolved_tier,
+		caveats, in_noord, unresolved, raw
 		FROM koop_publications WHERE gmb_id = $1`
 	err := pool.QueryRow(ctx, q, gmbID).Scan(
 		&row.GmbID, &row.Zaaknummer, &row.Kind, &row.Available, &row.GeomWKT, &row.Postcode, &row.Huisnummer,
-		&row.ResolvedIdentificatie, &row.ResolvedBuurtCode, &row.ResolvedConfidence, &row.Caveats, &row.InNoord, &row.Unresolved, &row.Raw,
+		&row.ResolvedIdentificatie, &row.ResolvedBuurtCode, &row.ResolvedConfidence, &row.ResolvedGeomWKT, &row.ResolvedTier,
+		&row.Caveats, &row.InNoord, &row.Unresolved, &row.Raw,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
