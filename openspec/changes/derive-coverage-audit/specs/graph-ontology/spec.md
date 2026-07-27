@@ -44,3 +44,45 @@ The ontology SHALL define the new terms `gs:CoveragePeriod`, `gs:coversIntervent
   data:auditlink/Z ; gs:validFrom "…" ; gs:noSourceFound true ; gs:evidence "searched …"`
 - **THEN** it is a valid coverage period recording that a match was attempted and none found, with no
   `gs:Observation` and no `gs:linksObservation`
+
+## MODIFIED Requirements
+
+### Requirement: Intervention–Place–Claim–Observation TBox
+
+The ontology SHALL define, in `ontology/ontology.ttl` under the `gs:`
+(`http://gemetenstad.nl/ns#`) namespace, the core classes and relations of the graph model
+from `IMPLEMENTATION_PLAN.md` §3: `gs:Intervention`, `gs:Place`, `gs:Project`, `gs:Claim`,
+`gs:Observation`, `gs:AuditLink`, and `gs:Assessment`, with the object properties
+`gs:locatedAt` (Intervention → Place), `gs:partOfProject` (Intervention → Project),
+`gs:claims` (Intervention → Claim), and `gs:testedAgainst` (Claim → Observation). The besluit
+**publication date** SHALL be carried on the `gs:Intervention` as `dct:available` (`xsd:date`),
+reusing Dublin Core Terms (reuse-first: no minted `gs:` term where a standard vocabulary fits).
+**Quantitative and geometric values** (tree counts, polygons, replant fractions, coordinates) SHALL
+NOT be modeled as graph literals — they live in the Postgres/PostGIS value store. The graph carries
+identity, relations, provenance, confidence, and **descriptive-metadata literals only** — dates via
+`dct:`, and the `gs:confidence`/`gs:evidence` and `gs:validFrom`/`gs:validTo` structural literals.
+
+#### Scenario: Ontology loads without error
+
+- **WHEN** `ontology/ontology.ttl` is parsed and loaded into Fuseki
+- **THEN** it loads with no syntax or consistency error
+- **AND** all seven classes and the four object properties above are present with `rdfs:label`
+  and `rdfs:comment`
+
+#### Scenario: partOfProject is optional and sparse
+
+- **WHEN** an `Intervention` with no `gs:partOfProject` edge is validated against the shapes
+- **THEN** it conforms, because `partOfProject` is a non-required relation (present only for
+  renewal projects)
+
+#### Scenario: The Intervention carries its publication date as a descriptive-metadata literal
+
+- **WHEN** a besluit `gs:Intervention` is inspected
+- **THEN** it carries a `dct:available` `xsd:date` publication-date literal (Dublin Core Terms, not a
+  minted `gs:` term), and that date is not valid-time-stamped
+
+#### Scenario: Quantitative values are not in the graph
+
+- **WHEN** the ontology is inspected for tree counts, geometries, or replant fractions
+- **THEN** no class or property models those as RDF literals; they are represented only by
+  reference/identity that resolves to the value store

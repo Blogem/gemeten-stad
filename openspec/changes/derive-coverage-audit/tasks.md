@@ -9,9 +9,16 @@
 - [ ] 1.3 Extend `ontology/embed_test.go`: ontology + shapes parse/load; the new terms + both shapes present.
 - [ ] 1.4 Integration test (isolated Fuseki): a well-formed anchor + matched period and a well-formed no-source period conform; an anchor without `gs:coversIntervention`, a neither-branch period, an out-of-range confidence, and a period missing `gs:versionOf`/`gs:evidence` are each rejected.
 
+## 1b. Publication date in the graph (`dct:available`) — do before §2 (derive reads it)
+
+- [ ] 1b.1 In `load/koop/graph.go`: emit `dct:available "YYYY-MM-DD"^^xsd:date` on each besluit `gs:Intervention` (from `Publication.Available`), reusing Dublin Core (`dct:` prefix); no `gs:validFrom`/`gs:validTo`. Update the koop graph unit test (`load/koop/graph_test.go`) to assert the triple + no valid-time.
+- [ ] 1b.2 In `ontology/shapes.ttl`: extend the Intervention structural shape to gate `dct:available` (`sh:path dct:available ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:date ; sh:message …`). Add `dct:available` to the `ontology/embed_test.go` shapes markers.
+- [ ] 1b.3 In `docs/RDF_MODELING.md` §1: scope the "no literals" rule to *quantitative + geometry* values, and record that descriptive-metadata dates (via `dct:`) are legitimate graph literals — with the Intervention-vs-Observation teachable line (per design D10).
+- [ ] 1b.4 Integration test (isolated Fuseki): an Intervention with a well-formed `dct:available` conforms; one missing it, and one with a non-`xsd:date` value, are each rejected.
+
 ## 2. Candidate generation over the registry
 
-- [ ] 2.1 Read each besluit `Intervention`'s buurt code (`gs:locatedAt` → `data:place/<code>`) and publication date; read `resolved_geom`/`resolved_tier` from `koop_publications`.
+- [ ] 2.1 Enumerate besluit `Intervention`s from the **graph** (SPARQL), reading `dct:available` (publication date) + `gs:locatedAt`; read the buurt code + `resolved_geom`/`resolved_tier` as **values** from `koop_publications`, joined by zaaknummer.
 - [ ] 2.2 Query `kapenherplant` for **individual** felled rows in that buurt with `kapmaatregelDatumUitgevoerd` in `[publication, +3yr]` (id, boomId, felling date, `resolvedGeom`). No `datumVergunningVerleend` grouping.
 - [ ] 2.3 Per candidate felling, compute metric distance `ST_Distance(ST_Transform(k."resolvedGeom",28992), $point)` (registry 4326 → 28992); point-less permits skip it.
 - [ ] 2.4 Unit tests: windowing (before-publication excluded) + SRID-aligned distance (known-distance pair).

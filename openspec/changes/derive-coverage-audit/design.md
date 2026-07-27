@@ -172,6 +172,30 @@ The row holds the current verdict's numbers; prior outcomes are in the graph per
 Replace the `derive` no-op stub with `deriveRegistry []deriveSource`, first entry
 `{name:"coverage", fn: runCoverageDerive}`, resolved like `loadRegistry`.
 
+### D10 — The besluit publication date lives in the graph as `dct:available`
+
+The derive windows fellings against the permit's publication date. P13 landed that date only in
+`koop_publications.available`, not in the graph. Rather than reading it from PostGIS (the leanness
+shortcut), we put it **in the graph** on the `gs:Intervention` as `dct:available "…"^^xsd:date`,
+because that is what best practice dictates: a government act's publication date is **descriptive
+metadata of a first-class resource**, which the standards ecosystem (Dublin Core, DCAT, PROV) models
+as an RDF literal — not a quantitative value to push into a side store. `docs/RDF_MODELING.md` §1's
+"no literals" rule is scoped to its real intent (numbers + geometry); descriptive dates via `dct:`
+join `gs:confidence`/`gs:evidence` and `gs:validFrom`/`gs:validTo` as legitimate graph literals.
+Reuse-first is satisfied (`dct:` already declared; no minted term). The teachable line: the
+**Intervention** (first-class resource) carries its descriptive dates in the graph; the individual
+registry **fellings** are bulk observation values behind an identity-only `Observation` node, so
+their per-tree dates/counts/geometry stay in PostGIS.
+
+Consequences: (1) `load/koop/graph.go` emits `dct:available` (100% populated for audited besluiten,
+verified against the dev corpus — so the shape can require it); (2) `InterventionShape` gates it
+(`sh:minCount 1`, `sh:maxCount 1`, `sh:datatype xsd:date`); (3) the derive **enumerates Interventions
+from the graph** (SPARQL, reading `dct:available` + `gs:locatedAt`) and joins PostGIS only for the
+buurt code + resolved point/tier values. This also settles Open Question "keyless besluiten" (D6/6.3):
+the audit iterates exactly the Interventions the graph holds, and P13 emits none for keyless/unresolved
+publications. _Alternative rejected (read the date from PostGIS):_ leaves the graph's descriptive
+metadata incomplete and splits the Intervention's facts across two stores against best practice.
+
 ## Risks / Trade-offs
 
 - **[Hard dep on `state-node-versioning`]** The period nodes cannot version without the node-form
@@ -201,6 +225,6 @@ production names, and require `state-node-versioning` merged.
 - **Proximity radii + per-tier place values (D5):** buurt floor fixed at 0.50; the address/postcode
   bands + values are calibrated at implementation against the spike's labeled cases (golden fixtures
   pin them). Widen with a hand-labeled Noord sample if the spike cases are too few.
-- **Keyless besluiten:** P13 marks a publication with no sidecar as keyless (zaaknummer `""`); the
-  audit iterates the Interventions the graph holds — confirm keyless besluiten either have no
-  Intervention or a synthesized key at apply time.
+- **Keyless besluiten:** P13 marks a publication with no sidecar as keyless (zaaknummer `""`).
+  Resolved by D10: the audit enumerates exactly the Interventions the graph holds, and P13 emits none
+  for keyless/unresolved publications (verify at apply time — task 6.3).

@@ -2,11 +2,15 @@
 
 ### Requirement: Generate candidate permit↔felling pairs
 
-The system SHALL, for each besluit `gs:Intervention` in the graph, generate candidate registry
-matches from the value store: **individual** felled `kapenherplant` rows in the permit's resolved
-buurt whose felling date (`kapmaatregelDatumUitgevoerd`) falls within `[publication, +3yr]`. The
-buurt is read from the Intervention's `gs:locatedAt` `Place` code (equal to the registry
-`gbdBuurtId`). The **individual felling** is the matching unit — the system SHALL NOT group fellings
+The system SHALL enumerate each besluit `gs:Intervention` from the **graph** (by SPARQL — the graph
+is the source of truth for which permits exist and when they were published) and generate candidate
+registry matches: **individual** felled `kapenherplant` rows in the permit's resolved buurt whose
+felling date (`kapmaatregelDatumUitgevoerd`) falls within `[publication, +3yr]`. The **publication
+date** SHALL be read from the Intervention's `dct:available` literal in the graph. The buurt code
+(equal to the registry `gbdBuurtId`) and the resolved point/tier SHALL be read as **values** from
+`koop_publications` (PostGIS), joined by zaaknummer — the clean hybrid-store split: meaning and dates
+from the graph, quantitative/geometric values from PostGIS. The **individual felling** is the
+matching unit — the system SHALL NOT group fellings
 by the batch date `datumVergunningVerleend` (unusable per Spike A). Candidate generation SHALL remain
 buurt+time-scoped for recall (a slightly-imprecise point MUST NOT drop a real felling). When the
 permit carries a resolved point (`koop_publications.resolved_geom`), the system SHALL compute, per
@@ -38,6 +42,12 @@ buurt filter.
 - **WHEN** the time gap is evaluated
 - **THEN** the felling end uses `kapmaatregelDatumUitgevoerd` (100% populated, per-tree) and the
   permit end uses the besluit publication date; no batch-assigned permit/registry grant date is used
+
+#### Scenario: The publication date comes from the graph
+
+- **WHEN** a permit's publication date is needed to window candidates
+- **THEN** it is read from the Intervention's `dct:available` literal in the graph (the graph is the
+  source of truth for it), not from a PostGIS column
 
 ### Requirement: Assign each felling to at most one permit
 

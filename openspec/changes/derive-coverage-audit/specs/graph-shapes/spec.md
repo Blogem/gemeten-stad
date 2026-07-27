@@ -61,3 +61,32 @@ derived coverage passed the shapes vacuously.
 
 - **WHEN** a `gs:CoveragePeriod` lacks `gs:versionOf` (or lacks `gs:evidence`)
 - **THEN** the shapes report it as non-conforming
+
+## MODIFIED Requirements
+
+### Requirement: Structural shapes in core SHACL
+
+`ontology/shapes.ttl` SHALL define SHACL `NodeShape`s that enforce the structural invariants of
+the TBox using core SHACL (`sh:property`, `sh:path`, `sh:minCount`, `sh:maxCount`, `sh:class`,
+`sh:datatype`). At minimum, a `gs:Intervention` SHALL have at least one `gs:locatedAt` edge to a node
+of class `gs:Place`, and SHALL carry exactly one `dct:available` publication date typed `xsd:date`
+(`sh:minCount 1`, `sh:maxCount 1`, `sh:datatype xsd:date`). Each shape's constraints SHALL carry an
+`sh:message`.
+
+#### Scenario: Well-formed instance conforms
+
+- **WHEN** a well-formed instance (an `Intervention` with a `gs:Place` `locatedAt` edge carrying a
+  confidence annotation and a `dct:available` `xsd:date`) is validated against `shapes.ttl`
+- **THEN** the report has `sh:conforms true`
+
+#### Scenario: Missing structure is rejected
+
+- **WHEN** an `Intervention` with no `gs:locatedAt` edge is validated
+- **THEN** the report has `sh:conforms false` and names the offending node with the shape's
+  `sh:message`
+
+#### Scenario: A missing or non-date publication date is rejected
+
+- **WHEN** an `Intervention` has no `dct:available`, or a `dct:available` value that is not an
+  `xsd:date`
+- **THEN** the report has `sh:conforms false` with the shape's `sh:message`

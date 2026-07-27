@@ -67,8 +67,15 @@ way to attach or gate it. This change builds the derivation and models the audit
 
 - `graph-ontology`: recast `gs:AuditLink` as the coverage anchor; add `gs:CoveragePeriod`,
   `gs:coversIntervention`, `gs:linksObservation`, `gs:granularity`, `gs:noSourceFound` (using
-  `gs:versionOf` from `state-node-versioning`).
-- `graph-shapes`: add core-SHACL `gs:AuditLinkShape` (anchor) + `gs:CoveragePeriodShape` (period).
+  `gs:versionOf` from `state-node-versioning`). Also carry the besluit **publication date** on the
+  `gs:Intervention` as `dct:available` (`xsd:date`, reused Dublin Core) and scope the "no literals"
+  rule to *quantitative/geometry* values (dates are descriptive-metadata literals — see
+  `docs/RDF_MODELING.md`).
+- `graph-shapes`: add core-SHACL `gs:AuditLinkShape` (anchor) + `gs:CoveragePeriodShape` (period);
+  extend the Intervention structural shape to gate `dct:available` (`sh:datatype xsd:date`, exactly
+  one).
+- `koop-load`: emit the besluit publication date as `dct:available` on the Intervention (the graph
+  becomes the source of truth for it; the derive windows fellings against it).
 
 ## Impact
 
