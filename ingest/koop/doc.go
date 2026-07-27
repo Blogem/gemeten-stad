@@ -8,4 +8,10 @@
 // artifacts are landed as-is (no field extraction at harvest — that is the load stage's job); the
 // sidecar fetch is gated on need (skipped when already landed and the record is unchanged) and a
 // missing sidecar is non-fatal.
+//
+// The sidecar host throttles aggressively under load, so fetches are paced
+// (GS_KOOP_METADATA_RATE_MS, default 200ms) and retried with capped backoff; a circuit breaker
+// aborts the harvest after GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS (default 2) consecutive fetches
+// exhaust their retries — the signature of an active block. The harvest is resumable: landed
+// sidecars are kept and the cursor is not advanced on an abort, so re-running picks up the rest.
 package koop

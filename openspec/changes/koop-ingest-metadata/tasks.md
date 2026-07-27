@@ -8,9 +8,13 @@
       sidecar fetches.
 - [x] 1.3 Make a missing/failed sidecar non-fatal: land the SRU record regardless and record the
       absence (provenance note or empty-marker), never dropping the publication.
-- [x] 1.4 Rate-limit + retry the sidecar fetch (D5): pace at `metadataRateInterval`, retry transient
-      transport errors with capped backoff (`metadataMaxAttempts`), and distinguish a genuine 404
-      (`shared.ErrNotFound`, skip) from a transient reset (retry; leave unlanded for a later run).
+- [x] 1.4 Rate-limit + retry the sidecar fetch (D5): pace at `metadataRateInterval()` (env
+      `GS_KOOP_METADATA_RATE_MS`, default 200ms), retry transient transport errors with capped
+      backoff (`metadataMaxAttempts`), and distinguish a genuine 404 (`shared.ErrNotFound`, skip)
+      from a transient reset (retry; leave unlanded for a later run).
+- [x] 1.5 Circuit breaker (D5): abort the harvest after `GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS`
+      (default 2) consecutive exhausted fetches — resumable (landed sidecars kept, cursor not
+      advanced on abort).
 
 ## 2. Tests
 

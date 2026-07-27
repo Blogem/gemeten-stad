@@ -145,18 +145,65 @@ func TestLandMetadata_RetriesTransientErrorThenLands(t *testing.T) {
 	assert.Equal(t, string(fixture), string(got), "a sidecar that succeeds after retries must be landed")
 }
 
-func TestLandMetadata_PersistentTransientErrorIsNonFatalAndUnlanded(t *testing.T) {
+func TestLandMetadata_PersistentTransientErrorSignalsExhaustion(t *testing.T) {
 	store := shared.NewRawStore(t.TempDir())
 	const id = "gmb-2022-291126"
 
-	// Every attempt fails transiently: non-fatal (no error), but the sidecar is NOT landed — so a
-	// later run will retry it (it stays unlanded, unlike a genuine 404 which is also unlanded but
-	// simply has no sidecar to fetch).
-	require.NoError(t, landMetadata(context.Background(), store, flakyGetter(1000, nil), id, time.Now(), true))
+	// Every attempt fails transiently: the whole backoff chain never recovers, so landMetadata
+	// signals errMetadataExhausted (for the harvest circuit breaker) and leaves the sidecar
+	// UNLANDED — so a later run retries it (unlike a genuine 404, which is a definitive nil skip).
+	err := landMetadata(context.Background(), store, flakyGetter(1000, nil), id, time.Now(), true)
+	require.ErrorIs(t, err, errMetadataExhausted)
 
 	landed, err := store.Landed(metadataArtifactName(id))
 	require.NoError(t, err)
 	assert.False(t, landed, "a sidecar that never succeeds is left unlanded, not half-written")
+}
+
+// -- Circuit breaker: abort the harvest when the host is clearly blocking ------
+
+func TestMetadataMaxConsecutiveFails(t *testing.T) {
+	t.Setenv("GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS", "")
+	assert.Equal(t, 2, metadataMaxConsecutiveFails(), "default threshold is 2")
+	t.Setenv("GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS", "5")
+	assert.Equal(t, 5, metadataMaxConsecutiveFails(), "override honoured")
+	t.Setenv("GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS", "0")
+	assert.Equal(t, 0, metadataMaxConsecutiveFails(), "0 disables the breaker")
+	t.Setenv("GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS", "bad")
+	assert.Equal(t, 2, metadataMaxConsecutiveFails(), "invalid falls back to default")
+}
+
+func TestIngest_CircuitBreakerAbortsWhenHostBlocks(t *testing.T) {
+	// SRU pages return records fine; every metadata fetch fails transiently (a block). The harvest
+	// must abort once metadataMaxConsecutiveFails (default 2) chains exhaust in a row, rather than
+	// grinding through the whole corpus.
+	sru := readFixture(t, "paging_page1.xml") // multiple records on one page
+	_, recs, err := shared.ParseSRUResponse(sru)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(recs), 2, "fixture must carry >=2 records to trip the breaker")
+
+	store := shared.NewRawStore(t.TempDir())
+	getter := func(_ context.Context, rawURL string) (io.ReadCloser, error) {
+		if bytes.HasSuffix([]byte(rawURL), []byte("/metadata.xml")) {
+			return nil, fmt.Errorf("get %s: EOF", rawURL) // always a transient reset
+		}
+		return io.NopCloser(bytes.NewReader(sru)), nil
+	}
+
+	err = Ingest(context.Background(), store, getter)
+	require.Error(t, err, "the harvest must abort when the metadata host keeps blocking")
+	assert.Contains(t, err.Error(), "aborting harvest", "the error should explain the circuit breaker tripped")
+
+	// Cursor must NOT have advanced (so a resume re-queries), and no sidecar was written.
+	assert.Equal(t, 0, len(mustGlob(t, store.BasePath, "koop/*.metadata.xml")), "no sidecar landed under a block")
+}
+
+// mustGlob returns matches of pattern under base (relative), for asserting landed-file sets.
+func mustGlob(t *testing.T, base, pattern string) []string {
+	t.Helper()
+	m, err := filepath.Glob(filepath.Join(base, pattern))
+	require.NoError(t, err)
+	return m
 }
 
 // -- Idempotent / gated on need (task 2.2) ------------------------------------

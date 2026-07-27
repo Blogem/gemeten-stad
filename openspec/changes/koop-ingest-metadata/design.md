@@ -78,6 +78,14 @@ run the big backfill gentler (e.g. 500–1000 ms) without a rebuild; incremental
 default. Validated end-to-end: a paced 45-record run landed 45/45 sidecars (all carrying a
 `referentienummer`), with one transient reset silently recovered by the retry and no block triggered.
 
+**Circuit breaker (safe-abort).** A whole backoff chain failing (all attempts exhausted) returns
+`errMetadataExhausted`; the harvest loop counts **consecutive** such failures (any success or
+definitive 404 resets the count) and aborts once they reach `GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS`
+(default 2) — the signature of an active block. Aborting beats grinding through thousands of failing
+fetches (wasteful, and hammers a host that's already refusing us). It is **cleanly resumable**:
+landed sidecars are already persisted and the cursor is not advanced on the abort error path, so a
+later re-run skips landed sidecars and retries the rest. Set the threshold to 0 to disable the guard.
+
 ## Risks / Trade-offs
 
 - **[Doubled fetch volume on backfill]** ~10.5k extra small requests on a clean volume. → Reuse the

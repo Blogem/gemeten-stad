@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -52,6 +53,8 @@ func Ingest(ctx context.Context, store *shared.RawStore, httpGet shared.HTTPGetF
 	fetchedAt := time.Now().UTC()
 
 	maxAvailable := hwm
+	breakerThreshold := metadataMaxConsecutiveFails()
+	consecutiveExhausted := 0
 	numberOfRecords, err := shared.FetchSRUAll(ctx, httpGet, SRUEndpoint, query, func(rec shared.SRURecord) error {
 		// rec.Available is an external field: only let it advance the persisted high-water
 		// mark once it's confirmed to parse as a valid "YYYY-MM-DD" date. A malformed
@@ -69,7 +72,24 @@ func Ingest(ctx context.Context, store *shared.RawStore, httpGet shared.HTTPGetF
 		// landed) source of the zaaknummer (OVERHEIDop.referentienummer), which is absent from the
 		// SRU record. Fetched only when the record was (re)landed or the sidecar is not yet present,
 		// so an unchanged re-run does no redundant sidecar fetches; a missing sidecar is non-fatal.
-		return landMetadata(ctx, store, httpGet, rec.Identifier, fetchedAt, changed)
+		metaErr := landMetadata(ctx, store, httpGet, rec.Identifier, fetchedAt, changed)
+		if metaErr != nil {
+			if !errors.Is(metaErr, errMetadataExhausted) {
+				return metaErr // a real (store/IO) failure — propagate
+			}
+			// Circuit breaker: a sidecar whose whole backoff chain failed. Count CONSECUTIVE such
+			// failures (any success or definitive 404 resets the count) — this many in a row means
+			// the host is almost certainly blocking us, so abort rather than hammer on. Landed
+			// sidecars are already persisted and the cursor is not advanced on this error path, so
+			// re-running resumes (already-landed sidecars are skipped).
+			consecutiveExhausted++
+			if breakerThreshold > 0 && consecutiveExhausted >= breakerThreshold {
+				return fmt.Errorf("koop: aborting harvest after %d metadata fetches in a row exhausted all retries — the host is likely blocking. Landed sidecars are kept; wait, then re-run to resume (or set GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS=0 to disable this guard): %w", consecutiveExhausted, metaErr)
+			}
+			return nil
+		}
+		consecutiveExhausted = 0
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("koop: harvest: %w", err)

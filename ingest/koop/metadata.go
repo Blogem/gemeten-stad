@@ -34,6 +34,29 @@ const (
 // metadataSleep is a seam over time.Sleep so tests can drive the pacing/backoff without waiting.
 var metadataSleep = func(d time.Duration) { time.Sleep(d) }
 
+// errMetadataExhausted signals that a sidecar fetch failed transiently on every attempt (its whole
+// backoff chain never recovered). It is NOT fatal on its own — landMetadata leaves the sidecar
+// unlanded so a later run retries it — but the harvest loop counts CONSECUTIVE occurrences as a
+// block signal and aborts (circuit breaker, see Ingest / metadataMaxConsecutiveFails).
+var errMetadataExhausted = errors.New("koop: metadata sidecar unavailable after all retries")
+
+// defaultMetadataMaxConsecutiveFails is the circuit-breaker threshold: this many sidecar fetches in
+// a row exhausting their retries (with no success or definitive 404 in between) means the host is
+// almost certainly blocking us, so the harvest aborts rather than hammering on.
+const defaultMetadataMaxConsecutiveFails = 2
+
+// metadataMaxConsecutiveFails resolves the circuit-breaker threshold, overridable via
+// GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS. 0 disables the breaker (grind through, leaving failures
+// unlanded for a later run); a missing/invalid/negative value falls back to the default (2).
+func metadataMaxConsecutiveFails() int {
+	if v := os.Getenv("GS_KOOP_METADATA_MAX_CONSECUTIVE_FAILS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return defaultMetadataMaxConsecutiveFails
+}
+
 // metadataRateInterval is the pacing delay between successive sidecar fetches. It defaults to 200ms
 // but is overridable via GS_KOOP_METADATA_RATE_MS (milliseconds) so a large sustained backfill can
 // be run gentler against the aggressively-throttling host without a rebuild (design D5). A missing,
@@ -115,11 +138,12 @@ func fetchMetadata(ctx context.Context, httpGet shared.HTTPGetFunc, url string) 
 // (recordChanged) or the sidecar is not yet present — so an unchanged re-run performs no redundant
 // sidecar fetch, while a sidecar that failed to land on an earlier run is retried on the next.
 //
-// Fetches are paced by metadataRateInterval and retried on transient errors (fetchMetadata). None
-// of the outcomes is fatal to the harvest (D3): a definitive 404 is logged and skipped; a sidecar
-// still failing after every retry is logged and left unlanded (so the next run retries it) rather
-// than aborting the ~10k-publication backfill. An invalid identifier is skipped defensively (it
-// never reaches URL/path construction) — landRecord has already logged it.
+// Fetches are paced by metadataRateInterval() and retried on transient errors (fetchMetadata). A
+// definitive 404 is logged and skipped (returns nil); a whole backoff chain failing transiently is
+// logged, left unlanded (so the next run retries it), and returned as errMetadataExhausted so the
+// harvest loop's circuit breaker can count consecutive occurrences (a block signal). An invalid
+// identifier is skipped defensively (it never reaches URL/path construction) — landRecord has
+// already logged it. Store/IO failures are returned as ordinary (fatal) errors.
 func landMetadata(ctx context.Context, store *shared.RawStore, httpGet shared.HTTPGetFunc, id string, fetchedAt time.Time, recordChanged bool) error {
 	if !validIdentifier.MatchString(id) {
 		return nil
@@ -140,10 +164,10 @@ func landMetadata(ctx context.Context, store *shared.RawStore, httpGet shared.HT
 	url := metadataURL(id)
 	body, found, err := fetchMetadata(ctx, httpGet, url)
 	if err != nil {
-		// Transient failure after every retry: non-fatal — the sidecar stays unlanded, so a later
-		// run retries it (the SRU record is already landed regardless).
+		// Whole backoff chain failed transiently: leave the sidecar unlanded (a later run retries
+		// it) and signal errMetadataExhausted so the harvest loop's circuit breaker can count it.
 		slog.Warn("koop: metadata sidecar unavailable after retries; will retry on a later run", "id", id, "error", err)
-		return nil
+		return errMetadataExhausted
 	}
 	if !found {
 		// Definitive 404: this publication has no metadata sidecar (D3). Skip, don't fail.
