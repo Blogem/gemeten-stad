@@ -18,9 +18,9 @@
 
 ## 2. Candidate generation over the registry
 
-- [ ] 2.1 Enumerate besluit `Intervention`s from the **graph** (SPARQL), reading `dct:available` (publication date) + `gs:locatedAt`; read the buurt code + `resolved_geom`/`resolved_tier` as **values** from `koop_publications`, joined by zaaknummer.
-- [ ] 2.2 Query `kapenherplant` for **individual** felled rows in that buurt with `kapmaatregelDatumUitgevoerd` in `[publication, +3yr]` (id, boomId, felling date, `resolvedGeom`). No `datumVergunningVerleend` grouping.
-- [ ] 2.3 Per candidate felling, compute metric distance `ST_Distance(ST_Transform(k."resolvedGeom",28992), $point)` (registry 4326 → 28992); point-less permits skip it.
+- [x] 2.1 Enumerate besluit `Intervention`s from the **graph** (SPARQL), reading `dct:available` (publication date) + `gs:locatedAt`; read the buurt code + `resolved_geom`/`resolved_tier` as **values** from `koop_publications`, joined by zaaknummer.
+- [x] 2.2 Query `kapenherplant` for **individual** felled rows in that buurt with `kapmaatregelDatumUitgevoerd` in `[publication, +3yr]` (id, boomId, felling date, `resolvedGeom`). No `datumVergunningVerleend` grouping.
+- [x] 2.3 Per candidate felling, compute metric distance `ST_Distance(ST_Transform(k."resolvedGeom",28992), $point)` (registry 4326 → 28992); point-less permits skip it.
 - [ ] 2.4 Unit tests: windowing (before-publication excluded) + SRID-aligned distance (known-distance pair).
 
 ## 3. Scoring + exclusive felling assignment
@@ -32,10 +32,10 @@
 ## 4. Anchor + period assembly + PostGIS
 
 - [x] 4.1 Compute the outcome **content-key** (hash of state/Observation/rounded-confidence/granularity/sorted-caveats, excluding timestamps); unit-test it (same outcome → same key; distinct outcomes → distinct keys).
-- [ ] 4.2 Emit the per-permit anchor `data:auditlink/<zaaknummer> a gs:AuditLink ; gs:coversIntervention <intervention>` (write-once).
-- [ ] 4.3 Matched path: mint `data:observation/<zaaknummer> a gs:Observation`; assemble `data:auditlink/<zaaknummer>/<key> a gs:CoveragePeriod ; gs:versionOf <anchor> ; gs:validFrom <run-time> ; gs:linksObservation <obs> ; gs:confidence …; gs:granularity <tier> ; [gs:caveat gs:weakLink|countUnknown] ; gs:evidence …; prov:wasDerivedFrom …`.
-- [ ] 4.4 No-source path: assemble the period with `gs:noSourceFound true` + `gs:evidence` (searched buurt+window); no Observation.
-- [ ] 4.5 Create the slim `audit_metrics` PostGIS table (schema-qualified, staging + upsert + `--reset` drop): `zaaknummer`, `matched`, `assigned_felling_ids`, `assigned_felling_count`, `candidate_count`, `nearest_dist_m`, `run_id`. No confidence/granularity/caveat/geometry columns.
+- [x] 4.2 Emit the per-permit anchor `data:auditlink/<zaaknummer> a gs:AuditLink ; gs:coversIntervention <intervention>` (write-once).
+- [x] 4.3 Matched path: mint `data:observation/<zaaknummer> a gs:Observation`; assemble `data:auditlink/<zaaknummer>/<key> a gs:CoveragePeriod ; gs:versionOf <anchor> ; gs:validFrom <run-time> ; gs:linksObservation <obs> ; gs:confidence …; gs:granularity <tier> ; [gs:caveat gs:weakLink|countUnknown] ; gs:evidence …; prov:wasDerivedFrom …`.
+- [x] 4.4 No-source path: assemble the period with `gs:noSourceFound true` + `gs:evidence` (searched buurt+window); no Observation.
+- [x] 4.5 Create the slim `audit_metrics` PostGIS table (schema-qualified, staging + upsert + `--reset` drop): `zaaknummer`, `matched`, `assigned_felling_ids`, `assigned_felling_count`, `candidate_count`, `nearest_dist_m`, `run_id`. No confidence/granularity/caveat/geometry columns.
 - [ ] 4.6 Unit tests on the assembler (anchor + matched/weak/no-source periods) and the `audit_metrics` upsert.
 
 ## 5. Wiring + idempotency
