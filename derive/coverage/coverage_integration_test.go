@@ -43,10 +43,16 @@ import (
 
 // -- Seed identifiers -----------------------------------------------------------------------------
 //
-// Every zaaknummer/felling-id/buurt-code below is a plain, caller-chosen string local to this test
-// (no join against real BAG/gebieden data, unlike load/koop's own harness) — coverage.go only ever
-// compares koop_publications.resolved_buurt_code against kapenherplant."gbdBuurtId" by string
-// equality, so any distinct strings suffice to scope each scenario from the others.
+// Every zaaknummer/felling-id/buurt-code/buurt-identificatie below is a plain, caller-chosen string
+// local to this test (no join against real BAG/gebieden data, unlike load/koop's own harness) —
+// candidates.go joins koop_publications.resolved_identificatie against kapenherplant."gbdBuurtId" by
+// string equality (the GBD buurt identificatie system), so any distinct strings suffice to scope each
+// scenario from the others. The buurt* constants below are the short, human-readable buurtcode
+// (koop_publications.resolved_buurt_code — evidence text only, NOT the join key); the gbd* constants
+// are the 14-digit-style GBD buurt identificatie (koop_publications.resolved_identificatie ==
+// kapenherplant."gbdBuurtId" — the actual join key). The two sets are deliberately DISTINCT strings
+// per scenario: if candidate generation ever regresses to joining on resolved_buurt_code again, every
+// scenario below would see zero candidate fellings and the suite would fail loudly.
 
 const (
 	buurtStrong   = "BUURT-STRONG"
@@ -54,6 +60,12 @@ const (
 	buurtContest  = "BUURT-CONTEST"
 	buurtMulti    = "BUURT-MULTI"
 	buurtNoSource = "BUURT-NOSOURCE"
+
+	gbdStrong   = "03630000000001"
+	gbdContend  = "03630000000002"
+	gbdContest  = "03630000000003"
+	gbdMulti    = "03630000000004"
+	gbdNoSource = "03630000000005"
 
 	zStrong   = "Z-STRONG-001"
 	zWeak1    = "Z-CONTEND-1-WEAK"
@@ -344,32 +356,36 @@ func fellingPointFromRDOffset(px, py, dx, dy int) string {
 
 // seedPublications inserts one koop_publications row per permit in the engineered corpus (see the
 // package doc comment above for the scoring arithmetic each seed value is chosen to reach).
+// resolved_identificatie carries the gbd* join key (matching the corresponding felling's
+// "gbdBuurtId"); resolved_buurt_code carries the DISTINCT, human-readable buurt* label — the two
+// never coincide, guarding against the join regressing to resolved_buurt_code (see the seed
+// identifiers doc comment above).
 func seedPublications(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 
 	rows := []string{
 		// Z-STRONG-001: address-tier, resolved point at (121500,487400).
-		fmt.Sprintf(`('%s','2022-01-01','%s',%s,'address',false)`,
-			zStrong, buurtStrong, rdPoint(121500, 487400)),
+		fmt.Sprintf(`('%s','2022-01-01','%s','%s',%s,'address',false)`,
+			zStrong, buurtStrong, gbdStrong, rdPoint(121500, 487400)),
 		// Z-CONTEND-1-WEAK / Z-CONTEND-2-OTHER: buurt-tier, no resolved point, IDENTICAL
 		// publication date (2021-01-01) so their pair-scores tie exactly on the time bucket too.
-		fmt.Sprintf(`('%s','2021-01-01','%s',NULL,'buurt',false)`, zWeak1, buurtContend),
-		fmt.Sprintf(`('%s','2021-01-01','%s',NULL,'buurt',false)`, zWeak2, buurtContend),
+		fmt.Sprintf(`('%s','2021-01-01','%s','%s',NULL,'buurt',false)`, zWeak1, buurtContend, gbdContend),
+		fmt.Sprintf(`('%s','2021-01-01','%s','%s',NULL,'buurt',false)`, zWeak2, buurtContend, gbdContend),
 		// Z-CONTEST-A: address-tier, resolved point at (135000,480500).
-		fmt.Sprintf(`('%s','2022-01-01','%s',%s,'address',false)`,
-			zContestA, buurtContest, rdPoint(135000, 480500)),
+		fmt.Sprintf(`('%s','2022-01-01','%s','%s',%s,'address',false)`,
+			zContestA, buurtContest, gbdContest, rdPoint(135000, 480500)),
 		// Z-CONTEST-B: buurt-tier, no resolved point, same buurt+window as A.
-		fmt.Sprintf(`('%s','2022-01-01','%s',NULL,'buurt',false)`, zContestB, buurtContest),
+		fmt.Sprintf(`('%s','2022-01-01','%s','%s',NULL,'buurt',false)`, zContestB, buurtContest, gbdContest),
 		// Z-MULTI-001: address-tier, resolved point at (150000,490000).
-		fmt.Sprintf(`('%s','2022-01-01','%s',%s,'address',false)`,
-			zMulti, buurtMulti, rdPoint(150000, 490000)),
+		fmt.Sprintf(`('%s','2022-01-01','%s','%s',%s,'address',false)`,
+			zMulti, buurtMulti, gbdMulti, rdPoint(150000, 490000)),
 		// Z-NOSOURCE-001: address-tier, resolved point at (108000,500000); buurt starts with zero
-		// kapenherplant rows (seedFellings inserts none for buurtNoSource up front).
-		fmt.Sprintf(`('%s','2022-01-01','%s',%s,'address',false)`,
-			zNoSource, buurtNoSource, rdPoint(108000, 500000)),
+		// kapenherplant rows (seedFellings inserts none for gbdNoSource up front).
+		fmt.Sprintf(`('%s','2022-01-01','%s','%s',%s,'address',false)`,
+			zNoSource, buurtNoSource, gbdNoSource, rdPoint(108000, 500000)),
 	}
 
-	stmt := "INSERT INTO koop_publications (zaaknummer, available, resolved_buurt_code, resolved_geom, resolved_tier, unresolved) VALUES\n" +
+	stmt := "INSERT INTO koop_publications (zaaknummer, available, resolved_buurt_code, resolved_identificatie, resolved_geom, resolved_tier, unresolved) VALUES\n" +
 		joinRows(rows) + ";"
 	_, err := pool.Exec(ctx, stmt)
 	require.NoError(t, err, "seed koop_publications")
@@ -387,7 +403,7 @@ func seedFellings(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		// well within the <=2yr bucket), offset (18,24) from the permit's point = exactly 30.0m in
 		// SRID 28992 (a scaled 3-4-5 triangle) once round-tripped through SRID 4326 storage.
 		fmt.Sprintf(`('%s','BOOM-STRONG-01','%s','2022-06-01T00:00:00Z',%s,NULL)`,
-			fStrong, buurtStrong, fellingPointFromRDOffset(121500, 487400, 18, 24)),
+			fStrong, gbdStrong, fellingPointFromRDOffset(121500, 487400, 18, 24)),
 
 		// F-WEAK-A: felled 2023-06-01 -> an 881-day lag from BOTH Z-CONTEND-1-WEAK's and
 		// Z-CONTEND-2-OTHER's identical 2021-01-01 publication date (2-3yr bucket, +0.05, not the
@@ -396,23 +412,23 @@ func seedFellings(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		// this pair per candidates.go's CASE WHEN $2 IS NULL branch); still given a real point for
 		// realism.
 		fmt.Sprintf(`('%s','BOOM-WEAK-A','%s','2023-06-01T00:00:00Z',%s,NULL)`,
-			fWeak, buurtContend, fellingPointFromRDOffset(125000, 485000, 0, 0)),
+			fWeak, gbdContend, fellingPointFromRDOffset(125000, 485000, 0, 0)),
 
 		// F-CONTESTED-01: felled 2022-06-01 (151-day lag from both Z-CONTEST-A/B's 2022-01-01
 		// publication), offset (10,10) ~= 14.14m from Z-CONTEST-A's point (address-tier proximate,
 		// far below the addressRadiusM=50 ceiling) -- a candidate for both A (wins outright on
 		// place) and B (buurt floor only).
 		fmt.Sprintf(`('%s','BOOM-CONTESTED-01','%s','2022-06-01T00:00:00Z',%s,NULL)`,
-			fContested, buurtContest, fellingPointFromRDOffset(135000, 480500, 10, 10)),
+			fContested, gbdContest, fellingPointFromRDOffset(135000, 480500, 10, 10)),
 
 		// F-MULTI-01/02/03: three fellings all close to Z-MULTI-001's point and uncontested
 		// (buurtMulti has no other permit), each within the <=2yr time bucket.
 		fmt.Sprintf(`('%s','BOOM-MULTI-01','%s','2022-06-01T00:00:00Z',%s,NULL)`,
-			fMulti1, buurtMulti, fellingPointFromRDOffset(150000, 490000, 5, 5)),
+			fMulti1, gbdMulti, fellingPointFromRDOffset(150000, 490000, 5, 5)),
 		fmt.Sprintf(`('%s','BOOM-MULTI-02','%s','2022-07-01T00:00:00Z',%s,NULL)`,
-			fMulti2, buurtMulti, fellingPointFromRDOffset(150000, 490000, 10, -5)),
+			fMulti2, gbdMulti, fellingPointFromRDOffset(150000, 490000, 10, -5)),
 		fmt.Sprintf(`('%s','BOOM-MULTI-03','%s','2022-08-01T00:00:00Z',%s,NULL)`,
-			fMulti3, buurtMulti, fellingPointFromRDOffset(150000, 490000, -8, 12)),
+			fMulti3, gbdMulti, fellingPointFromRDOffset(150000, 490000, -8, 12)),
 	}
 
 	stmt := `INSERT INTO kapenherplant (id, "boomId", "gbdBuurtId", "kapmaatregelDatumUitgevoerd", "resolvedGeom", source_deleted_at) VALUES
@@ -430,7 +446,7 @@ func insertNoSourceFelling(t *testing.T, ctx context.Context, pool *pgxpool.Pool
 	stmt := fmt.Sprintf(
 		`INSERT INTO kapenherplant (id, "boomId", "gbdBuurtId", "kapmaatregelDatumUitgevoerd", "resolvedGeom", source_deleted_at)
 VALUES ('%s','BOOM-NOSOURCE-NEW-01','%s','2022-06-01T00:00:00Z',%s,NULL)`,
-		fNewNoSrc, buurtNoSource, fellingPointFromRDOffset(108000, 500000, 5, 5))
+		fNewNoSrc, gbdNoSource, fellingPointFromRDOffset(108000, 500000, 5, 5))
 	_, err := pool.Exec(ctx, stmt)
 	require.NoError(t, err, "insert the newly-appearing felling for the no-source permit")
 }

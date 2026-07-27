@@ -85,12 +85,13 @@ func createCoverageTables(t *testing.T, ctx context.Context, pool *pgxpool.Pool)
 	t.Helper()
 	const stmt = `
 CREATE TABLE koop_publications (
-    zaaknummer          text PRIMARY KEY,
-    available           date,
-    resolved_buurt_code text,
-    resolved_geom       geometry(Point,28992),
-    resolved_tier       text,
-    unresolved          boolean
+    zaaknummer            text PRIMARY KEY,
+    available             date,
+    resolved_buurt_code   text,
+    resolved_identificatie text,
+    resolved_geom         geometry(Point,28992),
+    resolved_tier         text,
+    unresolved            boolean
 );
 
 CREATE TABLE kapenherplant (
