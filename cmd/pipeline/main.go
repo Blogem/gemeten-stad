@@ -3,10 +3,12 @@
 // subcommand is idempotent and incremental; see docs/IMPLEMENTATION_PLAN.md §5.
 //
 // ingest and load are wired to the geo backbone (BAG + gebieden landing, and
-// the PostGIS geo load) and the bomen tree registry (kapenherplant +
-// stamgegevens landing and load); dump export/restore snapshot the graph,
-// PostGIS, and the NER cache (see the dump package). extract/derive remain
-// no-op stubs — later Phase-0/1 work items fill in their behaviour.
+// the PostGIS geo load), the bomen tree registry (kapenherplant +
+// stamgegevens landing and load), the graph reference model + gs:Place
+// skeleton, and the koop permit corpus (audited besluiten written to the
+// graph + PostGIS); dump export/restore snapshot the graph, PostGIS, and the
+// NER cache (see the dump package). extract/derive remain no-op stubs —
+// later Phase-0/1 work items fill in their behaviour.
 package main
 
 import (
@@ -29,6 +31,7 @@ import (
 	loadbomen "github.com/Blogem/gemeten-stad/load/bomen"
 	"github.com/Blogem/gemeten-stad/load/geo"
 	loadgraph "github.com/Blogem/gemeten-stad/load/graph"
+	loadkoop "github.com/Blogem/gemeten-stad/load/koop"
 	"github.com/Blogem/gemeten-stad/load/places"
 )
 
@@ -250,11 +253,14 @@ type loadSource struct {
 }
 
 // loadRegistry is the single, ordered source of truth for load sources: name → loader. geo (BAG +
-// gebieden) runs before bomen when all sources are loaded.
+// gebieden) runs before bomen, and graph runs before koop — koop's audited besluiten link against
+// the gs:Place skeleton graph seeds from the PostGIS gebieden tables, so that skeleton (and the
+// geo tables it projects) must already exist — when all sources are loaded.
 var loadRegistry = []loadSource{
 	{name: "geo", fn: runGeoLoad},
 	{name: "bomen", fn: runBomenLoad},
 	{name: "graph", fn: runGraphLoad},
+	{name: "koop", fn: runKoopLoad},
 }
 
 // loadRegistryNames returns the loadRegistry's source names, in registration order.
@@ -267,9 +273,10 @@ func loadRegistryNames() []string {
 }
 
 // newLoadCmd maps, resolves location, and assembles entities into the stores (silver): the geo
-// load of BAG + gebieden raw data into PostGIS, and the bomen load of the tree registry. With no
-// arguments it loads all registered sources; named arguments load only those sources, in the
-// given order.
+// load of BAG + gebieden raw data into PostGIS, the bomen load of the tree registry, the graph
+// load of the reference model + gs:Place skeleton, and the koop load of audited besluiten into
+// the graph + PostGIS. With no arguments it loads all registered sources; named arguments load
+// only those sources, in the given order.
 func newLoadCmd() *cobra.Command {
 	var reset bool
 
@@ -453,6 +460,39 @@ func runBomenLoad(ctx context.Context, reset bool) error {
 	cfg := loadbomen.Config{Reset: reset}
 	if err := loadbomen.Load(ctx, pool, store, cfg); err != nil {
 		return fmt.Errorf("load bomen: %w", err)
+	}
+	return nil
+}
+
+// runKoopLoad audits the landed KOOP permit corpus against the Noord place skeleton and PostGIS: it
+// dedups each zaak down to its besluit, resolves and scopes it, writes audited besluiten through
+// the SHACL-gated graph loader, and persists the full publication trail to PostGIS. It runs after
+// graph in loadRegistry, so the gs:Place skeleton it links against already exists.
+func runKoopLoad(ctx context.Context, reset bool) error {
+	dbURL, err := shared.DatabaseURL(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve database url: %w", err)
+	}
+	pool, err := shared.ConnectPostgres(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer pool.Close()
+
+	rawPath, err := shared.RawDataPath(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve raw data path: %w", err)
+	}
+	store := shared.NewRawStore(rawPath)
+
+	fusekiURL, err := shared.FusekiURL(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve fuseki url: %w", err)
+	}
+
+	cfg := loadkoop.Config{Reset: reset}
+	if err := loadkoop.Load(ctx, pool, store, fusekiURL, cfg); err != nil {
+		return fmt.Errorf("load koop: %w", err)
 	}
 	return nil
 }
