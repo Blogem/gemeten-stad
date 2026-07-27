@@ -97,7 +97,10 @@ const evolvingFlagPattern = `
 // signatureQuery builds the shared per-entity signature SELECT (task 2.2/2.3) over the given named
 // graphs (unioned): one row per subject with its order-stable, valid-time-agnostic GROUP_CONCAT
 // signature and whether it is evolving. graphIRIs is a single staging graph for 2.2, or every
-// current run:load-* graph for 2.3 (D2's "union of run:load-* graphs").
+// current run:load-* graph for 2.3 (D2's "union of run:load-* graphs"). Each per-graph block is
+// wrapped in its own `{ GRAPH <g> { ... } }` braces: a bare GraphGraphPattern is a valid standalone
+// pattern but NOT a valid UNION operand (UNION requires a full GroupGraphPattern on each side), so
+// without the extra braces the join below is malformed SPARQL as soon as graphIRIs has 2+ entries.
 //
 // The inner subquery projects (?s, ?row) ordered by (?s, ?row) before the outer GROUP_CONCAT — the
 // standard order-stable-GROUP_CONCAT idiom (ORDER BY inside, aggregate outside) — so two runs over
