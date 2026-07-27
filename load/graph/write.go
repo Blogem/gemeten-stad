@@ -120,9 +120,17 @@ func (c *client) upsert(ctx context.Context, runID string, candidate []byte, gen
 	newIRIs, changed, _, immutableConflict := classify(stagingSigs, liveSigs)
 
 	// D4: an immutable conflict is skip-but-surface — never overwritten, but logged so the
-	// anomaly can be investigated later.
-	for _, id := range immutableConflict {
-		log.Printf("graph: immutable content conflict for %s: candidate content differs from the stored version; stored version retained", id)
+	// anomaly can be investigated later. Aggregated into ONE line, not one per subject: the
+	// expected koop-Place-vs-seeded-skeleton collision (koop re-asserts a bare `a gs:Place` for
+	// every buurt it touches, design.md D5) yields one conflict per Noord buurt, and a line each
+	// buried the load's real output. The full IRI list stays on the single line for investigation.
+	if len(immutableConflict) > 0 {
+		ids := make([]string, len(immutableConflict))
+		for i, id := range immutableConflict {
+			ids[i] = string(id)
+		}
+		log.Printf("graph: %d immutable content conflict(s), stored version(s) retained (candidate content differs): %s",
+			len(immutableConflict), strings.Join(ids, ", "))
 	}
 
 	delta := make([]iri, 0, len(newIRIs)+len(changed))
