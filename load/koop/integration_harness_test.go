@@ -288,6 +288,13 @@ type pubRow struct {
 	InNoord      *bool
 	Unresolved   bool
 	Raw          []byte
+	// LoadedAt is koop_publications.loaded_at (load-koop-assembly's loaded_at fix): stamped with
+	// the load run's timestamp on every insert and every genuine update, but excluded from
+	// upsertPublications' MERGE change-detection — an unchanged re-run must leave it untouched,
+	// while a genuine change (e.g. a re-resolution) must bump it. Never nil once a row exists
+	// (NOT NULL), but kept as *time.Time here so the harness's zero-value pubRow{} (the
+	// not-found case) stays visibly distinct from a real, populated row.
+	LoadedAt *time.Time
 }
 
 // queryPublication reads back koop_publications' row for gmbID. found is false (with a zero
@@ -296,12 +303,12 @@ func queryPublication(t *testing.T, ctx context.Context, pool *pgxpool.Pool, gmb
 	t.Helper()
 	const q = `SELECT gmb_id, zaaknummer, kind, available, ST_AsText(geom), postcode, huisnummer,
 		resolved_identificatie, resolved_buurt_code, resolved_confidence, ST_AsText(resolved_geom), resolved_tier,
-		caveats, in_noord, unresolved, raw
+		caveats, in_noord, unresolved, raw, loaded_at
 		FROM koop_publications WHERE gmb_id = $1`
 	err := pool.QueryRow(ctx, q, gmbID).Scan(
 		&row.GmbID, &row.Zaaknummer, &row.Kind, &row.Available, &row.GeomWKT, &row.Postcode, &row.Huisnummer,
 		&row.ResolvedIdentificatie, &row.ResolvedBuurtCode, &row.ResolvedConfidence, &row.ResolvedGeomWKT, &row.ResolvedTier,
-		&row.Caveats, &row.InNoord, &row.Unresolved, &row.Raw,
+		&row.Caveats, &row.InNoord, &row.Unresolved, &row.Raw, &row.LoadedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

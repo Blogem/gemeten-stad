@@ -204,6 +204,10 @@ func TestKoopLoad_UnchangedRerunIsANoOp(t *testing.T) {
 	rowsBefore := snapshotRows(t, ctx, pool, ids)
 	graphsBefore := sparqlGraphsWithPrefix(t, dsURL, gsRunGraphPrefix)
 
+	besluitBefore, found := queryPublication(t, ctx, pool, gmbNoordBesluit)
+	require.True(t, found)
+	require.NotNil(t, besluitBefore.LoadedAt, "loaded_at must be populated (NOT NULL) after the initial load")
+
 	// Re-run against the exact same landed corpus, unchanged.
 	require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: false}))
 
@@ -212,6 +216,58 @@ func TestKoopLoad_UnchangedRerunIsANoOp(t *testing.T) {
 
 	graphsAfter := sparqlGraphsWithPrefix(t, dsURL, gsRunGraphPrefix)
 	assert.ElementsMatch(t, graphsBefore, graphsAfter, "no new run:load-... graph on an unchanged re-run")
+
+	besluitAfter, found := queryPublication(t, ctx, pool, gmbNoordBesluit)
+	require.True(t, found)
+	require.NotNil(t, besluitAfter.LoadedAt)
+	assert.Equal(t, *besluitBefore.LoadedAt, *besluitAfter.LoadedAt,
+		"loaded_at must be excluded from MERGE change-detection — an unchanged re-run must not touch it")
+}
+
+// TestKoopLoad_ResolveInfraErrorRetainsTrail covers the resolve-error trail retention fix
+// (load-koop-assembly): when resolveBesluit returns a genuine infra error (not the normal
+// "unresolvable" outcome), koop.Load must retain the whole zaak's trail — each publication
+// persisted as a row with NULL resolution and unresolved == false, like a pending zaak — log +
+// count it, never graph it, and still return nil (the run itself must not abort).
+//
+// The infra error is forced the reachable way: seedGeo loads the FULL geo fixture so the Noord
+// besluit's title address (Örehof 8, 1024BB) still resolves via bag_* at the address tier
+// (location.Resolve never touches gebieden_buurten — see location/resolve.go, the buurt-PIP tier
+// only runs when address AND postcode both miss), but then DROP TABLE gebieden_buurten (this
+// test's own isolated schema only) breaks buurtFor's subsequent point-in-polygon lookup
+// (buurtByPointSQL), which is what actually determines the containing buurt for an address-tier
+// result. That is a genuine SQL/infra failure, not an unresolvable-location outcome.
+func TestKoopLoad_ResolveInfraErrorRetainsTrail(t *testing.T) {
+	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
+	dsURL := fusekiDatasetURL(t)
+	ctx := context.Background()
+
+	pool := newSchemaPool(t, ctx, dsn)
+	seedGeo(t, ctx, pool)
+	store := shared.NewRawStore(t.TempDir())
+	landFixture(t, store, "it_corpus_noord_besluit", gmbNoordBesluit)
+
+	resetFusekiRunGraphs(t, ctx, dsURL)
+
+	_, err := pool.Exec(ctx, "DROP TABLE gebieden_buurten")
+	require.NoError(t, err, "drop the address-tier buurt lookup's own table, in this test's isolated schema only")
+
+	require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: true}),
+		"a resolve infra error must not abort the whole run — Load still returns nil")
+
+	row, found := queryPublication(t, ctx, pool, gmbNoordBesluit)
+	require.True(t, found, "the besluit's own row must be retained as a pending, retry-able trail row, not dropped")
+	assert.Nil(t, row.ResolvedIdentificatie, "no resolution was reached — the column must stay NULL, never fabricated")
+	assert.Nil(t, row.ResolvedBuurtCode)
+	assert.Nil(t, row.ResolvedConfidence)
+	assert.Nil(t, row.ResolvedGeomWKT)
+	assert.Nil(t, row.ResolvedTier)
+	assert.False(t, row.Unresolved,
+		"a resolve infra error is not the same outcome as an unresolvable besluit — it must read as a pending row (unresolved=false), eligible for retry on the next run")
+
+	assert.False(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
+ASK { GRAPH ?g { <`+noordInterventionIRI+`> a gs:Intervention } }`),
+		"a zaak whose resolve hit an infra error must never be graphed")
 }
 
 // reResolveNoordAddressSQL is the mid-test mutation that forces a re-resolution (task 8.1's other
@@ -272,6 +328,7 @@ func TestKoopLoad_ReResolutionOpensNewVersion(t *testing.T) {
 	require.True(t, found)
 	require.NotNil(t, before.ResolvedIdentificatie)
 	assert.Equal(t, noordPlaceIdentificatie, *before.ResolvedIdentificatie, "run 1 resolves into the original Noord buurt")
+	require.NotNil(t, before.LoadedAt, "loaded_at must be populated (NOT NULL) after the initial load")
 
 	assert.True(t, sparqlAsk(t, dsURL, `PREFIX gs: <http://gemetenstad.nl/ns#>
 ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> } }`),
@@ -301,6 +358,10 @@ ASK { GRAPH ?g { <`+noordInterventionIRI+`> gs:locatedAt <`+noordPlaceIRI+`> } }
 		require.NotNil(t, after.ResolvedGeomWKT)
 		assert.Contains(t, *after.ResolvedGeomWKT, "125100", "resolved_geom is refreshed to the moved BAG point")
 		assert.Contains(t, *after.ResolvedGeomWKT, "487000")
+
+		require.NotNil(t, after.LoadedAt)
+		assert.True(t, after.LoadedAt.After(*before.LoadedAt),
+			"loaded_at must be bumped on a genuine change -- a re-resolution is not excluded from change-detection, only loaded_at's own column is")
 	})
 
 	t.Run("graph: a new locatedAt version opens at the new Place, the prior version is closed", func(t *testing.T) {
