@@ -364,39 +364,68 @@ func TestBuildCandidate_EmptyInput(t *testing.T) {
 // TestBuildCandidate_LocatedAtNeverCarriesValidFrom covers scenario 8 under the
 // state-node-versioning contract (specs/koop-load/spec.md, design.md D3): gs:locatedAt is a
 // refinable-metadata edge, not a valid-time one, so buildCandidate must NEVER emit gs:validFrom
-// on it — regardless of whether the besluit's Available date is present or absent. (Available
-// presence used to determine whether a validFrom was stamped; now it must have no bearing on
-// locatedAt's shape at all.) The rest of the annotation (confidence, caveat) still renders
-// normally in both cases.
+// on it, for a besluit with a present Available date. (An absent/empty Available is no longer
+// exercised here — the Turtle-injection fix requires Available to parse as a canonical
+// "2006-01-02" date, and "" fails that parse; that skip-on-invalid-date behavior is covered by
+// TestBuildCandidate_InvalidAvailableDateIsSkipped instead.)
 func TestBuildCandidate_LocatedAtNeverCarriesValidFrom(t *testing.T) {
+	zaak := "Z2022-N003005"
+	identificatie := "0363020000003005"
+
+	items := []AuditedBesluit{besluit(zaak, identificatie, 0.7, []string{"timeMismatch"}, "2022-05-31")}
+
+	turtle, skipped := buildCandidate(items)
+	assert.Empty(t, skipped)
+	text := string(turtle)
+
+	assert.NotContains(t, text, "gs:validFrom",
+		"gs:locatedAt is a refinable edge (design.md D3) and must never carry gs:validFrom, regardless of Available")
+	assert.NotContains(t, text, "gs:validTo",
+		"gs:locatedAt must never carry gs:validTo either — it is never a valid-time edge")
+
+	assert.InDelta(t, 0.7, gtConfidenceValue(t, text), 1e-9)
+	caveatLines := gtLinesContaining(text, "gs:caveat")
+	require.NotEmpty(t, caveatLines)
+	assert.Contains(t, strings.Join(caveatLines, "\n"), "timeMismatch")
+}
+
+// TestBuildCandidate_InvalidAvailableDateIsSkipped covers the CRITICAL Turtle-injection fix
+// (security review): a besluit's Publication.Available is externally sourced (KOOP SRU XML,
+// load/koop/parse.go), only whitespace-trimmed, and previously flowed verbatim into a Turtle
+// string literal — so a crafted value containing a `"` could terminate the literal early and
+// splice arbitrary triples into the assembled candidate (which is POSTed straight to Fuseki), or a
+// stray quote could break the whole batch's Turtle syntax. renderAuditedBesluit now requires
+// Available to parse as a canonical "2006-01-02" date (mirroring load/koop/stage.go's identical
+// guard for the Postgres path) before emitting it — so an injection attempt, or any other
+// non-YYYY-MM-DD value, is never written into the literal at all: buildCandidate's existing
+// skip-and-record contract surfaces the failure via `skipped` instead.
+func TestBuildCandidate_InvalidAvailableDateIsSkipped(t *testing.T) {
 	tests := []struct {
 		name      string
 		available string
 	}{
-		{"Available date present", "2022-05-31"},
-		{"Available date absent", ""},
+		{"quote-terminated injection attempt", `2024-01-01"^^xsd:date . <http://evil/x> a <http://evil/y> . x "`},
+		{"empty (absent) date", ""},
+		{"non-date garbage", "not-a-date"},
+		{"wrong format (D/M/Y)", "31/05/2022"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			zaak := "Z2022-N003005"
-			identificatie := "0363020000003005"
+			zaak := "Z2022-N003007"
+			identificatie := "0363020000003007"
+			item := besluit(zaak, identificatie, 0.9, nil, tt.available)
+			item.Pub.ID = "gmb-2022-900010"
 
-			items := []AuditedBesluit{besluit(zaak, identificatie, 0.7, []string{"timeMismatch"}, tt.available)}
+			candidate, skipped := buildCandidate([]AuditedBesluit{item})
+			text := string(candidate)
 
-			turtle, skipped := buildCandidate(items)
-			assert.Empty(t, skipped)
-			text := string(turtle)
+			require.Equal(t, []string{item.Pub.ID}, skipped,
+				"expected the besluit with an invalid Available date to be skipped, got turtle:\n%s", text)
+			assert.Nil(t, candidate, "the only item in the batch was invalid, so the candidate must be nil")
 
-			assert.NotContains(t, text, "gs:validFrom",
-				"gs:locatedAt is a refinable edge (design.md D3) and must never carry gs:validFrom, regardless of Available")
-			assert.NotContains(t, text, "gs:validTo",
-				"gs:locatedAt must never carry gs:validTo either — it is never a valid-time edge")
-
-			assert.InDelta(t, 0.7, gtConfidenceValue(t, text), 1e-9)
-			caveatLines := gtLinesContaining(text, "gs:caveat")
-			require.NotEmpty(t, caveatLines)
-			assert.Contains(t, strings.Join(caveatLines, "\n"), "timeMismatch")
+			assert.NotContains(t, text, "evil", "no injected triple must ever reach the candidate")
+			assert.NotContains(t, text, zaak, "a skipped item's zaaknummer must not appear in the candidate")
 		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // AuditedBesluit pairs one audited besluit publication with its resolved location — the unit
@@ -156,14 +157,19 @@ func renderLocatedAtAnnotations(item AuditedBesluit) string {
 // against an already-seeded P12b Place of the same identificatie it becomes a harmless
 // immutableConflict skip in load/graph, design.md D5).
 //
-// dct:available carries the besluit's publication date (Publication.Available, already
-// "YYYY-MM-DD") as a timeless descriptive-metadata literal — reusing Dublin Core Terms per
-// docs/RDF_MODELING.md §3, not a minted gs: term, and deliberately carrying no
-// gs:validFrom/gs:validTo (it never evolves). koop_publications.available is 100% populated for
-// audited besluiten (task contract) — Available is written verbatim, never guarded against empty:
-// an empty value would be an upstream programming error, and this function has no way to recover
-// from it (there is no sensible fallback date), so silently coining one or skipping the item would
-// hide the bug rather than surface it.
+// dct:available carries the besluit's publication date (Publication.Available) as a timeless
+// descriptive-metadata literal — reusing Dublin Core Terms per docs/RDF_MODELING.md §3, not a
+// minted gs: term, and deliberately carrying no gs:validFrom/gs:validTo (it never evolves).
+// Available is externally sourced (decoded from the KOOP SRU XML, only whitespace-trimmed by
+// load/koop/parse.go) so it is never trusted verbatim: it MUST be parsed as a canonical
+// "2006-01-02" date before being emitted, and only the reformatted, validated lexical form is
+// written into the literal. This closes a Turtle-injection vector (an unvalidated value could
+// carry a stray quote to terminate the literal early and splice in arbitrary triples) and
+// guarantees a syntactically valid xsd:date. A parse failure is a real data anomaly (mirrors
+// load/koop/stage.go's identical time.Parse guard for the Postgres path) — this function has no
+// sensible fallback date, so it fails loud with a descriptive error rather than coining one or
+// silently emitting unvalidated text; buildCandidate's existing skip-and-record contract (task
+// 4.4 resilience follow-up) is what surfaces this to the caller without aborting the whole batch.
 func renderAuditedBesluit(b *strings.Builder, item AuditedBesluit) error {
 	zaaknummer := item.Pub.Zaaknummer
 	identificatie := item.Res.Identificatie
@@ -174,13 +180,17 @@ func renderAuditedBesluit(b *strings.Builder, item AuditedBesluit) error {
 	if err := assertSafeIRI(identificatie); err != nil {
 		return fmt.Errorf("koop: besluit %s: identificatie: %w", item.Pub.ID, err)
 	}
+	available, err := time.Parse("2006-01-02", item.Pub.Available)
+	if err != nil {
+		return fmt.Errorf("koop: besluit %s: zaaknummer %s: invalid publication date %q: %w", item.Pub.ID, zaaknummer, item.Pub.Available, err)
+	}
 
 	interventionIRI := mintInterventionIRI(zaaknummer)
 	claimIRI := mintClaimIRI(zaaknummer)
 	placeIRI := mintPlaceIRI(identificatie)
 
 	fmt.Fprintf(b, "<%s> a gs:Intervention ;\n", interventionIRI)
-	fmt.Fprintf(b, "    dct:available \"%s\"^^xsd:date ;\n", item.Pub.Available)
+	fmt.Fprintf(b, "    dct:available \"%s\"^^xsd:date ;\n", available.Format("2006-01-02"))
 	fmt.Fprintf(b, "    gs:activity %s ;\n", mapActivity(item.Pub.Activiteit))
 	fmt.Fprintf(b, "    gs:claims <%s> ;\n", claimIRI)
 	fmt.Fprintf(b, "    gs:locatedAt <%s> {| %s |} .\n", placeIRI, renderLocatedAtAnnotations(item))
