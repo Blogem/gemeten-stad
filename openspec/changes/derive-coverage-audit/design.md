@@ -73,7 +73,13 @@ carrying:
 **TBox:** recast `gs:AuditLink` as the anchor; add `gs:CoveragePeriod`, `gs:coversIntervention`,
 `gs:linksObservation`, `gs:granularity`, `gs:noSourceFound` (`gs:versionOf` from
 `state-node-versioning`). **Shape:** core-SHACL `gs:AuditLinkShape` (anchor) + `gs:CoveragePeriodShape`
-(period). _Alternative rejected (annotated edge / same-IRI node / point-at-the-permit anchor):_ an
+(period). The anchor's `gs:coversIntervention` is gated `sh:nodeKind sh:IRI` +
+`sh:pattern "^http://gemetenstad.nl/id/intervention/"`, **not** `sh:class gs:Intervention`: the load
+gate validates each candidate merged with ontology+vocab only (never stored data), so a `sh:class`
+check on a cross-load reference — the derive points at an Intervention koop loaded earlier, without
+re-declaring it — is unsatisfiable short of fragilely re-serializing another load's Intervention
+(surfaced by the 5.4 integration test). A structural IRI+namespace gate is the correct SHACL form for
+a reference into a separately-loaded layer. _Alternative rejected (annotated edge / same-IRI node / point-at-the-permit anchor):_ an
 edge annotation leaves a timeless base triple + needs `sh:sparql`; a single mutated node IRI can't
 disambiguate multi-attribute periods; a dedicated anchor node (over reusing the Intervention) is the
 cleaner, standard reification — an explicit "coverage of this permit" thing to point at and describe.

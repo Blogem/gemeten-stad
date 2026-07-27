@@ -4,7 +4,13 @@
 
 `shapes.ttl` SHALL add a `gs:AuditLinkShape` (`sh:targetClass gs:AuditLink`) gating the stable
 coverage anchor with **core SHACL**: `gs:coversIntervention` present (`sh:minCount 1`) and pointing
-at a `gs:Intervention` (`sh:class gs:Intervention`).
+at an Intervention **IRI in the intervention namespace** (`sh:nodeKind sh:IRI` +
+`sh:pattern "^http://gemetenstad.nl/id/intervention/"`). It SHALL NOT use `sh:class gs:Intervention`:
+the load gate validates each candidate merged with ontology+vocab only — never the already-stored
+data — so a `sh:class` check on a **cross-load reference** (the derive references an Intervention
+that koop loaded earlier, it does not re-declare it) is unsatisfiable without the derive fragilely
+re-serializing another load's Intervention. A structural IRI+namespace gate is the correct SHACL
+form for such a reference.
 
 #### Scenario: An anchor without its permit is rejected
 
@@ -13,8 +19,16 @@ at a `gs:Intervention` (`sh:class gs:Intervention`).
 
 #### Scenario: A well-formed anchor conforms
 
-- **WHEN** a `gs:AuditLink` node has `gs:coversIntervention` an `gs:Intervention`
-- **THEN** it conforms
+- **WHEN** a `gs:AuditLink` node has `gs:coversIntervention` an IRI in the
+  `http://gemetenstad.nl/id/intervention/` namespace
+- **THEN** it conforms (without the referenced Intervention needing to be present in the same
+  candidate)
+
+#### Scenario: An out-of-namespace coversIntervention is rejected
+
+- **WHEN** a `gs:AuditLink` node's `gs:coversIntervention` is an IRI outside the intervention
+  namespace (or a literal/blank node)
+- **THEN** the shapes report it as non-conforming
 
 ### Requirement: Coverage-period shape in core SHACL
 
