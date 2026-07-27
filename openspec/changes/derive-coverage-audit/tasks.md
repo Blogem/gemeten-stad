@@ -48,5 +48,5 @@
 ## 6. Validation + docs
 
 - [x] 6.1 `go test ./derive/... ./cmd/pipeline/... ./ontology/...` and `go vet ./...` pass; `gofmt` clean.
-- [x] 6.2 Update `docs/PHASE_1_PLAN.md` (mark P14 landed; observed link rates + confidence distribution vs Spike B, split by resolution tier) and `docs/IMPLEMENTATION_PLAN.md` §4 to the settled anchor+period + per-felling-assignment form.
-- [ ] 6.3 Confirm keyless-besluit handling (zaaknummer `""`): the audit iterates the Interventions the graph holds; verify P13's keyless permits either have no Intervention or a synthesized key.
+- [x] 6.2 Update `docs/PHASE_1_PLAN.md` (mark P14 landed) and `docs/IMPLEMENTATION_PLAN.md` §4 to the settled anchor+period + per-felling-assignment + `dct:available`-windowing form. A "Results" table scaffold (link rates + confidence distribution vs Spike B, split by resolution tier) is added with `TBD` cells — **the observed numbers are filled from the first full `pipeline derive` run over the Noord corpus, deferred as an operational step** (no full-corpus run in the dev/CI environment).
+- [x] 6.3 Confirm keyless-besluit handling (zaaknummer `""`): the audit iterates the Interventions the graph holds; verify P13's keyless permits either have no Intervention or a synthesized key. **Verified:** `candidates.go::zaaknummerFromIRI` skips empty-zaaknummer Interventions, and `load/koop/load.go` never emits a graph `Intervention` for keyless publications (staged to PostGIS only).
