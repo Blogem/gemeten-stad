@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -67,7 +66,6 @@ func resolveBesluit(ctx context.Context, pool *pgxpool.Pool, pub Publication) (R
 	}
 
 	inNoord := strings.HasPrefix(code, "N")
-	warnIfNoordMismatch(pub.Zaaknummer, code, inNoord)
 
 	var geom string
 	if result.PlaceLevel == location.PlaceAddress {
@@ -170,23 +168,4 @@ func parseAvailable(available string) time.Time {
 		return time.Time{}
 	}
 	return date
-}
-
-// warnIfNoordMismatch cross-checks the resolved Noord scope against the zaaknummer's own
-// referentienummer prefix (e.g. "Z2022-N002608" — the segment after the "-" starts with the
-// stadsdeel letter, "N" = Noord). A mismatch never fails resolution; it only gets logged, since
-// the zaaknummer prefix is a weaker signal than the geometry-based resolve.
-func warnIfNoordMismatch(zaaknummer, code string, inNoord bool) {
-	if zaaknummer == "" {
-		return
-	}
-	_, segment, found := strings.Cut(zaaknummer, "-")
-	if !found {
-		return
-	}
-	zaaknummerNoord := strings.HasPrefix(segment, "N")
-	if zaaknummerNoord != inNoord {
-		slog.Warn("koop: Noord scope mismatch between resolved buurt and zaaknummer prefix",
-			"zaaknummer", zaaknummer, "buurtCode", code, "resolvedInNoord", inNoord, "zaaknummerInNoord", zaaknummerNoord)
-	}
 }

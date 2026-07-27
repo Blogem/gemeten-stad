@@ -39,10 +39,9 @@ type Config struct {
 //     Unresolved resolution, every other publication in the trail carries Res: nil. Never graphed.
 //   - A zaak whose besluit resolves outside Noord (res.InNoord == false) is excluded entirely — no
 //     PostGIS rows for any publication in the zaak, no graph write. Vertical 1 audits stadsdeel
-//     Noord only (docs/IMPLEMENTATION_PLAN.md), and the resolved buurt is the sole scoping signal:
-//     a zaak's zaaknummer prefix is never used to decide exclusion (a defensive cross-check for the
-//     opposite case — a mismatch between the resolved scope and the zaaknummer prefix — already
-//     lives in resolve.go's warnIfNoordMismatch, log-only).
+//     Noord only (docs/IMPLEMENTATION_PLAN.md), and the resolved buurt (code LIKE 'N%') is the sole
+//     scoping signal: a zaak's zaaknummer prefix is not a reliable Noord indicator in the real
+//     corpus, so it is never used to decide exclusion.
 //   - Every other zaak (a besluit resolved and in Noord) is persisted as a trail — the besluit's row
 //     carries its resolution, every other publication in the trail carries Res: nil — and is what
 //     gets graphed as an audited Intervention.
