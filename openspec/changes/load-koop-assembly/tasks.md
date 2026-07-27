@@ -1,22 +1,22 @@
 ## 1. Parse landed publications (SRU record + metadata sidecar)
 
-- [ ] 1.1 Add an enumerator (`load/koop/read.go`) over `store.BasePath/koop/*.xml` that pairs each
+- [x] 1.1 Add an enumerator (`load/koop/read.go`) over `store.BasePath/koop/*.xml` that pairs each
       SRU record with its `<id>.metadata.xml`, excluding `*.metadata.xml`, `_cursor.json`, `*.prov.jsonl`.
-- [ ] 1.2 Add SRU-record parsing (`load/koop/parse.go`): RD point (`overheidwetgeving:geometrie`
+- [x] 1.2 Add SRU-record parsing (`load/koop/parse.go`): RD point (`overheidwetgeving:geometrie`
       `POINT(x y)`), activiteit (`overheidwetgeving:activiteit`), title, `dcterms:available`; parse
       defensively (missing field flagged, never panic).
-- [ ] 1.3 Add metadata parsing: `OVERHEIDop.referentienummer` (zaaknummer), and fall back to the
+- [x] 1.3 Add metadata parsing: `OVERHEIDop.referentienummer` (zaaknummer), and fall back to the
       keyless remainder when the sidecar is missing.
-- [ ] 1.4 Add a title-prefix `kind` classifier (aanvraag/besluit/ontwerpbesluit/verlenging/
+- [x] 1.4 Add a title-prefix `kind` classifier (aanvraag/besluit/ontwerpbesluit/verlenging/
       ingetrokken/other) and a best-effort postcode+huisnummer extractor from the title.
-- [ ] 1.5 Unit tests: full parse of a realistic record+sidecar; kind classification across prefixes;
+- [x] 1.5 Unit tests: full parse of a realistic record+sidecar; kind classification across prefixes;
       huisnummer/postcode extraction; missing-sidecar and missing-field paths.
 
 ## 2. Dedup and select the audited besluit
 
-- [ ] 2.1 Group publications by zaaknummer and select the besluit per group; keep all publications
+- [x] 2.1 Group publications by zaaknummer and select the besluit per group; keep all publications
       for the PostGIS trail (`load/koop/dedup.go`).
-- [ ] 2.2 Unit tests: aanvraag+besluit → one besluit audited, both retained; aanvraag-only → no
+- [x] 2.2 Unit tests: aanvraag+besluit → one besluit audited, both retained; aanvraag-only → no
       Intervention, retained in trail; multiple-besluit group picks the primary (document the rule).
 
 ## 3. Resolve location and scope to Noord
