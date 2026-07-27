@@ -171,8 +171,9 @@ gs:AuditLinkShape
     sh:property [
         sh:path     gs:coversIntervention ;
         sh:minCount 1 ;
-        sh:class    gs:Intervention ;
-        sh:message  "A gs:AuditLink anchor must have gs:coversIntervention pointing at a gs:Intervention." ;
+        sh:nodeKind sh:IRI ;
+        sh:pattern  "^http://gemetenstad\\.nl/id/intervention/" ;
+        sh:message  "A gs:AuditLink anchor must have gs:coversIntervention pointing at an Intervention IRI." ;
     ] .
 
 gs:CoveragePeriodShape
