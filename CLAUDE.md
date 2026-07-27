@@ -11,7 +11,10 @@ uncertainty-aware agent. Read the design docs before building:
 
 ## Build lean — no speculative flexibility
 
-This is a greenfield POC. Build only what the current step needs.
+This is a greenfield project — but not a throwaway POC. We are building a real
+production system that will be the base for further city audits. Greenfield means no
+backwards-compatibility burden yet, not low stakes: build only what the current step
+needs, and build it to last.
 
 - **No backwards-compatibility.** Nothing is released; there are no old callers to keep
   working. Change code in place; delete freely. Do not add "v2" alongside "v1".
