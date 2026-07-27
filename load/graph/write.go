@@ -281,8 +281,8 @@ WHERE {
   GRAPH ?g {
     ?old gs:versionOf ?a ; gs:validFrom ?ovf .
     FILTER NOT EXISTS { ?old gs:validTo ?any }
-    FILTER(?old != ?p)
   }
+  FILTER(?old != ?p)
   FILTER(STRSTARTS(STR(?g), "%s"))
 }`, gsNS, strings.Join(triples, " "), runGraphPrefix)
 
