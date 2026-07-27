@@ -114,6 +114,72 @@ data:place-ic a gs:Place ;
 @prefix data: <http://gemetenstad.nl/id/> .
 data:place-ic a gs:Place ;
     rdfs:label "Nieuw Label"@nl .`
+
+	// --- state-node-versioning (task 3.1/3.2): synthetic NODE-FORM period-series fixtures ---
+	//
+	// design.md D1: a period node = a plain node-triple gs:validFrom PLUS a gs:versionOf <anchor>
+	// pointer; the writer keeps exactly one open (no gs:validTo) period per anchor. design.md D2:
+	// a period's IRI is content-derived — same outcome content -> same IRI (a true no-op re-run),
+	// changed outcome -> a NEW IRI (closes the prior). Here the derive stage's content hashing is
+	// simulated by hand-assigning distinct IRIs per period (data:period-np-v1 vs data:period-np-v2,
+	// below) rather than actually hashing content, exactly as task 3.1 specifies ("you assign
+	// them; the writer relies on 'same content -> same IRI, changed content -> new IRI'").
+	//
+	// SHACL note: ontology/shapes.ttl only targets gs:Intervention (gs:InterventionShape) and
+	// subjects of gs:activity/gs:species/gs:status (Activity/Species/StatusValueShape). A period
+	// node asserting only gs:versionOf, gs:validFrom/validTo, and a stand-in rdfs:label "outcome
+	// content" payload is targeted by none of them, so it conforms vacuously — no special typing
+	// is required to pass the load gate (verified against shapes.ttl before writing this fixture).
+
+	// periodAnchorIRI: the stable gs:versionOf anchor identifying the synthetic period series
+	// periodSeriesV1/periodSeriesV2 below version. Used to scope countOpenNodePeriods so query
+	// strings and fixture content can't drift apart silently (mirrors intvEvolvingIRI's role for
+	// the annotation form).
+	periodAnchorIRI = "http://gemetenstad.nl/id/period-anchor-np"
+
+	periodValidFromV1Literal = "2024-01-01"
+	periodValidFromV2Literal = "2024-06-01"
+
+	// periodSeriesV1: the first period of the series — content "A" (stand-in for a real
+	// derive-stage outcome tuple: state + targets + rounded values, design.md D2), open
+	// (gs:validFrom only, no gs:validTo).
+	periodSeriesV1 = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-np-v1 gs:versionOf data:period-anchor-np ;
+    gs:validFrom "` + periodValidFromV1Literal + `"^^xsd:date ;
+    rdfs:label "content A"@nl .`
+
+	// periodSeriesV2: a NEW period node (a distinct, content-derived-style IRI simulating changed
+	// outcome content, design.md D2) for the SAME anchor as periodSeriesV1, with a later
+	// gs:validFrom — must close periodSeriesV1 (gs:validTo = periodValidFromV2Literal) and leave
+	// exactly one open period for periodAnchorIRI.
+	periodSeriesV2 = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-np-v2 gs:versionOf data:period-anchor-np ;
+    gs:validFrom "` + periodValidFromV2Literal + `"^^xsd:date ;
+    rdfs:label "content B"@nl .`
+
+	// periodConflictAnchorIRI/periodSeriesTwoOpenConflict (task 3.2): a candidate asserting TWO
+	// distinct, brand-new period nodes for the SAME anchor in a single load — neither one is a
+	// prior-vs-new pair the writer could unambiguously reconcile (both are new relative to the
+	// live graph), so after the write both would remain open: exactly the "two open periods for
+	// one gs:versionOf anchor" invariant-violation scenario (spec.md "The open-period invariant is
+	// enforced per anchor"). The writer must fail loudly and write nothing.
+	periodConflictAnchorIRI     = "http://gemetenstad.nl/id/period-anchor-conflict"
+	periodSeriesTwoOpenConflict = `@prefix gs: <http://gemetenstad.nl/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix data: <http://gemetenstad.nl/id/> .
+data:period-conflict-a gs:versionOf data:period-anchor-conflict ;
+    gs:validFrom "2024-01-01"^^xsd:date ;
+    rdfs:label "conflict A"@nl .
+data:period-conflict-b gs:versionOf data:period-anchor-conflict ;
+    gs:validFrom "2024-02-01"^^xsd:date ;
+    rdfs:label "conflict B"@nl .`
 )
 
 // testClient returns a client and the dataset URL for the gs-test dataset. GS_TEST_FUSEKI_URL is
@@ -198,6 +264,22 @@ SELECT (COUNT(?place) AS ?n) WHERE {
     <` + intv + `> gs:locatedAt ?place .
     << <` + intv + `> gs:locatedAt ?place >> gs:validFrom ?vf .
     FILTER NOT EXISTS { << <` + intv + `> gs:locatedAt ?place >> gs:validTo ?vt }
+  }
+}`
+	return c.count(t, query)
+}
+
+// countOpenNodePeriods returns how many currently-open (no gs:validTo) NODE-FORM period nodes
+// exist for the given gs:versionOf anchor, across every named graph — the node-form analogue of
+// countOpenLocatedAt (task 3.1/3.2), used to assert the one-open-period-per-anchor invariant
+// (design.md D1) for the synthetic period-series fixtures.
+func (c *client) countOpenNodePeriods(t *testing.T, anchor string) int {
+	t.Helper()
+	query := `PREFIX gs: <http://gemetenstad.nl/ns#>
+SELECT (COUNT(?p) AS ?n) WHERE {
+  GRAPH ?g {
+    ?p gs:versionOf <` + anchor + `> ; gs:validFrom ?vf .
+    FILTER NOT EXISTS { ?p gs:validTo ?vt }
   }
 }`
 	return c.count(t, query)
@@ -307,6 +389,13 @@ func TestLoadNoOpRerunLeavesNoTrace(t *testing.T) {
 // gs:validFrom) opens a new version and closes the prior by stamping its gs:validTo equal to the
 // new version's gs:validFrom (contiguous intervals), leaving exactly one open version and never
 // deleting the prior version's triples (design.md D3, the "changed tracked field" scenario).
+//
+// state-node-versioning task 3.3: this is the ANNOTATION-form open/close/no-op coverage (an
+// RDF-star << s p o >> gs:validFrom edge), and it is fully self-contained — the evolvingV1/
+// evolvingV2 fixtures above are synthetic, defined entirely in this file, with no dependency on
+// load/koop's locatedAt rendering. So this test keeps the annotation-form path covered once D3
+// lands and load/koop's renderLocatedAtAnnotations stops stamping gs:validFrom on the real
+// locatedAt edge — no separate dedicated synthetic-annotation test is needed.
 func TestLoadChangedEvolvingEdgeOpensNewVersionAndClosesPrior(t *testing.T) {
 	c, base := testClient(t)
 	ctx := context.Background()
@@ -456,4 +545,103 @@ func TestLoadRejectsMalformedWithNoPartialWrites(t *testing.T) {
 PREFIX data: <http://gemetenstad.nl/id/>
 ASK { GRAPH ?g { << data:intv-eo gs:locatedAt data:place-eo-a >> gs:validTo ?vt } }`),
 		"the rejected candidate must not have closed the seeded prior version")
+}
+
+// state-node-versioning task 3.1: a NODE-FORM period series (design.md D1: a plain gs:validFrom
+// plus a gs:versionOf <anchor> pointer) exercises the same open/close/no-op guarantees the
+// annotation form already has, spec.md's first two scenarios:
+//
+//   - "A new period closes the prior and opens": a new content-derived period IRI for an anchor
+//     that already has one open period closes the prior (gs:validTo = the new period's
+//     gs:validFrom, contiguous) and leaves exactly one open period, with the prior's triples
+//     retained (history not overwritten).
+//   - "An unchanged period series re-run is a no-op": re-asserting the SAME period IRI
+//     (unchanged outcome content, by construction of D2's content-derived-IRI contract) writes no
+//     new period, closes no prior, and mints no run:load-... graph — a true no-op.
+func TestLoadNodeFormPeriodOpensClosesAndNoOps(t *testing.T) {
+	c, base := testClient(t)
+	ctx := context.Background()
+
+	require.NoError(t, Load(ctx, base, nil, Config{Reset: true}))
+
+	// Seed the first period: exactly one open period for the anchor, its gs:validFrom retained.
+	require.NoError(t, Load(ctx, base, []byte(periodSeriesV1), Config{}))
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-np-v1 gs:versionOf data:period-anchor-np ;
+                 gs:validFrom "`+periodValidFromV1Literal+`"^^xsd:date } }`),
+		"seeded period carries its gs:validFrom and gs:versionOf anchor")
+	require.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorIRI), "exactly one open period after seeding")
+
+	// Re-load identical content (same period IRI) -> a TRUE no-op: no new run:load-... graph, no
+	// triples added anywhere under run:load-..., and the prior gs:validFrom untouched.
+	beforeGraphs, err := c.graphsWithPrefix(ctx, runGraphPrefix)
+	require.NoError(t, err)
+	beforeTriples := c.countRunTriples(t)
+
+	require.NoError(t, Load(ctx, base, []byte(periodSeriesV1), Config{}))
+
+	afterGraphs, err := c.graphsWithPrefix(ctx, runGraphPrefix)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, beforeGraphs, afterGraphs, "no new run graph on an unchanged node-form period re-run")
+	assert.Equal(t, beforeTriples, c.countRunTriples(t), "no triples added on an unchanged node-form period re-run")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-np-v1 gs:validFrom "`+periodValidFromV1Literal+`"^^xsd:date } }`),
+		"gs:validFrom on the unchanged period is untouched by the no-op re-run")
+	require.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorIRI), "still exactly one open period after the no-op re-run")
+
+	// Load a NEW period (new IRI, same anchor, new gs:validFrom = t2): the prior period is closed
+	// with gs:validTo = t2 (contiguous), exactly one open period remains, and the prior period's
+	// triples are retained (history not overwritten).
+	require.NoError(t, Load(ctx, base, []byte(periodSeriesV2), Config{}))
+
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-np-v2 gs:versionOf data:period-anchor-np ;
+                 gs:validFrom "`+periodValidFromV2Literal+`"^^xsd:date } }`),
+		"the new period carries the candidate's new gs:validFrom and the same anchor")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-np-v1 gs:validTo "`+periodValidFromV2Literal+`"^^xsd:date } }`),
+		"the prior period is closed with gs:validTo equal to the new period's gs:validFrom")
+	assert.True(t, c.ask(t, `PREFIX gs: <http://gemetenstad.nl/ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX data: <http://gemetenstad.nl/id/>
+ASK { GRAPH ?g { data:period-np-v1 gs:versionOf data:period-anchor-np ;
+                 gs:validFrom "`+periodValidFromV1Literal+`"^^xsd:date ;
+                 rdfs:label "content A"@nl } }`),
+		"the prior period's triples remain in the store — history is not overwritten")
+	assert.Equal(t, 1, c.countOpenNodePeriods(t, periodAnchorIRI), "exactly one open period remains after the new period lands")
+}
+
+// state-node-versioning task 3.2: spec.md's third scenario — "The open-period invariant is
+// enforced per anchor". periodSeriesTwoOpenConflict asserts two distinct, brand-new period nodes
+// for the SAME anchor in a single load; neither has a live prior to close, so both would remain
+// open — the invariant violation. The writer must fail loudly and write NOTHING: no run:load-...
+// graph, no prov:Activity, and no period left open for the conflicting anchor at all (the
+// candidate is rejected in its entirety, not partially applied).
+func TestLoadNodeFormTwoOpenPeriodsForOneAnchorFailsWithNothingWritten(t *testing.T) {
+	c, base := testClient(t)
+	ctx := context.Background()
+
+	require.NoError(t, Load(ctx, base, nil, Config{Reset: true}))
+
+	beforeGraphs, err := c.graphsWithPrefix(ctx, runGraphPrefix)
+	require.NoError(t, err)
+	beforeProv := c.countProvActivities(t)
+
+	err = Load(ctx, base, []byte(periodSeriesTwoOpenConflict), Config{})
+	require.Error(t, err, "a candidate that would leave two open periods for one anchor must fail loudly")
+
+	afterGraphs, err2 := c.graphsWithPrefix(ctx, runGraphPrefix)
+	require.NoError(t, err2)
+	assert.ElementsMatch(t, beforeGraphs, afterGraphs, "no run graph written when the open-period invariant would be violated")
+	assert.Equal(t, beforeProv, c.countProvActivities(t), "no prov:Activity written when the open-period invariant would be violated")
+	assert.Equal(t, 0, c.countOpenNodePeriods(t, periodConflictAnchorIRI), "neither conflicting period is left open in the store — nothing written")
 }
