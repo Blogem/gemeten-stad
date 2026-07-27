@@ -1,0 +1,23 @@
+<!--
+Fixture for parseRecord (task 1.5, scenario 2): title/available/activiteit are present but the
+geometrie element is entirely absent (some publications carry no point). parseRecord must return
+point == nil and no error, never panic.
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2022-500111</dcterms:identifier>
+          <dcterms:title>Besluit omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Twiskeweg 9 1034AB Amsterdam</dcterms:title>
+        </overheidwetgeving:owmskern>
+        <overheidwetgeving:owmsmantel>
+          <dcterms:available>2022-06-10</dcterms:available>
+        </overheidwetgeving:owmsmantel>
+      </overheidwetgeving:meta>
+      <overheidop:openbaarmaking>
+        <overheidop:activiteit>kappen</overheidop:activiteit>
+      </overheidop:openbaarmaking>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>

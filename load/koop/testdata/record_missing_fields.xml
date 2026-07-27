@@ -1,0 +1,19 @@
+<!--
+Fixture for parseRecord (task 1.5, scenario 2) and extractAddress (scenario 5): only a title is
+present, and the title itself carries no postcode/huisnummer/street (unlike the other fixtures).
+Covers the defensive/missing-field path end to end: available == "", activiteit == "",
+point == nil, no error — and, when its title is fed to extractAddress, postcode/huisnummer/street
+all come back zero-valued, no error.
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2022-600222</dcterms:identifier>
+          <dcterms:title>Rectificatie kapvergunning diverse locaties Amsterdam-Noord</dcterms:title>
+        </overheidwetgeving:owmskern>
+      </overheidwetgeving:meta>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>

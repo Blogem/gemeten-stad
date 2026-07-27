@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Fixture for parseZaaknummer (task 1.5, scenario 3): the per-publication metadata.xml sidecar
+(https://zoek.officielebekendmakingen.nl/<id>/metadata.xml), reconstructed from the shape
+documented in the task contract and docs/DATA_SOURCES.md / spikes/spike-b: a flat list of
+<metadata name="..." content="..."/> entries. OVERHEIDop.referentienummer is the zaaknummer;
+its prefix ("N") encodes the stadsdeel (Noord).
+-->
+<metadata_pakket>
+  <metadata name="DC.identifier" content="gmb-2022-245014"/>
+  <metadata name="DC.title" content="Besluit omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Örehof 8 1024BB Amsterdam"/>
+  <metadata name="OVERHEIDop.referentienummer" content="Z2022-N002608"/>
+  <metadata name="OVERHEIDop.activiteit" content="kappen"/>
+</metadata_pakket>

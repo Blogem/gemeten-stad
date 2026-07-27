@@ -1,0 +1,26 @@
+<!--
+Fixture for parseRecord (task 1.5, scenario 1): a realistic *besluit* record, shaped as the
+inner XML of <srw:record> the way it is landed under koop/<id>.xml — no xmlns declarations, so
+parsing must go by local element name only (the prefixes below are NOT bound to any namespace
+URI here). Based on the design example title (docs/DATA_SOURCES.md, docs/DATA_THREAD_TREES.md):
+Besluit ... Örehof 8 1024BB Amsterdam, available 2022-05-31, activiteit kappen, RD point.
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2022-245014</dcterms:identifier>
+          <dcterms:title>Besluit omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Örehof 8 1024BB Amsterdam</dcterms:title>
+        </overheidwetgeving:owmskern>
+        <overheidwetgeving:owmsmantel>
+          <dcterms:available>2022-05-31</dcterms:available>
+        </overheidwetgeving:owmsmantel>
+      </overheidwetgeving:meta>
+      <overheidop:openbaarmaking>
+        <overheidop:activiteit>kappen</overheidop:activiteit>
+        <overheidwetgeving:geometrie>POINT(122000 490000)</overheidwetgeving:geometrie>
+      </overheidop:openbaarmaking>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>

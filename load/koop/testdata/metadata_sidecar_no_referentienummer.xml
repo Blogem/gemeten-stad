@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Fixture for parseZaaknummer (task 1.5, scenario 3): a sidecar with no
+OVERHEIDop.referentienummer entry at all (some publications, especially thin aanvraag stubs,
+carry no zaaknummer). parseZaaknummer must return "" and no error, never panic.
+-->
+<metadata_pakket>
+  <metadata name="DC.identifier" content="gmb-2022-999999"/>
+  <metadata name="DC.title" content="Aanvraag omgevingsvergunning kappen boom Amsterdam"/>
+</metadata_pakket>

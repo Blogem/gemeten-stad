@@ -1,0 +1,24 @@
+<!--
+Fixture for parseRecord / classifyKind: an *aanvraag* record for the same address/zaak as
+besluit_record.xml, earlier in the process (aanvraag precedes besluit). Same inner-XML shape:
+no xmlns declarations, prefixes not bound to any namespace.
+-->
+<srw:recordData>
+  <gzd:gzd>
+    <gzd:originalData>
+      <overheidwetgeving:meta>
+        <overheidwetgeving:owmskern>
+          <dcterms:identifier>gmb-2022-198734</dcterms:identifier>
+          <dcterms:title>Aanvraag omgevingsvergunning vellen van een houtopstand (kap) reguliere procedure Örehof 8 1024BB Amsterdam</dcterms:title>
+        </overheidwetgeving:owmskern>
+        <overheidwetgeving:owmsmantel>
+          <dcterms:available>2022-04-15</dcterms:available>
+        </overheidwetgeving:owmsmantel>
+      </overheidwetgeving:meta>
+      <overheidop:openbaarmaking>
+        <overheidop:activiteit>kappen</overheidop:activiteit>
+        <overheidwetgeving:geometrie>POINT(122000 490000)</overheidwetgeving:geometrie>
+      </overheidop:openbaarmaking>
+    </gzd:originalData>
+  </gzd:gzd>
+</srw:recordData>
