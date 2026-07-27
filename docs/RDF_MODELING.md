@@ -140,9 +140,14 @@ Conventions on the annotation:
 
 - `gs:confidence` (`xsd:decimal`, in `[0,1]`) — `1.0` means an exact resolution; **any value `< 1.0`
   must carry a `gs:caveat`** naming why (shapes enforce this).
-- `gs:caveat` values are a **fixed, controlled set** of four `gs:Caveat` individuals
-  (`gs:unresolvedLocation`, `gs:timeMismatch`, `gs:weakLink`, `gs:transplantOrigin`) — extend the set
-  in `ontology.ttl` *and* the shape's `sh:in`, never write an ad-hoc string.
+- `gs:caveat` values are a **fixed, controlled set** of `gs:Caveat` individuals — never write an
+  ad-hoc string; extend the set in `ontology.ttl` *and* the relevant shape constraint. Two
+  subsets, gated differently: the four **fuzzy-edge** caveats (`gs:unresolvedLocation`,
+  `gs:timeMismatch`, `gs:weakLink`, `gs:transplantOrigin`) annotate `gs:locatedAt`/`AuditLink`
+  edges and are enforced by `gs:InterventionShape`'s SPARQL `NOT IN` constraint above; the
+  **coverage-period** caveat `gs:countUnknown` is used as a plain `gs:caveat` value directly on a
+  `gs:CoveragePeriod` (registry count unknown for the match) — a plain property there, not an
+  RDF-star annotation, so it is *not* gated by that edge constraint.
 - `gs:evidence` (`xsd:string`) — a short human-readable statement of what the confidence rests on.
 
 ## 7. Time and provenance
