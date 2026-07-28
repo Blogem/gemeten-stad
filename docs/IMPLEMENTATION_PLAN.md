@@ -519,6 +519,20 @@ felled-vs-replant counting becomes meaningful only against the permit's own stat
 `Assessment`** open/close as the registry updates. Timeliness stays `deadlineUnknown` by default (Spike A);
 diameter-class equivalence (beleidsregel CVDR697591) turns raw felled counts into the obligation quantity.
 
+**Phase 2 also reworks the permit↔registry matching from per-tree to per-cluster.** Phase 1's `derive`
+assigns *individual* fellings to a permit by place+time proximity (greedy exclusive per-felling
+assignment, `PHASE_1_PLAN.md` D6(2)), with no notion that a permit is *one bounded felling campaign*. On
+the real Noord corpus this lets a permit "cover" fellings years apart — `DATA_THREAD_NOORD.md`'s
+`Z2022-N001404` matches fellings spanning 2023-01 → 2025-02, implausible for a single campaign — and it
+is what strands the ~50% "outcompeted" no-source permits (P15 results). Phase 2 should (1) **cluster
+fellings that are tight in space *and* time** into candidate groups (a felling campaign ≈ a *project*,
+the first-class node `DATA_THREAD_TREES.md` argues for), then (2) **match a permit to a group** — or the
+correctly-sized *slice* of one — **constrained by the permit's extracted tree count** (the count axis
+that is inert in Phase 1: `coverage.go` passes `PermitCount: nil`, and the three-tier extractor above now
+supplies it). This is record-linkage-with-blocking, clusters as the blocks, replacing the per-felling
+greedy assignment. **Open question to settle with data first:** partial/overlapping groups — a permit may
+cover only part of a cluster, or a cluster may span permits — so group↔permit is *not* assumed 1:1.
+
 **Phase 3 — webapp.** Map of interventions coloured by claim status (fulfilled / partial /
 open / overdue / **indeterminate**) with an evidence + confidence panel; grounded chat;
 "no matching source found" as a first-class, provenanced finding.
