@@ -17,8 +17,8 @@ import (
 // (D10) and strips this prefix to recover the zaaknummer used to join PostGIS.
 const interventionPrefix = "http://gemetenstad.nl/id/intervention/"
 
-// CandidateFelling is one kapenherplant row in a permit's buurt+time window (D6(1)): the individual
-// matching unit — never grouped by the batch-assigned datumVergunningVerleend.
+// CandidateFelling is one kapenherplant row in a permit's buurt-∪-200m+time window (D6(1)): the
+// individual matching unit — never grouped by the batch-assigned datumVergunningVerleend.
 type CandidateFelling struct {
 	ID          string
 	BoomID      string
@@ -48,11 +48,12 @@ SELECT ?intervention ?date WHERE { GRAPH ?g { ?intervention a gs:Intervention ; 
 
 // GenerateCandidates implements D6(1) (tasks 2.1-2.3, 6.3): enumerate besluit Interventions from the
 // graph, join koop_publications by zaaknummer for the resolved buurt identificatie / point / tier, and
-// generate buurt+time-scoped candidate fellings from kapenherplant per permit, joining on the GBD
-// buurt identificatie (the same 14-digit identifier kapenherplant."gbdBuurtId" carries) — never on
-// the short, human-readable buurtcode, which is a different Amsterdam code system with no overlap.
-// Assignment (D6(2)) and scoring (D5) are downstream of this — GenerateCandidates only produces the
-// candidate set.
+// generate time-scoped candidate fellings from kapenherplant per permit — a felled row is a candidate
+// when it is either in the permit's buurt (joining on the GBD buurt identificatie, the same 14-digit
+// identifier kapenherplant."gbdBuurtId" carries — never the short, human-readable buurtcode, which is
+// a different Amsterdam code system with no overlap) OR within crossBoundaryRadiusM of the permit's
+// resolved point — an additive union (D6), not a replacement. Assignment (D6(2)) and scoring (D5) are
+// downstream of this — GenerateCandidates only produces the candidate set.
 func GenerateCandidates(ctx context.Context, pool *pgxpool.Pool, schema, fusekiURL string) ([]Permit, error) {
 	permits, err := enumeratePermits(ctx, fusekiURL)
 	if err != nil {
@@ -193,33 +194,52 @@ func tierFromText(s string) Tier {
 	}
 }
 
-// candidateFellingsQuery is D6(1)'s buurt+time SQL: felled kapenherplant rows in the permit's buurt
-// whose felling date falls in [publication, +3yr] (inWindow/windowEnd below define this window; kept
-// in agreement with this BETWEEN). The join key ($1) is the GBD buurt identificatie — the same
-// 14-digit value koop_publications.resolved_identificatie carries, NOT the short human-readable
-// buurtcode — since kapenherplant."gbdBuurtId" is minted in that identificatie system. source_deleted_at
-// IS NULL excludes soft-deleted rows. The per-candidate distance is computed only when the permit
-// carries a resolved point ($2 non-NULL); otherwise every DistanceM is nil and the buurt+time filter
-// alone governs recall.
+// crossBoundaryRadiusM is the additive spatial reach beyond the permit's own buurt (D6): a felled row
+// within this many metres of the permit's resolved point is a candidate even when it lies in a
+// different buurt. Pinned to the scorer's postcode proximity band (score.go's postcodeRadiusM): within
+// it a cross-boundary felling earns real proximity credit (>= ~0.70), while beyond it the place score
+// collapses to the 0.50 buurt floor (placeTerm), so pulling a felling that far across a boundary would
+// add no trustworthy signal (corpus-validated per design.md D6: all above-floor cross-boundary
+// opportunities in the Noord corpus sit <= 200m).
+const crossBoundaryRadiusM float64 = 200
+
+// candidateFellingsQuery is D6(1)'s buurt-∪-200m+time SQL: felled kapenherplant rows whose felling
+// date falls in [publication, +3yr] (inWindow/windowEnd below define this window; kept in agreement
+// with this BETWEEN) AND that are either in the permit's buurt OR within crossBoundaryRadiusM of the
+// permit's resolved point — a union, not a replacement: the buurt clause preserves recall for
+// spread-out multi-felling projects (a felling far from the point but in the same buurt is never
+// dropped), while the spatial clause additively catches near fellings just across a buurt boundary
+// that the buurt-equals clause alone would miss. The buurt join key ($1) is the GBD buurt identificatie
+// — the same 14-digit value koop_publications.resolved_identificatie carries, NOT the short
+// human-readable buurtcode — since kapenherplant."gbdBuurtId" is minted in that identificatie system.
+// source_deleted_at IS NULL excludes soft-deleted rows. The spatial clause only fires when the permit
+// carries a resolved point ($2 non-NULL); a point-less permit falls back to the buurt clause alone
+// (best-effort fallback). The per-candidate distance in the SELECT is likewise computed only when the
+// permit carries a resolved point; otherwise every DistanceM is nil.
 const candidateFellingsQuery = `SELECT id, "boomId", "kapmaatregelDatumUitgevoerd",
        CASE WHEN $2::bytea IS NULL THEN NULL
             ELSE ST_Distance(ST_Transform("resolvedGeom", 28992), ST_GeomFromWKB($2::bytea, 28992))
        END AS dist_m
 FROM %s
-WHERE "gbdBuurtId" = $1
-  AND "kapmaatregelDatumUitgevoerd" IS NOT NULL
+WHERE "kapmaatregelDatumUitgevoerd" IS NOT NULL
   AND "kapmaatregelDatumUitgevoerd" BETWEEN $3 AND $4
-  AND source_deleted_at IS NULL`
+  AND source_deleted_at IS NULL
+  AND (
+    "gbdBuurtId" = $1
+    OR ( $2::bytea IS NOT NULL
+         AND ST_DWithin(ST_Transform("resolvedGeom", 28992), ST_GeomFromWKB($2::bytea, 28992), $5) )
+  )`
 
-// candidateFellings runs candidateFellingsQuery for one permit's GBD buurt identificatie + publication
-// date window. gbdBuurtID must be the identificatie (koop_publications.resolved_identificatie), not the
-// short buurtcode. geomWKB is nil for a point-less permit, yielding a nil DistanceM for every candidate
-// (buurt+time filter only, recall preserved per D6).
+// candidateFellings runs candidateFellingsQuery for one permit's GBD buurt identificatie + resolved
+// point + publication date window, returning the buurt-∪-200m union (D6). gbdBuurtID must be the
+// identificatie (koop_publications.resolved_identificatie), not the short buurtcode. geomWKB is nil for
+// a point-less permit: the spatial clause never fires, so only the buurt clause governs recall and
+// every DistanceM comes back nil.
 func candidateFellings(ctx context.Context, pool *pgxpool.Pool, schema, gbdBuurtID string, geomWKB []byte, pubDate time.Time) ([]CandidateFelling, error) {
 	table := pgx.Identifier{schema, "kapenherplant"}.Sanitize()
 	query := fmt.Sprintf(candidateFellingsQuery, table)
 
-	rows, err := pool.Query(ctx, query, gbdBuurtID, geomWKB, pubDate, windowEnd(pubDate))
+	rows, err := pool.Query(ctx, query, gbdBuurtID, geomWKB, pubDate, windowEnd(pubDate), crossBoundaryRadiusM)
 	if err != nil {
 		return nil, fmt.Errorf("coverage: query candidate fellings for buurt identificatie %s: %w", gbdBuurtID, err)
 	}
