@@ -17,9 +17,9 @@ func TestEmbeddedArtifactsPresent(t *testing.T) {
 		content []byte
 		markers []string
 	}{
-		{"ontology", Ontology, []string{"gs:Intervention", "gs:locatedAt", "gs:confidence", "gs:within", "gs:active", "gs:versionOf", "gs:coversIntervention", "gs:CoveragePeriod", "gs:linksObservation", "gs:granularity", "gs:noSourceFound", "gs:countUnknown"}},
+		{"ontology", Ontology, []string{"gs:Intervention", "gs:locatedAt", "gs:confidence", "gs:within", "gs:active", "gs:versionOf", "gs:coversIntervention", "gs:CoveragePeriod", "gs:linksObservation", "gs:granularity", "gs:noSourceFound", "gs:countUnknown", "gs:Tree", "gs:Felling", "gs:felledTree", "gs:felledOn", "gs:includesFelling"}},
 		{"vocab", Vocab, []string{"sch:tree-audit", "skos:ConceptScheme", "act:vellen"}},
-		{"shapes", Shapes, []string{"gs:InterventionShape", "sh:NodeShape", "sh:sparql", "sh:targetClass", "gs:AuditLinkShape", "gs:CoveragePeriodShape", "sh:xone", "dct:available"}},
+		{"shapes", Shapes, []string{"gs:InterventionShape", "sh:NodeShape", "sh:sparql", "sh:targetClass", "gs:AuditLinkShape", "gs:CoveragePeriodShape", "sh:xone", "dct:available", "gs:FellingShape", "gs:TreeShape", "gs:ObservationShape"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.NotEmpty(t, tc.content, "%s.ttl must be embedded", tc.name)
