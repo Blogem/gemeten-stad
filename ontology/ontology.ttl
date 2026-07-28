@@ -66,7 +66,19 @@ gs:Observation
     a owl:Class ;
     rdfs:label "Observation"@en ;
     rdfs:comment
-        "What the registry / world data actually shows against a Claim: the kapenherplant  felling and replant records, boomAanwezigheid, dates. A Claim is testedAgainst an  Observation. The observed counts live in the value store; the node carries identity."@en .
+        "What the registry / world data actually shows against a Claim: a content-addressed  grouping of the gs:Felling events assigned to a permit (data:observation/<zaaknummer>/  <felling-set-key>, a hash of the sorted assigned gs:Felling IRIs — model-felled-trees D2). A  Claim is testedAgainst an Observation; the Observation carries its members via  gs:includesFelling. Immutable — a changed felling set mints a NEW Observation IRI, never an  in-place edit; its active-ness is carried by whether an open gs:CoveragePeriod links it (no  separate active flag, which would duplicate the period's valid-time). Bulk registry values  (boomAanwezigheid, replant counts) stay in the value store; the graph carries identity plus  felling-set membership."@en .
+
+gs:Tree
+    a owl:Class ;
+    rdfs:label "Tree"@en ;
+    rdfs:comment
+        "An enduring physical registry tree (data:tree/<boomId>), identity only — its geometry  and stamgegevens (species, diameter, location) live in the PostGIS value store, never as a  graph literal. Only FELLED trees are projected into the graph (via a gs:Felling reference);  a tree never felled stays registry-only and does not enter the graph (model-felled-trees D4)."@en .
+
+gs:Felling
+    a owl:Class ;
+    rdfs:label "Felling"@en ;
+    rdfs:comment
+        "The event of a registry tree being felled (data:felling/<kapenherplant-id>) — the  observed fact a coverage gs:Observation links to. Modelled as an EVENT, not a boolean flag on  the tree, because it carries its own gs:felledOn date and is itself the thing a permit's  coverage is checked against (model-felled-trees D1). gs:felledTree names the felled tree;  gs:felledOn is the felling date."@en .
 
 gs:AuditLink
     a owl:Class ;
@@ -138,6 +150,29 @@ gs:testedAgainst
     rdfs:domain gs:Claim ;
     rdfs:range  gs:Observation ;
     rdfs:comment "Relates a Claim (obligation) to the Observation (registry reality) that tests it."@en .
+
+gs:felledTree
+    a owl:ObjectProperty ;
+    rdfs:label "felled tree"@en ;
+    rdfs:domain gs:Felling ;
+    rdfs:range  gs:Tree ;
+    rdfs:comment
+        "Relates a gs:Felling event to the gs:Tree it felled. Required (minCount 1, shapes.ttl) —  a felling with no named tree is meaningless."@en .
+
+gs:felledOn
+    a owl:DatatypeProperty ;
+    rdfs:label "felled on"@en ;
+    rdfs:range  xsd:date ;
+    rdfs:comment
+        "The date a gs:Felling occurred, from the registry's kapenherplant record — an immutable  descriptive-metadata literal (RDF_MODELING.md §1), not evolving state: recording WHEN a  felling happened is not the fact changing, so it is never valid-time stamped. Required  (minCount 1, shapes.ttl)."@en .
+
+gs:includesFelling
+    a owl:ObjectProperty ;
+    rdfs:label "includes felling"@en ;
+    rdfs:domain gs:Observation ;
+    rdfs:range  gs:Felling ;
+    rdfs:comment
+        "Relates a gs:Observation to a gs:Felling assigned as one of its members — the felling  set the Observation is content-addressed by (model-felled-trees D2). Required at least once  on a matched Observation (minCount 1, shapes.ttl). A CROSS-LOAD reference — the bomen  graph-load mints gs:Felling, the coverage derive mints gs:Observation — so it is gated by  sh:nodeKind + a namespace sh:pattern rather than sh:class, exactly like gs:coversIntervention  below (model-felled-trees D5): the isolated-candidate SHACL gate cannot see the other load's  nodes."@en .
 
 gs:coversIntervention
     a owl:ObjectProperty ;
