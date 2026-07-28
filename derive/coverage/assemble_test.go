@@ -3,6 +3,7 @@ package coverage
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -245,4 +246,59 @@ func TestAssemble_ContentKeyExcludesTimestamps(t *testing.T) {
 
 	// Cross-check against the already-implemented ContentKey directly.
 	assert.Equal(t, ContentKey(outcome), m1[1])
+}
+
+// -- model-felled-trees D2 (task 3.1/3.3): a matched Observation carries gs:includesFelling -----
+//
+// "Requirement: Record the coverage outcome as an anchor plus a versioned period", scenario "A
+// matched period links a content-addressed Observation of its fellings": the Observation carries
+// gs:includesFelling -> each assigned gs:Felling (data:felling/<kapenherplant-id>).
+//
+// TODO(pass-2): Outcome.Fellings below is a BEST-GUESS field name for wherever the coder adds the
+// assigned gs:Felling IRIs to the Outcome/Assembled struct (types.go/assemble.go) — adjust this
+// field name (and, if the renderer wires it through a different path, the assertions' construction)
+// to match the coder's actual shape once merged. The turtle-content assertions themselves
+// (gs:includesFelling present, one triple per assigned felling IRI, felling-namespace IRIs) are
+// spec-derived (graph-shapes/spec.md, coverage-audit/spec.md) and should not need to change.
+func TestAssemble_MatchedPeriodIncludesFellingMembership(t *testing.T) {
+	item := Assembled{
+		Zaaknummer:      "Z10",
+		InterventionIRI: "http://gemetenstad.nl/id/intervention/Z10",
+		Outcome: Outcome{
+			Matched:        true,
+			ObservationIRI: "http://gemetenstad.nl/id/observation/Z10/abcdef0123456789",
+			Confidence:     0.90,
+			Granularity:    TierAddress,
+			Fellings: []string{
+				"http://gemetenstad.nl/id/felling/F1",
+				"http://gemetenstad.nl/id/felling/F2",
+			},
+		},
+		ValidFrom:   time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
+		Evidence:    "matched 2 fellings in buurt BU0363",
+		DerivedFrom: []string{"http://gemetenstad.nl/id/intervention/Z10"},
+	}
+
+	got, err := Assemble([]Assembled{item})
+	require.NoError(t, err)
+	turtle := string(got)
+
+	includesLines := gtLinesContaining(turtle, "gs:includesFelling")
+	require.NotEmpty(t, includesLines, "a matched Observation must carry gs:includesFelling")
+	block := strings.Join(includesLines, "\n")
+	assert.Contains(t, block, "http://gemetenstad.nl/id/felling/F1", "expected the first assigned felling as a gs:includesFelling member")
+	assert.Contains(t, block, "http://gemetenstad.nl/id/felling/F2", "expected the second assigned felling as a gs:includesFelling member")
+}
+
+// gtLinesContaining returns every line of turtle containing substr — a local helper mirroring
+// load/koop/graph_test.go's gtLinesContaining (this package has no existing line-scoped helper of
+// its own prior to this file's felling-membership addition).
+func gtLinesContaining(turtle, substr string) []string {
+	var out []string
+	for _, line := range strings.Split(turtle, "\n") {
+		if strings.Contains(line, substr) {
+			out = append(out, line)
+		}
+	}
+	return out
 }

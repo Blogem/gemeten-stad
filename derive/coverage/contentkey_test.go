@@ -117,3 +117,75 @@ func TestContentKey_NoSourceVsMatchedDiffer(t *testing.T) {
 
 	assert.NotEqual(t, ContentKey(matched), ContentKey(noSource))
 }
+
+// -- model-felled-trees D2/D3 (task 3.4): the Observation IRI is content-addressed by its assigned
+// felling set --------------------------------------------------------------------------------
+//
+// D2: "data:observation/<zaaknummer>/<felling-set-key>, a hash of the sorted assigned gs:Felling
+// IRIs". D3: the period content-key changes IFF the assigned set changes (via the Observation
+// IRI), and stays identical otherwise — this is the fix for the real-corpus "59 anchors with two
+// open periods" bug (design.md Context): two outcomes with the SAME rounded confidence but
+// DIFFERENT assigned felling sets must never collide on one content-key.
+//
+// TODO(pass-2): FellingSetKey and mintObservationIRI below are BEST-GUESS names for the functions
+// the coder adds (contentkey.go/assemble.go, mirroring ContentKey's own hash-of-sorted-fields
+// convention and assemble.go's existing mintAnchorIRI/mintPeriodIRI unexported-helper convention).
+// Once the coder's actual felling-set-key / Observation-IRI minting function is visible, fix the
+// two call sites in fellingSetObservationIRI below to match its real name/signature. The
+// TestContentKey_SameRoundedConfidenceDifferentFellingSetStillDiffers test further below does NOT
+// depend on this guess — it is built directly on the existing Outcome/ContentKey and should already
+// pass; keep it as the durable regression pin for D3 regardless of how the minting function ends up
+// named.
+func fellingSetObservationIRI(zaaknummer string, fellingIRIs []string) string {
+	return mintObservationIRI(zaaknummer, FellingSetKey(fellingIRIs))
+}
+
+func TestFellingSetKey_SameSetSameKeyRegardlessOfOrder(t *testing.T) {
+	set1 := []string{"http://gemetenstad.nl/id/felling/F1", "http://gemetenstad.nl/id/felling/F2"}
+	set2 := []string{"http://gemetenstad.nl/id/felling/F2", "http://gemetenstad.nl/id/felling/F1"}
+
+	iri1 := fellingSetObservationIRI("Z1", set1)
+	iri2 := fellingSetObservationIRI("Z1", set2)
+
+	assert.Equal(t, iri1, iri2, "the same felling SET in a different slice order must mint the same Observation IRI")
+	assert.NotEmpty(t, iri1)
+}
+
+func TestFellingSetKey_ChangedSetYieldsDifferentIRI_SameCountSwap(t *testing.T) {
+	// A same-COUNT swap ({F1,F2} -> {F1,F3}) must still mint a different Observation IRI — the D2
+	// scenario "A changed felling set mints a new Observation and a new period".
+	before := []string{"http://gemetenstad.nl/id/felling/F1", "http://gemetenstad.nl/id/felling/F2"}
+	after := []string{"http://gemetenstad.nl/id/felling/F1", "http://gemetenstad.nl/id/felling/F3"}
+
+	iriBefore := fellingSetObservationIRI("Z2", before)
+	iriAfter := fellingSetObservationIRI("Z2", after)
+
+	assert.NotEqual(t, iriBefore, iriAfter, "swapping one member of a same-count felling set must mint a NEW Observation IRI")
+}
+
+func TestFellingSetKey_DifferentZaaknummerSameSetYieldsDifferentIRI(t *testing.T) {
+	set := []string{"http://gemetenstad.nl/id/felling/F1"}
+	assert.NotEqual(t, fellingSetObservationIRI("Z-A", set), fellingSetObservationIRI("Z-B", set),
+		"the Observation IRI is scoped per zaaknummer (data:observation/<zaaknummer>/<felling-set-key>)")
+}
+
+// TestContentKey_SameRoundedConfidenceDifferentFellingSetStillDiffers is the durable D3 regression
+// pin: built directly on Outcome/ContentKey (no dependency on the guessed minting functions above),
+// it asserts that two outcomes sharing IDENTICAL confidence/granularity/caveats but DIFFERENT
+// Observation IRIs (as two different assigned felling sets would mint, per D2) must never produce
+// the same content-key — exactly the collision design.md describes ("two different outcomes with
+// the same rounded confidence collide on one period IRI").
+func TestContentKey_SameRoundedConfidenceDifferentFellingSetStillDiffers(t *testing.T) {
+	o1 := Outcome{
+		Matched:        true,
+		ObservationIRI: "http://gemetenstad.nl/id/observation/Z9/feeeeeeeeeeeeeee1",
+		Confidence:     0.70,
+		Granularity:    TierBuurt,
+		Caveats:        []string{CaveatCountUnknown},
+	}
+	o2 := o1
+	o2.ObservationIRI = "http://gemetenstad.nl/id/observation/Z9/feeeeeeeeeeeeeee2"
+
+	assert.NotEqual(t, ContentKey(o1), ContentKey(o2),
+		"identical confidence/granularity/caveats but a different (felling-set-addressed) Observation IRI must yield a different content-key")
+}

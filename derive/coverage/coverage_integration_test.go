@@ -72,6 +72,7 @@ const (
 	buurtNoSource  = "BUURT-NOSOURCE"
 	buurtCrossB    = "BUURT-CROSSB"     // the cross-boundary-catch permit's OWN buurt
 	buurtCrossBFar = "BUURT-CROSSB-FAR" // the felling's DIFFERENT buurt, deliberately never a permit's buurt
+	buurtSwap      = "BUURT-SWAP"       // model-felled-trees task 4.1: matched->matched same-count felling swap
 
 	gbdStrong    = "03630000000001"
 	gbdContend   = "03630000000002"
@@ -80,6 +81,7 @@ const (
 	gbdNoSource  = "03630000000005"
 	gbdCrossB    = "03630000000006"
 	gbdCrossBFar = "03630000000007"
+	gbdSwap      = "03630000000008"
 
 	zStrong   = "Z-STRONG-001"
 	zWeak1    = "Z-CONTEND-1-WEAK"
@@ -89,6 +91,7 @@ const (
 	zMulti    = "Z-MULTI-001"
 	zNoSource = "Z-NOSOURCE-001"
 	zCrossB   = "Z-CROSSBOUNDARY-001"
+	zSwap     = "Z-SWAP-001"
 
 	fStrong    = "F-STRONG-01"
 	fWeak      = "F-WEAK-A"
@@ -99,6 +102,8 @@ const (
 	fMulti4Far = "F-MULTI-04-FAR" // same buurt as F-MULTI-01..03, but beyond crossBoundaryRadiusM
 	fNewNoSrc  = "F-NOSOURCE-NEW-01"
 	fCrossB    = "F-CROSSBOUNDARY-01" // different gbdBuurtId than Z-CROSSBOUNDARY-001, within 200m of its point
+	fSwapOld   = "F-SWAP-OLD"         // Z-SWAP-001's sole assigned felling in run #1
+	fSwapNew   = "F-SWAP-NEW"         // replaces fSwapOld between run #1 and the swap subtest's re-run (same count: 1)
 )
 
 // interventionIRIFor / anchorIRIFor mirror candidates.go's interventionPrefix and
@@ -115,6 +120,25 @@ func anchorIRIFor(zaaknummer string) string {
 }
 func placeIRIFor(buurt string) string {
 	return "http://gemetenstad.nl/id/place/" + buurt
+}
+
+// fellingIRIFor mirrors design.md D1's felling identity key: gs:Felling IRIs are minted
+// data:felling/<kapenherplant-id> (the felling's own record id, e.g. fStrong/fWeak/... above) — NOT
+// the boomId. Spelled out again here rather than imported, matching interventionIRIFor/
+// anchorIRIFor/placeIRIFor's own "repeated string, not a shared unexported helper" convention just
+// above.
+func fellingIRIFor(fellingID string) string {
+	return "http://gemetenstad.nl/id/felling/" + fellingID
+}
+
+// observationIRIPrefix returns the required prefix a matched period's Observation IRI must carry
+// under model-felled-trees D2's content-addressing scheme: data:observation/<zaaknummer>/<key>. The
+// full IRI is no longer asserted by equality anywhere in this suite (it now includes a
+// content-derived felling-set-key suffix this test can't precompute without duplicating the coder's
+// own hash function) — every assertion below checks this prefix instead, which is exactly what D2
+// guarantees regardless of the key's exact hash value.
+func observationIRIPrefix(zaaknummer string) string {
+	return "http://gemetenstad.nl/id/observation/" + zaaknummer + "/"
 }
 
 func TestCoverageEndToEnd(t *testing.T) {
@@ -440,6 +464,12 @@ func seedPublications(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		// matched ONLY via the spatial clause (D6's cross-boundary catch), never the buurt clause.
 		fmt.Sprintf(`('%s','2022-01-01','%s','%s',%s,'address',false)`,
 			zCrossB, buurtCrossB, gbdCrossB, rdPoint(160000, 495000)),
+		// Z-SWAP-001 (model-felled-trees task 4.1): address-tier, resolved point at (170000,500000).
+		// Starts run #1 matched to F-SWAP-OLD (its sole candidate); the swap subtest later
+		// soft-deletes F-SWAP-OLD and inserts F-SWAP-NEW in the same buurt/window (same assigned
+		// count: 1) to exercise the matched->matched same-count-different-felling transition.
+		fmt.Sprintf(`('%s','2022-01-01','%s','%s',%s,'address',false)`,
+			zSwap, buurtSwap, gbdSwap, rdPoint(170000, 500000)),
 	}
 
 	stmt := "INSERT INTO koop_publications (zaaknummer, available, resolved_buurt_code, resolved_identificatie, resolved_geom, resolved_tier, unresolved) VALUES\n" +
@@ -501,6 +531,13 @@ func seedFellings(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		// Felled 2022-06-01: a 151-day lag from the permit's 2022-01-01 publication (<=2yr bucket).
 		fmt.Sprintf(`('%s','BOOM-CROSSBOUNDARY-01','%s','2022-06-01T00:00:00Z',%s,NULL)`,
 			fCrossB, gbdCrossBFar, fellingPointFromRDOffset(160000, 495000, 90, 120)),
+
+		// F-SWAP-OLD (model-felled-trees task 4.1): felled 2022-06-01 (151-day lag from Z-SWAP-001's
+		// 2022-01-01 publication), offset (5,5) from the permit's point — close/uncontested, matched
+		// outright in run #1. The swap subtest soft-deletes this row and inserts F-SWAP-NEW (same
+		// buurt/window, same count 1) to exercise the matched->matched felling-swap transition.
+		fmt.Sprintf(`('%s','BOOM-SWAP-OLD','%s','2022-06-01T00:00:00Z',%s,NULL)`,
+			fSwapOld, gbdSwap, fellingPointFromRDOffset(170000, 500000, 5, 5)),
 	}
 
 	stmt := `INSERT INTO kapenherplant (id, "boomId", "gbdBuurtId", "kapmaatregelDatumUitgevoerd", "resolvedGeom", source_deleted_at) VALUES
@@ -552,6 +589,7 @@ func seedInterventions(t *testing.T, ctx context.Context, fusekiURL string) {
 		{zMulti, buurtMulti, "2022-01-01"},
 		{zNoSource, buurtNoSource, "2022-01-01"},
 		{zCrossB, buurtCrossB, "2022-01-01"},
+		{zSwap, buurtSwap, "2022-01-01"},
 	}
 
 	var turtle string
@@ -572,4 +610,73 @@ func seedInterventions(t *testing.T, ctx context.Context, fusekiURL string) {
 	}
 
 	require.NoError(t, graph.Load(ctx, fusekiURL, []byte(turtle), graph.Config{}))
+}
+
+// fellingGraphSeed is one gs:Felling the bomen graph projection would have pre-loaded: id (the
+// kapenherplant record id, e.g. fStrong) + boomId + felledOn (the kapmaatregelDatumUitgevoerd date,
+// "YYYY-MM-DD"). model-felled-trees task 4.1 requires the fellings this suite assigns to actually
+// exist in the graph BEFORE coverage.Run mints their Observation's gs:includesFelling members, so
+// this helper stands in for load/bomen's own graph projection (task 2.1/2.2) directly via
+// graph.Load — this package's tests never import load/bomen (a derive-stage suite has no business
+// depending on another load stage's Go internals), mirroring how seedInterventions above stands in
+// for load/koop's own graph write.
+type fellingGraphSeed struct {
+	id, boomID, felledOn string
+}
+
+// seedFellingGraph writes seeds as gs:Tree/gs:Felling turtle through the SHACL-gated graph.Load,
+// satisfying gs:FellingShape/gs:TreeShape (ontology/shapes.ttl, model-felled-trees task 1.1/1.2,
+// already merged).
+func seedFellingGraph(t *testing.T, ctx context.Context, fusekiURL string, seeds []fellingGraphSeed) {
+	t.Helper()
+
+	var b strings.Builder
+	b.WriteString("@prefix gs: <http://gemetenstad.nl/ns#> .\n@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n")
+
+	seenTree := make(map[string]bool)
+	for _, s := range seeds {
+		fmt.Fprintf(&b, "<%s> a gs:Felling ;\n    gs:felledTree <http://gemetenstad.nl/id/tree/%s> ;\n    gs:felledOn \"%s\"^^xsd:date .\n\n",
+			fellingIRIFor(s.id), s.boomID, s.felledOn)
+		if !seenTree[s.boomID] {
+			seenTree[s.boomID] = true
+			fmt.Fprintf(&b, "<http://gemetenstad.nl/id/tree/%s> a gs:Tree .\n\n", s.boomID)
+		}
+	}
+
+	require.NoError(t, graph.Load(ctx, fusekiURL, []byte(b.String()), graph.Config{}))
+}
+
+// initialFellingGraphSeeds is every felling this suite's run #1 corpus needs pre-loaded into the
+// graph (mirrors seedFellings' own rows exactly — same id/boomId/felledOn triples, just reshaped
+// for seedFellingGraph). fNewNoSrc and fSwapNew are deliberately excluded: they do not exist yet at
+// run #1 (they appear later, mirroring insertNoSourceFelling/the swap subtest's own Postgres-side
+// timing).
+func initialFellingGraphSeeds() []fellingGraphSeed {
+	return []fellingGraphSeed{
+		{fStrong, "BOOM-STRONG-01", "2022-06-01"},
+		{fWeak, "BOOM-WEAK-A", "2023-06-01"},
+		{fContested, "BOOM-CONTESTED-01", "2022-06-01"},
+		{fMulti1, "BOOM-MULTI-01", "2022-06-01"},
+		{fMulti2, "BOOM-MULTI-02", "2022-07-01"},
+		{fMulti3, "BOOM-MULTI-03", "2022-08-01"},
+		{fMulti4Far, "BOOM-MULTI-04-FAR", "2022-09-01"},
+		{fCrossB, "BOOM-CROSSBOUNDARY-01", "2022-06-01"},
+		{fSwapOld, "BOOM-SWAP-OLD", "2022-06-01"},
+	}
+}
+
+// includesFellingMembers returns every gs:includesFelling object IRI asserted on observationIRI —
+// the felling-set-membership analogue of periodCaveats above, used to assert task 4.1's "matched
+// period's Observation lists its fellings via gs:includesFelling" scenario.
+func includesFellingMembers(t *testing.T, ctx context.Context, dsURL, observationIRI string) []string {
+	t.Helper()
+	query := fmt.Sprintf(`PREFIX gs: <http://gemetenstad.nl/ns#>
+SELECT ?f WHERE { GRAPH ?g { <%s> gs:includesFelling ?f } }`, observationIRI)
+	rows := mustSelect(t, ctx, dsURL, query)
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r["f"])
+	}
+	sort.Strings(out)
+	return out
 }
