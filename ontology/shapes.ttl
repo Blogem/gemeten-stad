@@ -176,6 +176,51 @@ gs:AuditLinkShape
         sh:message  "A gs:AuditLink anchor must have gs:coversIntervention pointing at an Intervention IRI." ;
     ] .
 
+# ---------------------------------------------------------------------------
+# (3a) Felled tree + felling structure — model-felled-trees D1. Core SHACL: felledTree/
+#      felledOn are plain properties on the Felling node (no RDF-star annotation involved).
+#      gs:felledTree is a CROSS-LOAD reference (bomen graph-load -> gs:Tree, same load ->
+#      gs:Felling), gated by sh:nodeKind + a namespace sh:pattern rather than sh:class, mirroring
+#      gs:coversIntervention above (model-felled-trees D5).
+# ---------------------------------------------------------------------------
+gs:FellingShape
+    a sh:NodeShape ;
+    sh:targetClass gs:Felling ;
+    sh:property [
+        sh:path     gs:felledTree ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:pattern  "^http://gemetenstad\\.nl/id/tree/" ;
+        sh:message  "A gs:Felling must have gs:felledTree pointing at a tree IRI." ;
+    ] ;
+    sh:property [
+        sh:path     gs:felledOn ;
+        sh:minCount 1 ;
+        sh:datatype xsd:date ;
+        sh:message  "A gs:Felling must have a gs:felledOn date (xsd:date)." ;
+    ] .
+
+# gs:Tree is an identity node (geometry stays in PostGIS) — no required properties; permissive
+# by design.
+gs:TreeShape
+    a sh:NodeShape ;
+    sh:targetClass gs:Tree .
+
+# (3b) A matched gs:Observation must name the fellings it is content-addressed by. Like
+# gs:felledTree above, gs:includesFelling is a CROSS-LOAD reference (bomen graph-load mints
+# gs:Felling, the coverage derive mints gs:Observation) — gated by sh:nodeKind + sh:pattern on
+# the felling namespace, not sh:class (model-felled-trees D5).
+gs:ObservationShape
+    a sh:NodeShape ;
+    sh:targetClass gs:Observation ;
+    sh:property [
+        sh:path     gs:includesFelling ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:pattern  "^http://gemetenstad\\.nl/id/felling/" ;
+        sh:message  "A gs:Observation must have at least one gs:includesFelling pointing at a felling IRI." ;
+    ] .
+
 gs:CoveragePeriodShape
     a sh:NodeShape ;
     sh:targetClass gs:CoveragePeriod ;
