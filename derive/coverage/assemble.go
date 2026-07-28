@@ -17,6 +17,7 @@ const (
 	provNS = "http://www.w3.org/ns/prov#"
 
 	auditlinkNS = dataNS + "auditlink/"
+	fellingNS   = dataNS + "felling/"
 )
 
 // turtlePreamble declares the prefixes every assembled item needs: gs: (TBox), data: (documenting
@@ -71,6 +72,21 @@ func mintAnchorIRI(zaaknummer string) string { return auditlinkNS + zaaknummer }
 // D7): data:auditlink/<zaaknummer>/<content-key>.
 func mintPeriodIRI(zaaknummer, contentKey string) string {
 	return auditlinkNS + zaaknummer + "/" + contentKey
+}
+
+// mintFellingIRI returns the gs:Felling IRI for a kapenherplant record id (model-felled-trees D1,
+// "Open Questions": the felling is keyed by record id, 1:1 with the felling act): data:felling/<id>.
+// MUST match ontology/shapes.ttl's gs:includesFelling sh:pattern and the bomen graph-projection's own
+// minting scheme — this package never invents its own felling IRI scheme.
+func mintFellingIRI(id string) string { return fellingNS + id }
+
+// mintObservationIRI returns the content-addressed gs:Observation IRI for a matched permit
+// (model-felled-trees D2): data:observation/<zaaknummer>/<felling-set-key>, where fellingSetKey is
+// FellingSetKey's hash over the permit's sorted assigned gs:Felling IRIs. Because the IRI is a pure
+// function of the felling set, an unchanged set reuses the same IRI (a true no-op) and a changed set
+// (add/remove/swap, even at the same count) always mints a new one.
+func mintObservationIRI(zaaknummer, fellingSetKey string) string {
+	return dataNS + "observation/" + zaaknummer + "/" + fellingSetKey
 }
 
 // granularityToken maps a Tier to the gs:<tier> token gs:granularity takes (ontology/ontology.ttl's
@@ -151,6 +167,17 @@ func (a Assembled) validate() error {
 		if err := assertSafeIRI(a.Outcome.ObservationIRI); err != nil {
 			return fmt.Errorf("coverage: assemble %s: ObservationIRI: %w", a.Zaaknummer, err)
 		}
+		if len(a.Outcome.FellingIRIs) == 0 {
+			// The shape requires a matched gs:Observation to carry gs:includesFelling >= 1
+			// (ontology/shapes.ttl); a matched outcome with zero felling IRIs is a caller bug
+			// this must fail loud on rather than render a period doomed to be SHACL-rejected.
+			return fmt.Errorf("coverage: assemble %s: matched outcome has zero FellingIRIs", a.Zaaknummer)
+		}
+		for _, f := range a.Outcome.FellingIRIs {
+			if err := assertSafeIRI(f); err != nil {
+				return fmt.Errorf("coverage: assemble %s: FellingIRI: %w", a.Zaaknummer, err)
+			}
+		}
 		if _, err := granularityToken(a.Outcome.Granularity); err != nil {
 			return fmt.Errorf("coverage: assemble %s: %w", a.Zaaknummer, err)
 		}
@@ -173,7 +200,8 @@ func renderDerivedFrom(b *strings.Builder, derivedFrom []string) {
 
 // renderAssembled writes one item's turtle block into b: the write-once anchor (always rendered —
 // the load path's unchanged-signature no-op handles idempotency at the store, per design.md D7),
-// then the current gs:CoveragePeriod — matched (D2/D4: mints the Observation, carries
+// then the current gs:CoveragePeriod — matched (model-felled-trees D2/D4: mints the
+// content-addressed gs:Observation with its gs:includesFelling members, carries
 // gs:linksObservation/gs:confidence/gs:granularity/gs:caveat) or no-source (D3: gs:noSourceFound
 // true only, no Observation, no confidence/granularity). Never emits gs:validTo — the writer stamps
 // that on close (state-node-versioning).
@@ -191,7 +219,13 @@ func renderAssembled(b *strings.Builder, item Assembled) error {
 			return fmt.Errorf("coverage: render %s: %w", item.Zaaknummer, err)
 		}
 
-		fmt.Fprintf(b, "<%s> a gs:Observation .\n\n", item.Outcome.ObservationIRI)
+		fellingIRIs := sortedStrings(item.Outcome.FellingIRIs)
+		refs := make([]string, len(fellingIRIs))
+		for i, f := range fellingIRIs {
+			refs[i] = "<" + f + ">"
+		}
+		fmt.Fprintf(b, "<%s> a gs:Observation ;\n    gs:includesFelling %s .\n\n",
+			item.Outcome.ObservationIRI, strings.Join(refs, ", "))
 
 		fmt.Fprintf(b, "<%s> a gs:CoveragePeriod ;\n", periodIRI)
 		fmt.Fprintf(b, "    gs:versionOf <%s> ;\n", anchorIRI)
@@ -224,16 +258,22 @@ func renderAssembled(b *strings.Builder, item Assembled) error {
 	return nil
 }
 
-// sortedCaveats returns a sorted copy of caveats, so gs:caveat's rendering order is deterministic
-// (ContentKey already sorts internally for hashing purposes; this sorts independently for
-// rendering, since the two need not share a slice).
-func sortedCaveats(caveats []string) []string {
-	if len(caveats) == 0 {
+// sortedStrings returns a sorted copy of ss, or nil for an empty input — the shared rendering-order
+// helper for both gs:caveat (sortedCaveats) and gs:includesFelling, so re-runs emit byte-stable
+// turtle regardless of the input slice's original order (ContentKey/FellingSetKey sort independently
+// for hashing purposes; this is purely about deterministic rendering).
+func sortedStrings(ss []string) []string {
+	if len(ss) == 0 {
 		return nil
 	}
-	sorted := append([]string(nil), caveats...)
+	sorted := append([]string(nil), ss...)
 	sort.Strings(sorted)
 	return sorted
+}
+
+// sortedCaveats returns a sorted copy of caveats, so gs:caveat's rendering order is deterministic.
+func sortedCaveats(caveats []string) []string {
+	return sortedStrings(caveats)
 }
 
 // Assemble renders one turtle document for a whole derive run: a shared prefix preamble, then per
