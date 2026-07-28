@@ -32,5 +32,5 @@
 ## 5. Validation + docs
 
 - [x] 5.1 `go test ./load/bomen/... ./derive/... ./ontology/... ./cmd/pipeline/...` and `go vet ./...` pass; `gofmt` clean; integration lane green with `-p 1`.
-- [ ] 5.2 Run the full pipeline on the dev stores (geo, bomen [+graph], graph, koop, derive) and confirm graph open matched periods == `audit_metrics` matched (the 340-vs-281 discrepancy resolved); capture the corrected coverage numbers for `docs/PHASE_1_PLAN.md`.
+- [x] 5.2 Run the full pipeline on the dev stores (geo, bomen [+graph], graph, koop, derive) and confirm graph open matched periods == `audit_metrics` matched (the 340-vs-281 discrepancy resolved); capture the corrected coverage numbers for `docs/PHASE_1_PLAN.md`.
 - [x] 5.3 Update `docs/IMPLEMENTATION_PLAN.md` §3/§4 to the tree/felling model + content-addressed Observation; note the replant layer (`gs:Replanting`, `dct:isReplacedBy` lineage, fulfilment `Assessment`) as the Phase-2 follow-on.
