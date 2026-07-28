@@ -51,7 +51,8 @@ type Pair struct {
 // Outcome is the content-bearing verdict for one permit, hashed into the period IRI.
 type Outcome struct {
 	Matched        bool
-	ObservationIRI string   // "" when no-source
+	ObservationIRI string   // "" when no-source; content-addressed by FellingIRIs (model-felled-trees D2)
+	FellingIRIs    []string // sorted, assigned gs:Felling IRIs; nil/empty when no-source
 	Confidence     float64  // used only when Matched; caller passes it already rounded 2dp
 	Granularity    Tier     // "" when no-source
 	Caveats        []string // ContentKey sorts internally; order-independent
