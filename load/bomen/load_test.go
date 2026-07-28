@@ -207,8 +207,22 @@ func TestReadLandedRows_FeatureCollection(t *testing.T) {
 	coords, ok := geom["coordinates"].([]any)
 	require.True(t, ok)
 	require.Len(t, coords, 2)
-	assert.InDelta(t, 4.895, coords[0], 1e-9)
-	assert.InDelta(t, 52.370, coords[1], 1e-9)
+	// readLandedRows' json.Decoder now decodes every JSON number as json.Number (UseNumber, see
+	// read.go's id/boomId exact-integer fix), including GeoJSON coordinates, so a coordinate must
+	// be converted to float64 before InDelta can compare it — testify's InDelta rejects a
+	// non-numerical json.Number value outright.
+	lonNum, ok := coords[0].(json.Number)
+	require.True(t, ok, "coordinates[0] must decode as json.Number, got %T", coords[0])
+	lon, err := lonNum.Float64()
+	require.NoError(t, err, "coordinates[0] must parse as a float")
+
+	latNum, ok := coords[1].(json.Number)
+	require.True(t, ok, "coordinates[1] must decode as json.Number, got %T", coords[1])
+	lat, err := latNum.Float64()
+	require.NoError(t, err, "coordinates[1] must parse as a float")
+
+	assert.InDelta(t, 4.895, lon, 1e-9)
+	assert.InDelta(t, 52.370, lat, 1e-9)
 
 	assert.Equal(t, "stam-2", rows[1]["id"])
 	assert.Equal(t, "A02", rows[1]["gbdBuurtId"])
