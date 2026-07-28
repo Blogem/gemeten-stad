@@ -119,7 +119,7 @@ func loadFelledGraph(ctx context.Context, pool *pgxpool.Pool, schema, fusekiURL 
 
 	candidate, skipped := buildFelledCandidate(rows)
 	for _, id := range skipped {
-		log.Printf("bomen: felling %s skipped from graph (unsafe IRI or missing date)", id)
+		log.Printf("bomen: felling %s skipped from graph (empty boomId, unsafe IRI, or missing felling date)", id)
 	}
 	if len(candidate) == 0 {
 		return nil
