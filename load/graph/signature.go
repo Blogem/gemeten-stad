@@ -97,11 +97,15 @@ const evolvingFlagPattern = `
 // internal row order. The evolving flag joins in via an OPTIONAL sub-SELECT so subjects with no
 // gs:validFrom at all still appear (immutable entities), with ?evolving left unbound (-> false).
 func signatureQuery(graphIRIs []string) string {
+	// Each per-graph block is wrapped in its own group graph pattern ({ ... }) so the "\nUNION\n"
+	// join below produces `{ GRAPH <g1> {...} } UNION { GRAPH <g2> {...} }` — SPARQL UNION combines
+	// group graph patterns, so a bare `GRAPH <g1> {...} UNION GRAPH <g2> {...}` is a parse error the
+	// moment a second run:load-* graph exists (i.e. any second Load).
 	rowBlocks := make([]string, len(graphIRIs))
 	evolvingBlocks := make([]string, len(graphIRIs))
 	for i, g := range graphIRIs {
-		rowBlocks[i] = "GRAPH <" + g + "> {" + signatureRowPattern + "}"
-		evolvingBlocks[i] = "GRAPH <" + g + "> {" + evolvingFlagPattern + "}"
+		rowBlocks[i] = "{ GRAPH <" + g + "> {" + signatureRowPattern + "} }"
+		evolvingBlocks[i] = "{ GRAPH <" + g + "> {" + evolvingFlagPattern + "} }"
 	}
 
 	return fmt.Sprintf(`
