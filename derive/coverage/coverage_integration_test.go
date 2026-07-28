@@ -42,6 +42,8 @@ package coverage
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -155,6 +157,10 @@ func TestCoverageEndToEnd(t *testing.T) {
 	seedPublications(t, ctx, pool)
 	seedFellings(t, ctx, pool)
 	seedInterventions(t, ctx, fusekiURL)
+	// model-felled-trees task 4.1: the fellings this suite assigns must already exist in the graph
+	// as gs:Felling (load/bomen's own projection, stood in for here) BEFORE coverage.Run mints their
+	// Observation's gs:includesFelling members.
+	seedFellingGraph(t, ctx, fusekiURL, initialFellingGraphSeeds())
 
 	// -- Malformed period rejected (Requirement: Write derived coverage through the SHACL gate) --
 	//
@@ -205,7 +211,8 @@ func TestCoverageEndToEnd(t *testing.T) {
 		p := periods[0]
 
 		assert.NotEmpty(t, p.ObservationIRI, "a matched period must link an Observation")
-		assert.Equal(t, "http://gemetenstad.nl/id/observation/"+zStrong, p.ObservationIRI)
+		assert.True(t, strings.HasPrefix(p.ObservationIRI, observationIRIPrefix(zStrong)),
+			"the Observation IRI must be content-addressed under data:observation/<zaaknummer>/<felling-set-key> (model-felled-trees D2), got %q", p.ObservationIRI)
 		assert.InDelta(t, 1.00, parseConfidence(t, p.Confidence), 1e-9, "clamped: 0.90 place + 0.15 time + 0.05 ambiguity = 1.10 -> 1.00")
 		assert.Equal(t, "http://gemetenstad.nl/ns#address", p.Granularity)
 		assert.False(t, p.IsNoSource, "a matched period must not carry gs:noSourceFound")
@@ -230,8 +237,8 @@ func TestCoverageEndToEnd(t *testing.T) {
 		require.Len(t, periods, 1)
 		p := periods[0]
 
-		assert.Equal(t, "http://gemetenstad.nl/id/observation/"+zWeak1, p.ObservationIRI,
-			"below tau is still a MATCHED period (>=1 assigned felling), not no-source")
+		assert.True(t, strings.HasPrefix(p.ObservationIRI, observationIRIPrefix(zWeak1)),
+			"below tau is still a MATCHED period (>=1 assigned felling), not no-source; got Observation IRI %q", p.ObservationIRI)
 		assert.InDelta(t, 0.52, parseConfidence(t, p.Confidence), 1e-9,
 			"0.50 buurt floor + 0 count-unknown + 0.05 (2-3yr lag) - 0.03 (contested by 1 other permit) = 0.52")
 		assert.Equal(t, "http://gemetenstad.nl/ns#buurt", p.Granularity)
@@ -406,6 +413,65 @@ func TestCoverageEndToEnd(t *testing.T) {
 		assert.True(t, m.Matched)
 		assert.Equal(t, []string{fNewNoSrc}, m.AssignedFellingIDs)
 	})
+
+	// -- model-felled-trees task 4.1 (the headline regression this change fixes): a matched->matched
+	// transition where the assigned felling set changes but its COUNT and rounded confidence do not
+	// must still open exactly one new period and close the prior one -- never leaving two open
+	// periods on the same anchor. -----------------------------------------------------------------
+	t.Run("model-felled-trees 4.1: matched->matched same-count felling swap opens exactly one new period", func(t *testing.T) {
+		anchor := anchorIRIFor(zSwap)
+
+		priorPeriods := openPeriodsFor(t, ctx, fusekiURL, anchor)
+		require.Len(t, priorPeriods, 1, "exactly one open period for Z-SWAP-001 before the swap")
+		prior := priorPeriods[0]
+		require.False(t, prior.IsNoSource, "run #1 must have matched Z-SWAP-001 to F-SWAP-OLD")
+		require.NotEmpty(t, prior.ObservationIRI)
+
+		priorMembers := includesFellingMembers(t, ctx, fusekiURL, prior.ObservationIRI)
+		assert.Equal(t, []string{fellingIRIFor(fSwapOld)}, priorMembers,
+			"run #1's Observation must include F-SWAP-OLD")
+		priorConfidence := parseConfidence(t, prior.Confidence)
+
+		// The swap: soft-delete F-SWAP-OLD (excluded from candidateFellingsQuery's source_deleted_at
+		// IS NULL clause) and insert F-SWAP-NEW at the IDENTICAL offset/felling-date, in the same
+		// buurt/window -- same assigned count (1), same place/time/ambiguity arithmetic, so the
+		// rounded confidence must come out identical even though the assigned felling itself changed.
+		// Also seed F-SWAP-NEW's gs:Felling so the new Observation's gs:includesFelling target
+		// resolves in the graph, mirroring load/bomen's own projection.
+		softDeleteFelling(t, ctx, pool, fSwapOld)
+		insertSwapNewFelling(t, ctx, pool)
+		seedFellingGraph(t, ctx, fusekiURL, []fellingGraphSeed{{fSwapNew, "BOOM-SWAP-NEW", "2022-06-01"}})
+
+		require.NoError(t, Run(ctx, pool, fusekiURL, Config{}))
+
+		openAfter := openPeriodsFor(t, ctx, fusekiURL, anchor)
+		require.Len(t, openAfter, 1,
+			"EXACTLY ONE open period must remain for the anchor after a same-count felling swap -- "+
+				"this is the duplicate-open-period regression the whole change exists to fix")
+		next := openAfter[0]
+
+		assert.NotEqual(t, prior.IRI, next.IRI,
+			"a changed (swapped) assigned felling set must open a NEW content-keyed period, not reuse the prior one")
+		assert.False(t, next.IsNoSource)
+		assert.NotEmpty(t, next.ObservationIRI)
+		assert.NotEqual(t, prior.ObservationIRI, next.ObservationIRI,
+			"the swapped felling set must content-address to a NEW Observation IRI (model-felled-trees D2)")
+		assert.InDelta(t, priorConfidence, parseConfidence(t, next.Confidence), 1e-9,
+			"same count/place/lag/ambiguity arithmetic must still yield the SAME rounded confidence despite the different felling -- exactly the collision design.md's D2/D3 fix targets")
+
+		nextMembers := includesFellingMembers(t, ctx, fusekiURL, next.ObservationIRI)
+		assert.Equal(t, []string{fellingIRIFor(fSwapNew)}, nextMembers,
+			"the new open period's Observation must include F-SWAP-NEW, not F-SWAP-OLD")
+
+		closedValidTo := sparqlAsk(t, ctx, fusekiURL, fmt.Sprintf(
+			`PREFIX gs: <http://gemetenstad.nl/ns#> ASK { GRAPH ?g { <%s> gs:validTo ?vt } }`, prior.IRI))
+		assert.True(t, closedValidTo, "the prior (pre-swap) period must be closed via gs:validTo, not deleted")
+
+		m, found := queryMetric(t, ctx, pool, zSwap)
+		require.True(t, found)
+		assert.True(t, m.Matched)
+		assert.Equal(t, []string{fSwapNew}, m.AssignedFellingIDs)
+	})
 }
 
 // -- Seed data construction -------------------------------------------------------------------
@@ -558,6 +624,30 @@ VALUES ('%s','BOOM-NOSOURCE-NEW-01','%s','2022-06-01T00:00:00Z',%s,NULL)`,
 		fNewNoSrc, gbdNoSource, fellingPointFromRDOffset(108000, 500000, 5, 5))
 	_, err := pool.Exec(ctx, stmt)
 	require.NoError(t, err, "insert the newly-appearing felling for the no-source permit")
+}
+
+// softDeleteFelling stamps source_deleted_at on the kapenherplant row id, mirroring the real
+// bomen-load's soft-delete path: candidateFellingsQuery's source_deleted_at IS NULL clause then
+// excludes it from candidate generation, without physically removing the row.
+func softDeleteFelling(t *testing.T, ctx context.Context, pool *pgxpool.Pool, id string) {
+	t.Helper()
+	_, err := pool.Exec(ctx, `UPDATE kapenherplant SET source_deleted_at = now() WHERE id = $1`, id)
+	require.NoError(t, err, "soft-delete kapenherplant row %s", id)
+}
+
+// insertSwapNewFelling inserts F-SWAP-NEW (model-felled-trees task 4.1) at the IDENTICAL
+// buurt/offset/felling-date as F-SWAP-OLD (seedFellings above), so the swap subtest's re-run scores
+// it identically (same place/time/ambiguity terms, same assigned count) -- only the assigned
+// felling's identity differs, exercising the same-rounded-confidence-different-felling-set
+// transition D2/D3 fix.
+func insertSwapNewFelling(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	stmt := fmt.Sprintf(
+		`INSERT INTO kapenherplant (id, "boomId", "gbdBuurtId", "kapmaatregelDatumUitgevoerd", "resolvedGeom", source_deleted_at)
+VALUES ('%s','BOOM-SWAP-NEW','%s','2022-06-01T00:00:00Z',%s,NULL)`,
+		fSwapNew, gbdSwap, fellingPointFromRDOffset(170000, 500000, 5, 5))
+	_, err := pool.Exec(ctx, stmt)
+	require.NoError(t, err, "insert F-SWAP-NEW")
 }
 
 // joinRows joins pre-rendered "(...)" SQL VALUES row literals with ",\n".

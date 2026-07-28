@@ -249,6 +249,7 @@ func stamgegevensPoint(t *testing.T, ctx context.Context, pool *pgxpool.Pool, id
 // ingest/shared.RawStore.LandVersion seam.
 func TestBomenLoad_EndToEnd(t *testing.T) {
 	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
+	dsURL := fusekiDatasetURL(t)
 	ctx := context.Background()
 
 	pool := newSchemaPool(t, ctx, dsn)
@@ -261,7 +262,7 @@ func TestBomenLoad_EndToEnd(t *testing.T) {
 
 	// -- scenario: initial load (Config{Reset:true}) ------------------------------
 
-	require.NoError(t, Load(ctx, pool, store, Config{Reset: true}))
+	require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: true}))
 
 	t.Run("initial load: target tables populated, no soft-deletes", func(t *testing.T) {
 		assert.Equal(t, len(kapV1), countRowsWhere(t, ctx, pool, kapenherplantTable, ""), "kapenherplant row count")
@@ -301,7 +302,7 @@ func TestBomenLoad_EndToEnd(t *testing.T) {
 		// Same fixture content, landed again: LandVersion is content-hash idempotent, so no
 		// new version is written and readLandedRows reads back the exact same snapshot.
 		seed(t, store, kapV1, stamV1, t1.Add(time.Hour))
-		require.NoError(t, Load(ctx, pool, store, Config{Reset: false}))
+		require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: false}))
 
 		assert.Equal(t, len(kapV1), countRowsWhere(t, ctx, pool, kapenherplantTable, ""))
 		assert.Equal(t, len(stamV1), countRowsWhere(t, ctx, pool, stamgegevensTable, ""))
@@ -323,7 +324,7 @@ func TestBomenLoad_EndToEnd(t *testing.T) {
 		landStamgegevensGeoJSON(t, store, artifactStamgegevens, stamV1, t2)
 
 		loadTime := time.Now().UTC()
-		require.NoError(t, Load(ctx, pool, store, Config{Reset: false}))
+		require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: false}))
 
 		// kap-c: absent from the fresh export -> retained (not physically dropped), with
 		// source_deleted_at stamped to the load timestamp.

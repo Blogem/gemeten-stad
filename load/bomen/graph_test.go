@@ -10,39 +10,21 @@ import (
 )
 
 // model-felled-trees task 2.3: unit tests for the bomen -> graph turtle assembler (task 2.1),
-// exercised as a PURE function over felled kapenherplant rows — the coder's implementation is not
-// visible to this (pass 1) worktree, so these tests are written against
+// exercised as a PURE function over felled kapenherplant rows, against
 // openspec/changes/model-felled-trees/specs/bomen-load/spec.md's scenarios and design.md D1/D4,
 // tolerant of exact turtle formatting (full angle-bracket IRIs vs a prefix), mirroring
-// load/koop/graph_test.go's approach for its own concurrently-implemented buildCandidate.
+// load/koop/graph_test.go's approach for its own buildCandidate.
 //
-// TODO(pass-2): felledRowFixture (the input row shape) and buildFellingCandidate (the assembler
-// function name/signature) below are BEST-GUESS names chosen to mirror load/koop/graph.go's
-// buildCandidate([]AuditedBesluit) ([]byte, error) convention, per the task contract's "prefer
-// matching the koop assembler's naming convention" guidance. Once the coder's actual bomen graph
-// projection (task 2.1/2.2) is visible, replace:
-//   1. felledRowFixture with whichever row type the real assembler consumes (a Go struct read back
-//      from the loaded kapenherplant table's id/boomId/kapmaatregelDatumUitgevoerd columns, or the
-//      same map[string]any landed-row shape load/koop's buildCandidate consumes — check which one
-//      the coder chose).
-//   2. the buildFellingCandidate(...) call sites below with the coder's real function name/signature.
-// The turtle-content assertions themselves (data:tree/<boomId> a gs:Tree, data:felling/<id> a
-// gs:Felling ; gs:felledTree ... ; gs:felledOn "..."^^xsd:date, only-felled-rows-projected) are
-// spec-derived (bomen-load/spec.md) and should not need to change once the wiring is fixed.
+// Reconciled to the real assembler (load/bomen/graph.go): the row type is FelledRow
+// (ID/BoomID/FelledOn time.Time — queryFelledRows only ever returns rows with a non-null felling
+// date, so a "never felled" row is modeled here as the zero time.Time{}, which
+// buildFelledCandidate's renderFelledRow rejects via FelledOn.IsZero() and buildFelledCandidate
+// skips), and the assembler is buildFelledCandidate(rows) (candidate []byte, skipped []string) — a
+// PURE function that also reports which row ids it skipped.
 
-// felledRowFixture is this test file's local stand-in for one kapenherplant row's fields the
-// assembler needs: id (the felling's own record id, model-felled-trees design.md's "Felling
-// identity key"), boomId (the felled tree's identity), and FelledOn — nil for a row that was NEVER
-// felled (kapmaatregelDatumUitgevoerd IS NULL), a non-nil date for a felled row.
-type felledRowFixture struct {
-	ID       string
-	BoomID   string
-	FelledOn *time.Time
-}
-
-func felledOn(y int, m time.Month, d int) *time.Time {
-	t := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-	return &t
+// felledOn returns the felling date for a genuinely felled row.
+func felledOn(y int, m time.Month, d int) time.Time {
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 // treeNS/fellingNS mirror the settled namespaces (ontology/ontology.ttl, ontology/shapes.ttl):
@@ -108,11 +90,13 @@ func gtAssertUnderNamespace(t *testing.T, turtle, ns, id string) {
 // `data:tree/<boomId> a gs:Tree` and `data:felling/<id> a gs:Felling` written through the shared
 // candidate.
 func TestBuildFellingCandidate_FelledRowProjectsTreeAndFelling(t *testing.T) {
-	rows := []felledRowFixture{
+	rows := []FelledRow{
 		{ID: "kap-a", BoomID: "stam-1", FelledOn: felledOn(2023, 2, 1)},
 	}
 
-	turtle := string(buildFellingCandidate(rows))
+	candidate, skipped := buildFelledCandidate(rows)
+	turtle := string(candidate)
+	assert.Empty(t, skipped, "a well-formed felled row must not be skipped")
 
 	gtAssertUnderNamespace(t, turtle, graphTestTreeNS, "stam-1")
 	gtAssertUnderNamespace(t, turtle, graphTestFellingNS, "kap-a")
@@ -127,11 +111,13 @@ func TestBuildFellingCandidate_FelledRowProjectsTreeAndFelling(t *testing.T) {
 // TestBuildFellingCandidate_FellingReferencesItsTree covers "gs:felledTree names the felled tree":
 // the felling's gs:felledTree object must be exactly the SAME tree IRI minted for the row's boomId.
 func TestBuildFellingCandidate_FellingReferencesItsTree(t *testing.T) {
-	rows := []felledRowFixture{
+	rows := []FelledRow{
 		{ID: "kap-b", BoomID: "stam-2", FelledOn: felledOn(2023, 5, 1)},
 	}
 
-	turtle := string(buildFellingCandidate(rows))
+	candidate, skipped := buildFelledCandidate(rows)
+	turtle := string(candidate)
+	assert.Empty(t, skipped)
 
 	felledTreeLines := gtLinesContaining(turtle, "gs:felledTree")
 	require.NotEmpty(t, felledTreeLines, "expected a gs:felledTree triple")
@@ -142,11 +128,13 @@ func TestBuildFellingCandidate_FellingReferencesItsTree(t *testing.T) {
 // TestBuildFellingCandidate_FelledOnIsXSDDate covers "gs:felledOn the date": the felling date must
 // be emitted as an xsd:date-typed literal, not a bare/untyped string.
 func TestBuildFellingCandidate_FelledOnIsXSDDate(t *testing.T) {
-	rows := []felledRowFixture{
+	rows := []FelledRow{
 		{ID: "kap-c", BoomID: "stam-3", FelledOn: felledOn(2023, 8, 15)},
 	}
 
-	turtle := string(buildFellingCandidate(rows))
+	candidate, skipped := buildFelledCandidate(rows)
+	turtle := string(candidate)
+	assert.Empty(t, skipped)
 
 	dateLines := gtLinesContaining(turtle, "gs:felledOn")
 	require.NotEmpty(t, dateLines, "expected a gs:felledOn triple")
@@ -158,37 +146,41 @@ func TestBuildFellingCandidate_FelledOnIsXSDDate(t *testing.T) {
 // with FelledOn == nil (kapmaatregelDatumUitgevoerd IS NULL, a tree never felled) must contribute
 // NOTHING to the candidate, even alongside a genuinely felled row in the same batch.
 func TestBuildFellingCandidate_OnlyFelledRowsProjected(t *testing.T) {
-	rows := []felledRowFixture{
+	rows := []FelledRow{
 		{ID: "kap-felled", BoomID: "stam-felled", FelledOn: felledOn(2023, 3, 1)},
-		{ID: "kap-neverfelled", BoomID: "stam-neverfelled", FelledOn: nil},
+		{ID: "kap-neverfelled", BoomID: "stam-neverfelled", FelledOn: time.Time{}},
 	}
 
-	turtle := string(buildFellingCandidate(rows))
+	candidate, skipped := buildFelledCandidate(rows)
+	turtle := string(candidate)
 
 	gtAssertUnderNamespace(t, turtle, graphTestFellingNS, "kap-felled")
 	assert.NotContains(t, turtle, "kap-neverfelled", "a never-felled row's felling id must not appear in the candidate")
 	assert.NotContains(t, turtle, "stam-neverfelled", "a never-felled row's tree must not appear in the candidate")
+	assert.Contains(t, skipped, "kap-neverfelled", "a row with a zero FelledOn must be reported as skipped")
 }
 
 // TestBuildFellingCandidate_NeverFelledRowAloneProducesNothing covers the same scenario in
 // isolation: a batch containing ONLY never-felled rows must project no gs:Tree/gs:Felling at all.
 func TestBuildFellingCandidate_NeverFelledRowAloneProducesNothing(t *testing.T) {
-	rows := []felledRowFixture{
-		{ID: "kap-x", BoomID: "stam-x", FelledOn: nil},
+	rows := []FelledRow{
+		{ID: "kap-x", BoomID: "stam-x", FelledOn: time.Time{}},
 	}
 
-	turtle := buildFellingCandidate(rows)
+	candidate, skipped := buildFelledCandidate(rows)
 
-	assert.NotContains(t, string(turtle), "gs:Felling", "a never-felled row must not produce a gs:Felling")
-	assert.NotContains(t, string(turtle), "gs:Tree", "a never-felled row must not produce a gs:Tree")
+	assert.NotContains(t, string(candidate), "gs:Felling", "a never-felled row must not produce a gs:Felling")
+	assert.NotContains(t, string(candidate), "gs:Tree", "a never-felled row must not produce a gs:Tree")
+	assert.Equal(t, []string{"kap-x"}, skipped)
 }
 
 // TestBuildFellingCandidate_EmptyInput mirrors load/koop/graph_test.go's
 // TestBuildCandidate_EmptyInput: no rows must not error and must emit nothing.
 func TestBuildFellingCandidate_EmptyInput(t *testing.T) {
-	turtle := buildFellingCandidate(nil)
-	assert.NotContains(t, string(turtle), "gs:Felling")
-	assert.NotContains(t, string(turtle), "gs:Tree")
+	candidate, skipped := buildFelledCandidate(nil)
+	assert.NotContains(t, string(candidate), "gs:Felling")
+	assert.NotContains(t, string(candidate), "gs:Tree")
+	assert.Empty(t, skipped)
 }
 
 // TestBuildFellingCandidate_MultipleFelledRowsShareOnePreamble covers assembling more than one
@@ -196,12 +188,14 @@ func TestBuildFellingCandidate_EmptyInput(t *testing.T) {
 // header (mirrors load/koop/graph_test.go's TestAssemble_TwoItemsBothAppearUnderOnePreamble /
 // buildCandidate's own "one shared prefix preamble" contract).
 func TestBuildFellingCandidate_MultipleFelledRowsShareOnePreamble(t *testing.T) {
-	rows := []felledRowFixture{
+	rows := []FelledRow{
 		{ID: "kap-1", BoomID: "stam-10", FelledOn: felledOn(2022, 1, 1)},
 		{ID: "kap-2", BoomID: "stam-20", FelledOn: felledOn(2022, 6, 1)},
 	}
 
-	turtle := string(buildFellingCandidate(rows))
+	candidate, skipped := buildFelledCandidate(rows)
+	turtle := string(candidate)
+	assert.Empty(t, skipped)
 
 	assert.Contains(t, turtle, "@prefix gs:", "a single valid Turtle prefix header must be present")
 	gtAssertUnderNamespace(t, turtle, graphTestFellingNS, "kap-1")

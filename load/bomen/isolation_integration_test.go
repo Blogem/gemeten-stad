@@ -141,6 +141,7 @@ func countInSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool, schema
 // holds tables with the exact same unqualified names as the load's own targets.
 func TestBomenLoad_ConfinedToOwnSchema(t *testing.T) {
 	dsn := requireEnv(t, "GS_TEST_DATABASE_URL")
+	dsURL := fusekiDatasetURL(t)
 	ctx := context.Background()
 
 	pool, schemaA, schemaB := newIsolationPool(t, ctx, dsn)
@@ -157,7 +158,7 @@ func TestBomenLoad_ConfinedToOwnSchema(t *testing.T) {
 	fetchedAt := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	seed(t, store, fixtureKapenherplantV1(), fixtureStamgegevens(), fetchedAt)
 
-	require.NoError(t, Load(ctx, pool, store, Config{Reset: true}))
+	require.NoError(t, Load(ctx, pool, store, dsURL, Config{Reset: true}))
 
 	t.Run("schema A's decoy tables and sentinel rows survive untouched", func(t *testing.T) {
 		assert.Equal(t, 1, countInSchema(t, ctx, pool, schemaA, "kapenherplant", "id = 'SENTINEL'"),
