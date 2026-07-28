@@ -1,6 +1,7 @@
 package bomen
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +47,11 @@ func readLandedRows(store *shared.RawStore, artifact, embedKey string) ([]map[st
 	// line-length limit, so it handles both without buffering a whole line.
 	var rows []map[string]any
 	dec := json.NewDecoder(f)
+	// UseNumber preserves each JSON number's exact source lexical form as json.Number instead of
+	// decoding it into float64, which loses precision and renders large integer ids (e.g.
+	// 4301189) in scientific notation. This matters for id/boomId, which must stay exact integer
+	// strings to derive stable, canonical gs:Felling/gs:Tree IRIs.
+	dec.UseNumber()
 	for {
 		var envelope struct {
 			Embedded map[string]json.RawMessage `json:"_embedded"`
@@ -65,7 +71,9 @@ func readLandedRows(store *shared.RawStore, artifact, embedKey string) ([]map[st
 				continue
 			}
 			var pageRows []map[string]any
-			if err := json.Unmarshal(raw, &pageRows); err != nil {
+			pageDec := json.NewDecoder(bytes.NewReader(raw))
+			pageDec.UseNumber()
+			if err := pageDec.Decode(&pageRows); err != nil {
 				return nil, fmt.Errorf("bomen: decode %s rows for %s: %w", embedKey, artifact, err)
 			}
 			rows = append(rows, pageRows...)
