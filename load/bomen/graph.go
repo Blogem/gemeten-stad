@@ -138,9 +138,13 @@ func buildFelledCandidate(rows []FelledRow) (candidate []byte, skipped []string)
 // queryFelledRows reads every kapenherplant target row with a non-null kapmaatregelDatumUitgevoerd
 // (a "felled" row, model-felled-trees D4) from the schema-qualified kapenherplant table. Trees
 // never felled (a null felling date) are never returned — they must not enter the graph.
+// source_deleted_at IS NULL excludes soft-deleted rows (removed from the source, or a stale row
+// left behind by a key change): a soft-deleted row must never be projected as a gs:Felling
+// (mirrors derive/coverage/candidates.go's candidateFellingsQuery, which applies the same filter
+// to the sibling read path).
 func queryFelledRows(ctx context.Context, pool *pgxpool.Pool, schema string) ([]FelledRow, error) {
 	sql := fmt.Sprintf(
-		`SELECT id, coalesce("boomId", ''), "kapmaatregelDatumUitgevoerd" FROM %s WHERE "kapmaatregelDatumUitgevoerd" IS NOT NULL`,
+		`SELECT id, coalesce("boomId", ''), "kapmaatregelDatumUitgevoerd" FROM %s WHERE "kapmaatregelDatumUitgevoerd" IS NOT NULL AND source_deleted_at IS NULL`,
 		qualify(schema, kapenherplantTable),
 	)
 	rows, err := pool.Query(ctx, sql)
