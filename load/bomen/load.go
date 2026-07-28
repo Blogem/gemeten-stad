@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Blogem/gemeten-stad/ingest/shared"
+	loadgraph "github.com/Blogem/gemeten-stad/load/graph"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -39,9 +40,15 @@ type Config struct {
 // Load runs the full bomen backbone load: ensure extensions + target schema (rebuilding it first
 // if cfg.Reset), read the landed kapenherplant/stamgegevens exports, stage each into its
 // *_staging table, upsert staging into targets (soft-deleting rows absent from the fresh staging
-// snapshot), materialize the kapenherplant -> stamgegevens point resolution, and log the resulting
-// row counts. It returns a non-nil error — the caller should exit non-zero — if any step fails.
-func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, cfg Config) error {
+// snapshot), materialize the kapenherplant -> stamgegevens point resolution, project the felled
+// trees + their felling events into the RDF graph through the SHACL-gated graph loader
+// (model-felled-trees D1/D4), and log the resulting row counts. It returns a non-nil error — the
+// caller should exit non-zero — if any step fails.
+//
+// fusekiURL is only used for the graph projection step; Reset there is always false — a bomen-only
+// --reset (cfg.Reset) governs the PostGIS targets alone and must never clear other load stages'
+// run graphs in Fuseki (mirrors load/koop.Load's identical rationale for its own graph write).
+func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, fusekiURL string, cfg Config) error {
 	if err := ensureExtensions(ctx, pool); err != nil {
 		return err
 	}
@@ -90,7 +97,38 @@ func Load(ctx context.Context, pool *pgxpool.Pool, store *shared.RawStore, cfg C
 		return fmt.Errorf("bomen: load: %w", err)
 	}
 
+	if err := loadFelledGraph(ctx, pool, schema, fusekiURL); err != nil {
+		return fmt.Errorf("bomen: load: %w", err)
+	}
+
 	return logRowCounts(ctx, pool, schema)
+}
+
+// loadFelledGraph queries the felled kapenherplant rows, assembles them into a Turtle candidate,
+// and writes it through the SHACL-gated graph loader (load/graph.Load) with Reset: false — the
+// bomen graph projection never clears other run graphs; idempotency comes from the load gate's
+// SCD2 signature (design.md, load/koop.Load's identical Reset rationale). A row skipped by
+// buildFelledCandidate (unsafe IRI or missing date) is logged, not fatal — mirrors
+// load/koop.Load's graphSkipped handling. An empty candidate (no felled rows, or every row
+// skipped) is a clean no-op: the graph write is skipped entirely.
+func loadFelledGraph(ctx context.Context, pool *pgxpool.Pool, schema, fusekiURL string) error {
+	rows, err := queryFelledRows(ctx, pool, schema)
+	if err != nil {
+		return err
+	}
+
+	candidate, skipped := buildFelledCandidate(rows)
+	for _, id := range skipped {
+		log.Printf("bomen: felling %s skipped from graph (unsafe IRI or missing date)", id)
+	}
+	if len(candidate) == 0 {
+		return nil
+	}
+
+	if err := loadgraph.Load(ctx, fusekiURL, candidate, loadgraph.Config{Reset: false}); err != nil {
+		return fmt.Errorf("load felled graph: %w", err)
+	}
+	return nil
 }
 
 // logRowCounts logs the resulting kapenherplant/stamgegevens target row counts after a load. The

@@ -501,7 +501,9 @@ func runGraphLoad(ctx context.Context, reset bool) error {
 	return nil
 }
 
-// runBomenLoad loads the landed bomen tree-registry export into PostGIS.
+// runBomenLoad loads the landed bomen tree-registry export into PostGIS, then projects the felled
+// trees + their felling events into the RDF graph through the SHACL-gated graph loader
+// (model-felled-trees D1/D4) — the fusekiURL below is only for that projection step.
 func runBomenLoad(ctx context.Context, reset bool) error {
 	dbURL, err := shared.DatabaseURL(os.Getenv)
 	if err != nil {
@@ -519,8 +521,13 @@ func runBomenLoad(ctx context.Context, reset bool) error {
 	}
 	store := shared.NewRawStore(rawPath)
 
+	fusekiURL, err := shared.FusekiURL(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("resolve fuseki url: %w", err)
+	}
+
 	cfg := loadbomen.Config{Reset: reset}
-	if err := loadbomen.Load(ctx, pool, store, cfg); err != nil {
+	if err := loadbomen.Load(ctx, pool, store, fusekiURL, cfg); err != nil {
 		return fmt.Errorf("load bomen: %w", err)
 	}
 	return nil
