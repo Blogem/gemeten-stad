@@ -135,30 +135,42 @@ For each permit the system SHALL ensure a stable `gs:AuditLink` **anchor**
 assemble one `gs:CoveragePeriod` **period node** (`data:auditlink/<zaaknummer>/<content-key>`, the key
 a hash of the outcome excluding timestamps) carrying `gs:versionOf` → the anchor, `gs:validFrom` (run
 world-time), `gs:evidence`, and `prov:wasDerivedFrom` the permit + registry rows. When the permit is
-assigned **≥1 felling** the period SHALL be **matched**: mint `data:observation/<zaaknummer> a
-gs:Observation` (identity only), and carry `gs:linksObservation` → it, `gs:confidence` (the score),
-`gs:granularity` (the tier used — `gs:address`/`gs:postcode`/`gs:buurt`), and `gs:caveat gs:weakLink`
-when the score is below τ. When the permit is assigned **zero fellings** the period SHALL be
-**no-source**: `gs:noSourceFound true`, no `gs:Observation` and no `gs:linksObservation`.
+assigned **≥1 felling** the period SHALL be **matched**: mint a **content-addressed** `gs:Observation`
+(`data:observation/<zaaknummer>/<felling-set-key>`, where `<felling-set-key>` is a hash of the sorted
+assigned `gs:Felling` IRIs) carrying `gs:includesFelling` → each assigned `gs:Felling` (the fellings
+loaded by the bomen graph projection), and carry `gs:linksObservation` → that Observation,
+`gs:confidence` (the score), `gs:granularity` (the tier used — `gs:address`/`gs:postcode`/`gs:buurt`),
+and `gs:caveat gs:weakLink` when the score is below τ. Because the Observation IRI is content-addressed
+by its felling set, a changed assigned set yields a **new** Observation IRI. When the permit is
+assigned **zero fellings** the period SHALL be **no-source**: `gs:noSourceFound true`, no
+`gs:Observation` and no `gs:linksObservation`. The Observation is **not** identity-only and **not** one
+mutable node per permit (superseding derive-coverage-audit D2): it is an immutable, content-addressed
+snapshot of the observed felling set, and its active-ness is carried by whether an open
+`gs:CoveragePeriod` links it (no separate `active` flag).
 
-#### Scenario: A strong match is a matched period on the permit's anchor
+#### Scenario: A matched period links a content-addressed Observation of its fellings
 
-- **WHEN** a permit's assigned fellings score ≥ 0.60
-- **THEN** the permit's `gs:AuditLink` anchor exists (`gs:coversIntervention` the Intervention) and a
-  `gs:CoveragePeriod` `gs:versionOf` that anchor is assembled with `gs:linksObservation` → the
-  `Observation`, `gs:confidence` = the score, and `gs:granularity` = the tier used
+- **WHEN** a permit is assigned fellings `F1, F2`
+- **THEN** a `gs:Observation` `data:observation/<zaaknummer>/<key over {F1,F2}>` is minted with
+  `gs:includesFelling F1, F2`, and the matched `gs:CoveragePeriod` carries `gs:linksObservation` → it
 
-#### Scenario: A below-τ match is a matched period with a weakLink caveat
+#### Scenario: A changed felling set mints a new Observation and a new period
 
-- **WHEN** a permit is assigned ≥1 felling but scores below 0.60
-- **THEN** the matched period additionally carries `gs:caveat gs:weakLink`
+- **WHEN** a later run assigns the same permit `F1, F2, F3` (set changed)
+- **THEN** a new content-addressed `gs:Observation` (different IRI) is minted with the new
+  `gs:includesFelling`, a new `gs:CoveragePeriod` opens linking it, and the prior period is closed —
+  even if the rounded confidence is unchanged
+
+#### Scenario: An unchanged felling set reuses the same Observation and period
+
+- **WHEN** a re-run assigns the identical felling set
+- **THEN** the same Observation IRI and the same content-keyed period IRI are produced (a true no-op)
 
 #### Scenario: An unmatched permit is a no-source period
 
-- **WHEN** a permit is assigned no felling in its buurt+window
+- **WHEN** a permit is assigned no felling in its buurt/window
 - **THEN** a `gs:CoveragePeriod` `gs:versionOf` the permit's anchor is assembled with
-  `gs:noSourceFound true` and `gs:evidence` naming the searched buurt and window, and no
-  `gs:Observation` is minted
+  `gs:noSourceFound true` and `gs:evidence`, and no `gs:Observation` is minted
 
 ### Requirement: Write derived coverage through the SHACL gate
 
@@ -203,11 +215,14 @@ geometry SHALL NOT be duplicated — it lives in `kapenherplant`.
 
 Re-running `derive` on unchanged inputs SHALL be a true no-op: the same content-keyed
 `gs:CoveragePeriod` IRI is produced, the writer's valid-time-agnostic signature matches, no new period
-is written, no prior is closed, and no new run graph or `audit_metrics` change occurs. When a permit's
-coverage outcome changes (no-source → matched, weak → strong, or a changed assigned set), the derive
-SHALL produce a **new** content-keyed period node; the writer SHALL open it and close the prior open
-period of that permit's anchor (stamping `gs:validTo`), retaining history, and the `audit_metrics` row
-SHALL be upserted.
+is written, no prior is closed, and no new run graph or `audit_metrics` change occurs. The period's
+content-key SHALL be derived such that it changes **if and only if** the period's graph content
+changes — in particular it incorporates the **content-addressed Observation IRI** (which encodes the
+assigned felling set), so a changed felling set (a different Observation) produces a new content-key
+and a new period, and an identical set produces an identical one. The system SHALL guarantee **exactly
+one open period per anchor** after any run (no duplicate open periods): because a genuinely-different
+outcome always yields a genuinely-different period IRI, a changed outcome opens a new period and the
+writer closes the prior open period of that anchor, retaining history.
 
 #### Scenario: Unchanged re-run is a no-op
 
@@ -215,10 +230,10 @@ SHALL be upserted.
 - **THEN** the same period IRI is produced, no new run graph is minted, and no `audit_metrics` row
   changes
 
-#### Scenario: A newly appearing felling opens a matched period and closes the prior no-source
+#### Scenario: A changed outcome never collides on an existing period IRI
 
-- **WHEN** a later run assigns a felling to a permit previously recorded as a `gs:noSourceFound` period
-- **THEN** a new matched `gs:CoveragePeriod` opens (`gs:linksObservation` → the Observation)
-- **AND** the prior no-source period's `gs:validTo` is stamped (closed), retained in history
-- **AND** exactly one open period remains for that permit's anchor
+- **WHEN** a permit's assigned felling set changes (even with the same rounded confidence)
+- **THEN** the new outcome produces a new content-key/period IRI (via the new Observation IRI), the
+  writer opens it and closes the prior, and exactly one open period remains for that anchor — no
+  period IRI is written into two run graphs
 
