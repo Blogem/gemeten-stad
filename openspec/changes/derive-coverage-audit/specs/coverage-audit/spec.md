@@ -11,12 +11,19 @@ date** SHALL be read from the Intervention's `dct:available` literal in the grap
 `koop_publications` (PostGIS), joined by zaaknummer — the clean hybrid-store split: meaning and dates
 from the graph, quantitative/geometric values from PostGIS. The **individual felling** is the
 matching unit — the system SHALL NOT group fellings
-by the batch date `datumVergunningVerleend` (unusable per Spike A). Candidate generation SHALL remain
-buurt+time-scoped for recall (a slightly-imprecise point MUST NOT drop a real felling). When the
-permit carries a resolved point (`koop_publications.resolved_geom`), the system SHALL compute, per
-candidate felling, the metric distance from that point to the felling geometry
-(`kapenherplant.resolvedGeom`, SRID-transformed to metres); that distance feeds scoring, not the
-buurt filter.
+by the batch date `datumVergunningVerleend` (unusable per Spike A). Candidate fellings SHALL be those
+in the time window that are **either in the permit's buurt OR within 200 m of the permit's resolved
+point** (`ST_DWithin`, SRID-aligned to metres) — a **union**, not a replacement. The buurt clause
+preserves recall for spread-out projects (a felling far from the point but in the same buurt MUST NOT
+be dropped); the 200 m spatial clause additively catches near fellings **just across a buurt boundary**
+that a buurt-only net would miss. The union SHALL be fragmentation-safe (the buurt is always included,
+so a large multi-felling project is never split), and the 200 m radius SHALL match the scorer's
+postcode proximity band (beyond it a cross-boundary felling scores at the 0.50 buurt floor and adds no
+trustworthy signal). A **point-less** permit (buurt-tier) has no point, so only the buurt clause
+applies (best-effort fallback). When the permit carries a resolved point
+(`koop_publications.resolved_geom`), the system SHALL compute, per candidate felling, the metric
+distance from that point to the felling geometry (`kapenherplant.resolvedGeom`, SRID-transformed to
+metres); that distance feeds scoring.
 
 #### Scenario: Felled rows in the buurt+window become candidate fellings
 
@@ -30,6 +37,20 @@ buurt filter.
 - **THEN** the metric distance from the permit point to the felling is computed (SRID-aligned) and
   attached to the candidate for scoring
 - **AND** a permit with no `resolved_geom` skips the distance step and is scored at the buurt floor
+
+#### Scenario: A near cross-boundary felling is a candidate
+
+- **WHEN** a permit carries a resolved point and a felled row within `[pub,+3yr]` lies **within 200 m**
+  of that point but in a **different** buurt than the permit's `resolved_identificatie`
+- **THEN** that felling is a candidate (via the spatial clause), even though the buurt-equals clause
+  alone would exclude it
+
+#### Scenario: A spread-out project keeps its far same-buurt fellings
+
+- **WHEN** a permit's felled rows in its own buurt lie beyond 200 m from the resolved point (a large
+  project across a buurt-sized site)
+- **THEN** they remain candidates (via the buurt clause) — the spatial radius does not shrink the
+  buurt net, so the project is not fragmented
 
 #### Scenario: A felling before publication is not a candidate
 

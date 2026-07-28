@@ -19,7 +19,7 @@
 ## 2. Candidate generation over the registry
 
 - [x] 2.1 Enumerate besluit `Intervention`s from the **graph** (SPARQL), reading `dct:available` (publication date) + `gs:locatedAt`; read the buurt code + `resolved_geom`/`resolved_tier` as **values** from `koop_publications`, joined by zaaknummer.
-- [x] 2.2 Query `kapenherplant` for **individual** felled rows in that buurt with `kapmaatregelDatumUitgevoerd` in `[publication, +3yr]` (id, boomId, felling date, `resolvedGeom`). No `datumVergunningVerleend` grouping.
+- [x] 2.2 Query `kapenherplant` for **individual** felled rows with `kapmaatregelDatumUitgevoerd` in `[publication, +3yr]` that are **in the permit's buurt OR within 200 m of its resolved point** (`ST_DWithin`, cross-boundary catch; buurt-only fallback when point-less). No `datumVergunningVerleend` grouping.
 - [x] 2.3 Per candidate felling, compute metric distance `ST_Distance(ST_Transform(k."resolvedGeom",28992), $point)` (registry 4326 → 28992); point-less permits skip it.
 - [x] 2.4 Unit tests: windowing (before-publication excluded) + SRID-aligned distance (known-distance pair).
 

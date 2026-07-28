@@ -133,14 +133,29 @@ Phase-1 permits (no extraction) → `countUnknown` caveat; place+time carry the 
 fixed at 0.50 so a point-less permit matches Spike B's buurt-level calibration; proximity radii + place
 values are calibrated in implementation against the spike's labeled cases (golden fixtures pin both).
 
-### D6 — Candidate generation (buurt+time SQL) then exclusive per-felling assignment
+### D6 — Candidate generation (buurt ∪ 200 m spatial + time SQL) then exclusive per-felling assignment
 
-**(1) Candidates.** Per Intervention, read its buurt code (`gs:locatedAt` → `data:place/<code>` =
-`gbdBuurtId`), then `SELECT id, boomId, "kapmaatregelDatumUitgevoerd", "resolvedGeom" FROM
-kapenherplant WHERE "gbdBuurtId"=$1 AND "kapmaatregelDatumUitgevoerd" BETWEEN $2 AND $3` (felled rows).
-Buurt+time-scoped for recall. Per candidate, metric distance
-`ST_Distance(ST_Transform(k."resolvedGeom",28992), $point)` (registry 4326 → 28992). Point-less
-permits skip distance and score at the 0.50 floor.
+**(1) Candidates.** Per Intervention, take the permit's resolved buurt identificatie
+(`koop_publications.resolved_identificatie` = the registry `gbdBuurtId` — the Place IRI
+`data:place/<identificatie>` is minted from it) plus its resolved point + tier. Candidate fellings are
+felled `kapenherplant` rows in the time window that are **either in the permit's buurt OR within
+200 m of the permit's resolved point** (cross-boundary, when the permit has a point):
+`WHERE "kapmaatregelDatumUitgevoerd" BETWEEN $2 AND $3 AND ("gbdBuurtId"=$1 OR
+ST_DWithin(ST_Transform("resolvedGeom",28992), $point, 200))` (registry 4326 → 28992).
+
+The **buurt clause preserves recall for spread-out projects** — one permit, many fellings across a
+buurt-sized site: a felling 500 m away in the *same* buurt stays a candidate (validated on the Noord
+corpus: 88% of multi-tree permits legitimately span > 150 m; the biggest is 60 fellings over
+147–542 m). The **200 m spatial clause additively catches near fellings just across a buurt boundary**
+that the buurt-equals net misses. The union is **fragmentation-safe**: because the buurt is always
+included, a big project is never split — that risk only applies to a radius used *instead of* the
+buurt. The 200 m radius is the scorer's postcode proximity band (D5): within it a cross-boundary
+felling earns real proximity credit (≥ ~0.70); beyond it the place score collapses to the 0.50 buurt
+floor, so pulling a felling across a boundary adds no trustworthy signal (corpus check: all 91
+above-floor cross-boundary opportunities sit ≤ 200 m; the 41 beyond 200 m are buurt-floor weak links).
+Point-less permits have no point, so only the buurt clause fires (best-effort fallback). Per
+candidate, metric distance `ST_Distance(ST_Transform(k."resolvedGeom",28992), $point)` feeds scoring;
+point-less permits skip distance and score at the 0.50 floor.
 
 **(2) Exclusive assignment.** Across all permits' candidate pairs, **each felling is assigned to the
 single permit whose (permit↔felling) score is highest** (deterministic tie-break: distance, then
