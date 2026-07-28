@@ -144,7 +144,10 @@ func stageRows(ctx context.Context, pool *pgxpool.Pool, stagingTable string, col
 }
 
 // rowString reads a string field from row, treating a missing key, nil value, or empty string as
-// SQL NULL.
+// SQL NULL. A json.Number field (decoded via json.Decoder.UseNumber, see readLandedRows) is
+// returned in its exact source lexical form — e.g. "4301189" — rather than going through the
+// generic %v fallback, which would render a float64 in scientific notation for large values and
+// silently corrupt ids like gs:Felling/gs:Tree IRI components.
 func rowString(row map[string]any, key string) any {
 	v, ok := row[key]
 	if !ok || v == nil {
@@ -155,6 +158,12 @@ func rowString(row map[string]any, key string) any {
 			return nil
 		}
 		return s
+	}
+	if n, ok := v.(json.Number); ok {
+		if n == "" {
+			return nil
+		}
+		return n.String()
 	}
 	return fmt.Sprintf("%v", v)
 }
