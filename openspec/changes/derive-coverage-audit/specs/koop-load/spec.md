@@ -10,7 +10,7 @@ minted `gs:` term, and therefore carrying **no** `gs:validFrom`/`gs:validTo`; `g
 `act:vellen` (verplanten ≡ vellen); a `gs:locatedAt` edge to the resolved buurt `Place`
 (`data:place/<gebieden identificatie>`, the IRI P12b seeds) carrying a `{| gs:confidence <c> ;
 gs:caveat <term> |}` annotation (caveat present iff `c < 1.0`) — a **refinable-metadata edge that
-holds**, so it SHALL NOT carry `gs:validFrom`/`gs:validTo` (per `docs/RDF_STAR_RELATIONSHIPS.md`:
+holds**, so it SHALL NOT carry `gs:validFrom`/`gs:validTo` (per `docs/RDF_STAR_MODELING.md`:
 location holds; its confidence is refined via transaction-time, not versioned in valid-time); a
 minimal `<place> a gs:Place` typing so the edge satisfies the shape gate; and a `gs:claims` edge to a
 `Claim` (`data:claim/<zaaknummer>`) representing the herplantplicht via art. 7, **with no obligation

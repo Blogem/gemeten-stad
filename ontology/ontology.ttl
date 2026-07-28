@@ -286,7 +286,7 @@ gs:versionOf
     a owl:ObjectProperty ;
     rdfs:label "version of"@en ;
     rdfs:comment
-        "Points from a period node to its stable series anchor IRI. A period node carries a plain  gs:validFrom + gs:versionOf <anchor>; the writer keeps exactly one open period per anchor,  closing the prior open period when a new one appears — history retained, never overwritten.  The anchor is a stable, domain-chosen IRI identifying the series (timeless; never itself  carries validFrom/validTo). This is the node-form valid-time mechanism (see  docs/RDF_STAR_RELATIONSHIPS.md), distinct from the RDF-star refinable-edge form  (gs:confidence/gs:evidence/gs:caveat annotations), which is transaction-time only and never  carries valid-time. Range deliberately unconstrained — any IRI can anchor a series; a  domain model's shapes constrain it further if needed."@en .
+        "Points from a period node to its stable series anchor IRI. A period node carries a plain  gs:validFrom + gs:versionOf <anchor>; the writer keeps exactly one open period per anchor,  closing the prior open period when a new one appears — history retained, never overwritten.  The anchor is a stable, domain-chosen IRI identifying the series (timeless; never itself  carries validFrom/validTo). This is the node-form valid-time mechanism (see  docs/RDF_STAR_MODELING.md), distinct from the RDF-star refinable-edge form  (gs:confidence/gs:evidence/gs:caveat annotations), which is transaction-time only and never  carries valid-time. Range deliberately unconstrained — any IRI can anchor a series; a  domain model's shapes constrain it further if needed."@en .
 
 gs:active
     a owl:DatatypeProperty ;

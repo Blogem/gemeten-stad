@@ -26,7 +26,7 @@ way to attach or gate it. This change builds the derivation and models the audit
     **at most one** permit; a permit MAY link **many** fellings. A permit's `Observation` is the
     **set of fellings assigned to it**.
   - **Models coverage as a stable anchor + versioned period nodes** (per
-    `docs/RDF_STAR_RELATIONSHIPS.md`: a time-bounded relationship is a node grouped by a series
+    `docs/RDF_STAR_MODELING.md`: a time-bounded relationship is a node grouped by a series
     anchor, not an annotated edge):
     - a per-permit **anchor** `data:auditlink/<zaaknummer> a gs:AuditLink ; gs:coversIntervention
       <intervention>` (stable, write-once — "the coverage audit of this permit");

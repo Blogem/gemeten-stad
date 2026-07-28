@@ -23,7 +23,7 @@ felling exist for this permit, and how sure are we?"_ It sits on pieces now **al
 
 **The modeling gap.** P8 shipped `gs:AuditLink` as a bare class with no attachment or gate. **User
 decisions (settled collaboratively):** (1) coverage is a **time-bounded state**, so it is a **node**,
-not an RDF-star annotated edge (`docs/RDF_STAR_RELATIONSHIPS.md`); (2) it versions as a stable
+not an RDF-star annotated edge (`docs/RDF_STAR_MODELING.md`); (2) it versions as a stable
 **anchor** node plus **one period node per outcome** (content-keyed for no-op re-runs), plain
 properties, core-SHACL gate; (3) the matching unit is the **individual felling**, assigned to **at
 most one** permit; (4) PostGIS stores **derived numbers only**.

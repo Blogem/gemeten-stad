@@ -106,7 +106,7 @@ state.**
   resolved-location link is *not* one of these (see below) — refining its confidence is a
   correction, not a change in the world.
 
-**Two mechanisms, chosen by shape (not one-size-fits-all) — see `docs/RDF_STAR_RELATIONSHIPS.md`
+**Two mechanisms, chosen by shape (not one-size-fits-all) — see `docs/RDF_STAR_MODELING.md`
 for the authoritative decision guide:**
 - **RDF-star statement annotation** carries *refinable metadata* — confidence, evidence, a
   caveat — about a fact that itself holds timelessly. It is **transaction-time only** (the

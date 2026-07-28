@@ -1,9 +1,10 @@
-# Modeling relationships in RDF-star: edges vs nodes, and time
+# Modeling in RDF-star: statements vs things, edges vs nodes, and time
 
-A decision guide for *how to represent a relationship in the graph* — as an RDF-star annotated
-edge, or as its own node — and, crucially, **how to handle relationships that change over time**.
-Written up after the P14 (coverage audit) design surfaced the question; it governs every fuzzy or
-evolving relationship in the model (`gs:locatedAt`, `gs:auditLink`, `gs:Assessment`,
+A decision guide for *how to represent a fact or relationship in the graph* — as an RDF-star
+annotated edge, or as its own node — starting from **what RDF-star is actually for**, and, crucially,
+**how to handle relationships that change over time**. Written up after the P14 (coverage audit) and
+the felled-tree modeling surfaced the question; it governs every fuzzy or evolving relationship in the
+model (`gs:locatedAt`, `gs:AuditLink`, `gs:Assessment`, `gs:Felling`/`gs:Replanting`,
 `gs:LegalStatusPeriod`, …).
 
 ## The one fact that drives everything
@@ -27,6 +28,52 @@ nothing). Two important consequences:
 - The reifier is typically a blank node bound to one specific triple; it is **not** a stable,
   referenceable identity for "the relationship." If you need to point at, gate, or evolve the
   relationship itself, that wants a real node.
+
+## RDF-star is *statement*-metadata, not property-graph edge-properties
+
+If you come from property graphs (Neo4j and friends), RDF-star *looks* like "put properties on an
+edge" — and that reading is the single most common way to misuse it. `<< :s :p :o >> :k :v` does
+**not** mean "the edge `:p` has attribute `:k`." It means **"the *statement* `:s :p :o` has property
+`:k = :v`."** The subject is the *assertion itself*.
+
+So the acid test for whether RDF-star is the right tool is one question:
+
+> **Is the value a property of the *statement I'm making*, or a property of a *thing in the world*?**
+
+- Property of the **statement** → RDF-star. How sure am I this holds (**confidence**), who said it
+  (**provenance**), which run recorded it (**transaction-time**), what's the evidence. All metadata
+  about *my assertion's* reliability or origin.
+- Property of a **thing or event in the world** → a **node** (see n-ary, below). It has its own
+  identity and usually several attributes of its own.
+
+**Worked example, both ways, from this model:**
+
+- `<< intervention gs:locatedAt place >> gs:confidence 0.7 ; gs:caveat gs:unresolvedLocation` —
+  *correct* RDF-star. `0.7` is genuinely a property of the *statement*: "I'm 70% sure this permit
+  sits at this place." Get better data, refine the confidence. It's about *my knowledge*, not the
+  world.
+- A tree's **replant date** — *wrong* for RDF-star. `<< treeA gs:replantedBy treeB >>
+  gs:plantedOn "2025-01-24"` literally asserts "the *statement* 'A was replanted by B' was planted on
+  2025-01-24" — but the statement wasn't planted on a date; the **tree** was. The date is a property
+  of a real-world **event** (the planting), so it belongs on a node: `data:replanting/… a
+  gs:Replanting ; gs:plantedTree treeB ; gs:plantedOn "2025-01-24" ; gs:replaces <the felling>`. A
+  category error that happens to be syntactically legal.
+
+### …which is exactly the n-ary-relations rule
+
+An older principle lands in the same place: **a relationship that has its own attributes, or more than
+two participants, should be a node** (W3C *Defining N-ary Relations*). A "replacement" that happened
+*on a date*, involves a *new tree*, and *discharges an obligation* is not one edge plus one annotation
+— it is a first-class event with several facts hanging together, and (fatally) nothing you can
+*address*: with a bare annotation you can't say "this replanting fulfils that obligation" or "list
+2024's replantings," and a felled-but-not-yet-replanted tree has no edge to annotate at all. So the
+n-ary rule and the acid test agree: reify it as a `gs:Replanting` node.
+
+RDF-star does **not** replace n-ary reification — the two are orthogonal. RDF-star answers "what do I
+want to say *about this statement*?"; n-ary nodes answer "what other *things and events* exist in the
+domain?" Reach for RDF-star only for the first. Everything below assumes you've already passed this
+test — i.e. the thing genuinely *is* statement-metadata; now the only question is whether it's
+refinable (transaction-time) or truly evolving (valid-time).
 
 ## Two flavours of "evolving" — they pull opposite ways
 

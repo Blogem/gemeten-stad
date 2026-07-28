@@ -61,7 +61,7 @@ referred to the old one now dangles. Prefer opaque/stable local names over ones 
 that can change. Instance IRIs are derived from the authoritative source code (BAG object id,
 gebieden code, zaaknummer), so identity rests on codes, never on names. Where a node versions over
 time, the period-node IRI is **content-derived** (a hash of the outcome excluding timestamps) so an
-unchanged re-run is a true no-op — see §6 and `RDF_STAR_RELATIONSHIPS.md`.
+unchanged re-run is a true no-op — see §6 and `RDF_STAR_MODELING.md`.
 
 ## 3. Reuse established vocabularies before minting
 
@@ -163,7 +163,7 @@ Two distinct time axes; keep them straight:
   the newer run supersede; do **not** reach for valid-time.
 
 **Whether an evolving relationship is an annotated edge or its own node is the central modeling
-decision, and it has its own guide: `docs/RDF_STAR_RELATIONSHIPS.md`.** In short — if only the
+decision, and it has its own guide: `docs/RDF_STAR_MODELING.md`.** In short — if only the
 *metadata* of a timelessly-true fact changes (confidence, source), annotate the edge (§6); if the
 relationship itself starts/ends/flips between states, give it a **node** with `validFrom`/`validTo`
 (the SCD-Type-2 fluent: `gs:Assessment`, `gs:LegalStatusPeriod`, `gs:CoveragePeriod`). A new period
@@ -202,7 +202,7 @@ Before a change to `ontology.ttl` / `vocab.ttl` / `shapes.ttl` is done:
       (§4); `domain`/`range`/`subClassOf` asserted only where true.
 - [ ] No IRI was renamed or repurposed (§2).
 - [ ] Fuzzy edges use the `{\| … \|}` form and carry confidence (+ caveat if `< 1.0`) (§6).
-- [ ] Evolving-over-time state was classified edge-vs-node per `RDF_STAR_RELATIONSHIPS.md` (§7).
+- [ ] Evolving-over-time state was classified edge-vs-node per `RDF_STAR_MODELING.md` (§7).
 - [ ] SHACL shapes updated to gate the new structure/values, and the change validates (§8).
 - [ ] Vocab changes went through `generate_vocab.py`, not a hand-edit (§5).
 - [ ] The non-trivial decision is explained — which standard, what was rejected, the trade-off.
@@ -210,6 +210,6 @@ Before a change to `ontology.ttl` / `vocab.ttl` / `shapes.ttl` is done:
 ## References
 
 - `ontology/ontology.ttl`, `ontology/vocab.ttl`, `ontology/shapes.ttl` — the living model.
-- `docs/RDF_STAR_RELATIONSHIPS.md` — edges vs nodes, and modeling relationships that change over time.
+- `docs/RDF_STAR_MODELING.md` — edges vs nodes, and modeling relationships that change over time.
 - `docs/IMPLEMENTATION_PLAN.md` §3 — the graph model and the temporal/uncertainty decisions (D2–D7).
 - W3C: RDF 1.2, SKOS Reference, PROV-O, SHACL, *Defining N-ary Relations on the Semantic Web*.

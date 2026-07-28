@@ -138,7 +138,7 @@ func formatConfidence(c float64) string {
 // renderLocatedAtAnnotations builds the RDF-star annotation body for item's locatedAt edge:
 // gs:confidence always (shape clause 1b requires it unconditionally) and gs:caveat for each name
 // mapCaveats returns (zero or more). locatedAt is a Flavour-1 refinable-metadata edge
-// (docs/RDF_STAR_RELATIONSHIPS.md): a permit's location holds, and only its confidence is refined
+// (docs/RDF_STAR_MODELING.md): a permit's location holds, and only its confidence is refined
 // over transaction-time, so the edge never carries gs:validFrom/gs:validTo (design.md D3).
 func renderLocatedAtAnnotations(item AuditedBesluit) string {
 	parts := []string{"gs:confidence " + formatConfidence(item.Res.Confidence)}
