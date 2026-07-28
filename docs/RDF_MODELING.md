@@ -39,11 +39,18 @@ literals: a besluit's publication date is carried on the `gs:Intervention` itsel
 literal exceptions are structural, not domain values: `gs:confidence`/`gs:evidence` annotations and
 `gs:validFrom`/`gs:validTo` timestamps.)
 
-The line to hold onto: a first-class resource — the Intervention itself — carries its own
-descriptive dates in the graph, because that resource's identity and provenance are exactly what the
-graph is for. Bulk observation *values* — per-tree felling dates, counts, geometry — stay in
-PostGIS, reached only through an identity-only `gs:Observation` reference; the graph never grows a
-literal that is really data behind an entity it hasn't modeled.
+The line to hold onto: a first-class resource — the Intervention, or a felled tree's felling event —
+carries its own descriptive dates in the graph, because that resource's identity and provenance are
+exactly what the graph is for. `model-felled-trees` promotes the felled-tree/felling registry layer
+to first-class on exactly this basis: a felled `gs:Tree` (identity only) and its `gs:Felling` event
+(`gs:felledTree` + the `gs:felledOn` descriptive date, an immutable literal like `dct:available`) now
+live in the graph, and the coverage `gs:Observation` names the fellings it covers via
+`gs:includesFelling`, content-addressed by that felling set. This reverses the earlier
+identity-only-`gs:Observation` leanness call: the registry observation layer belongs in the graph now
+that the audit needs to say *which* fellings a permit's coverage rests on. What still stays out:
+tree geometry and any bulk/quantitative value (species, diameter, stamgegevens, replant counts) —
+those remain in PostGIS, reached from the graph only via the `gs:Tree`/`gs:Felling` identities. Only
+felled trees are projected; a tree never felled stays registry-only and does not enter the graph.
 
 ## 2. Namespaces and IRI policy
 
