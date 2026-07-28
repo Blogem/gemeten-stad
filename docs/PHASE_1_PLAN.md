@@ -330,3 +330,18 @@ full `load → derive` chain is now verified idempotent end to end, not just `de
   cross-check — needs the count above to be meaningful.
 - **Timeliness beyond `deadlineUnknown`** — Spike A settled that the termijn is Phase-2 NER at best.
 - **Species / project extraction** — the fuzzy residue that doubles as the NER recognition vocab.
+- **Felling-cluster matching (permit ↔ group, not permit ↔ individual tree).** Phase 1 assigns
+  *individual* fellings to a permit by place + time proximity, with no notion that a permit
+  corresponds to *one bounded felling campaign*. On the real corpus this lets a permit "cover"
+  fellings that are years apart — e.g. `DATA_THREAD_NOORD.md`'s `Z2022-N001404` matches fellings
+  spanning 2023-01 → 2025-02, which is not a plausible single campaign. Phase 2 should (1) cluster
+  fellings that are tight in **space and time** into candidate groups (a felling campaign, likely a
+  *project* — cf. `DATA_THREAD_TREES.md`'s "interventions cluster under projects, model the project
+  as a first-class node"), then (2) match a permit to a **group** (or the correctly-sized *slice* of
+  one), constrained by the permit's extracted tree **count** (the count axis above, currently inert:
+  `coverage.go` passes `PermitCount: nil`). This is record-linkage-with-blocking — clusters are the
+  blocks — and should replace the greedy per-felling exclusive assignment (D6(2)), which is what
+  produces the 49.6% "outcompeted" no-source permits in the P15 results. **Open question to
+  investigate:** partial/overlapping groups — a permit may cover only part of a cluster, or a cluster
+  may span multiple permits — so the group↔permit cardinality is not assumed 1:1 and needs data
+  work before the model is fixed.
