@@ -22,17 +22,27 @@ const buurtCodeByIdentificatieSQL = `SELECT code FROM gebieden_buurten WHERE ide
 
 // buurtByPointSQL places an EWKT point into a gebieden_buurten polygon, for the address tier
 // (where location.Resolve gives us a resolved point but not a buurt). $1 = point EWKT.
+//
+// Tie-break: ORDER BY identificatie makes the pick deterministic when a point falls in an overlap
+// between two buurt polygons — otherwise re-running `load koop` over the same point could pick a
+// different buurt, cascading into a different derive coverage outcome for the same permit.
+// identificatie is the buurt object's own stable id and is unique per row.
 const buurtByPointSQL = `SELECT identificatie, code
 FROM gebieden_buurten
 WHERE ST_Contains(geom, ST_GeomFromEWKT($1))
+ORDER BY identificatie
 LIMIT 1`
 
 // buurtByRDPointSQL places a raw RD point into a gebieden_buurten polygon, for the postcode tier
 // (where location.Resolve gives no geometry at all — we fall back to the publication's own point).
 // $1 = point X (RD), $2 = point Y (RD).
+//
+// Tie-break: ORDER BY identificatie, for the same idempotency reason as buurtByPointSQL — a
+// stable, unique final key so an overlap between buurt polygons always resolves the same way.
 const buurtByRDPointSQL = `SELECT identificatie, code
 FROM gebieden_buurten
 WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint($1, $2), 28992))
+ORDER BY identificatie
 LIMIT 1`
 
 // resolveBesluit places a besluit publication via the P6 resolver, determines its containing
