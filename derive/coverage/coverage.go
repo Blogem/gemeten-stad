@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -117,10 +118,22 @@ func Run(ctx context.Context, pool *pgxpool.Pool, fusekiURL string, cfg Config) 
 				Contenders:    contenders,
 			})
 
-			observationIRI := "http://gemetenstad.nl/id/observation/" + p.Zaaknummer
+			// The Observation is content-addressed by its assigned felling set
+			// (model-felled-trees D2): mint each assigned kapenherplant.id into its
+			// gs:Felling IRI, sort for a stable hash + deterministic rendering, then hash
+			// the sorted set into the felling-set-key that makes the Observation IRI (and,
+			// transitively via ContentKey, the period content-key) version iff the set changes.
+			fellingIRIs := make([]string, 0, len(assigned))
+			for _, fellingID := range assigned {
+				fellingIRIs = append(fellingIRIs, mintFellingIRI(fellingID))
+			}
+			sort.Strings(fellingIRIs)
+
+			observationIRI := mintObservationIRI(p.Zaaknummer, FellingSetKey(fellingIRIs))
 			outcome = Outcome{
 				Matched:        true,
 				ObservationIRI: observationIRI,
+				FellingIRIs:    fellingIRIs,
 				Confidence:     res.Confidence,
 				Granularity:    res.Granularity,
 				Caveats:        res.Caveats,
