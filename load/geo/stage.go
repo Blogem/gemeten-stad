@@ -177,15 +177,37 @@ func extractInnerZip(outerZipPath, destDir, code string) (string, error) {
 	}
 	defer func() { _ = src.Close() }()
 
-	dst, err := os.Create(destPath)
+	// Extract via a temp file + atomic rename, so destPath only ever exists once fully written and
+	// closed. The idempotency stat-guard above treats "destPath exists" as "already extracted, and
+	// valid" — so a partial file from a mid-write failure or a dropped Close error (ENOSPC, a lost
+	// NFS/FUSE write, surfacing only at Close) would be a permanent poison the guard never
+	// re-extracts, silently feeding GDAL a truncated archive. Renaming a fully-closed temp into
+	// place makes that guard's assumption true; the deferred Remove cleans up on any failure.
+	tmp, err := os.CreateTemp(destDir, "."+name+".*")
 	if err != nil {
-		return "", fmt.Errorf("create extracted inner zip %q: %w", destPath, err)
+		return "", fmt.Errorf("create temp inner zip for %q: %w", destPath, err)
 	}
-	defer func() { _ = dst.Close() }()
+	tmpPath := tmp.Name()
+	renamed := false
+	defer func() {
+		if !renamed {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 
-	if _, err := io.Copy(dst, src); err != nil {
-		return "", fmt.Errorf("write extracted inner zip %q: %w", destPath, err)
+	_, copyErr := io.Copy(tmp, src)
+	closeErr := tmp.Close()
+	if copyErr != nil {
+		return "", fmt.Errorf("write extracted inner zip %q: %w", destPath, copyErr)
 	}
+	if closeErr != nil {
+		return "", fmt.Errorf("close extracted inner zip %q: %w", destPath, closeErr)
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		return "", fmt.Errorf("finalize extracted inner zip %q: %w", destPath, err)
+	}
+	renamed = true
 
 	return name, nil
 }
