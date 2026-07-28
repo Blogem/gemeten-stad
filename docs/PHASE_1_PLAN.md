@@ -224,6 +224,20 @@ calibration; cells are placeholders until that run lands.
 | `postcode` | TBD | TBD | TBD |
 | `buurt` | TBD | TBD | TBD |
 
+### Verified coverage numbers (post `model-felled-trees`)
+
+A full dev-store pipeline run (`geo` → `graph` → `koop` → `bomen` → `derive`, Noord corpus) confirms
+the coverage audit reconciles end to end: of 659 permit anchors, **281 matched** and **378
+no-source** (281 + 378 = 659), and the open matched `gs:CoveragePeriod` count in the graph agrees
+exactly with the matched row count in `audit_metrics`. Anchors with more than one open period: **0**
+— the "exactly one open period per anchor" invariant holds. This resolves the earlier 340-vs-281
+discrepancy, which traced to duplicate open periods minted under the pre-change content-key;
+content-addressing the matched `gs:Observation` by its assigned felling set (`model-felled-trees`,
+§3) fixed it at the root rather than papering over it downstream. The bomen→graph registry
+projection loaded **8,195 `gs:Felling`** and **8,193 `gs:Tree`** nodes, all with canonical integer
+IRIs (a load-time `json.Number` fix ensures `data:felling/<id>` carries the exact integer, e.g.
+`felling/4301189`, never scientific notation).
+
 ## P15 · End-to-end thread on the real Noord corpus — the acceptance gate
 
 - **Goal:** Prove the deterministic backbone runs end to end and produces the intended "working
