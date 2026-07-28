@@ -8,7 +8,7 @@
 - [x] 1.2 In `ontology/shapes.ttl`: add `gs:FellingShape` (`gs:felledTree` min 1 IRI + tree-namespace `sh:pattern`; `gs:felledOn` `xsd:date`) and permissive `gs:TreeShape`; gate matched `gs:Observation`'s `gs:includesFelling` (min 1, IRI + felling-namespace `sh:pattern`). Cross-load refs via `sh:nodeKind`/`sh:pattern`, not `sh:class`.
 - [x] 1.3 Extend `ontology/embed_test.go`: assert the new terms + shape names are present.
 - [x] 1.4 Update `docs/RDF_MODELING.md` §1: the felled-tree/felling observation layer is now first-class in the graph (identity + descriptive dates + relations); geometry/bulk values stay in PostGIS.
-- [ ] 1.5 Integration test (isolated Fuseki): a well-formed `gs:Felling` and matched `gs:Observation` conform; a felling missing `gs:felledTree`/`gs:felledOn` and an Observation missing `gs:includesFelling` are each rejected.
+- [x] 1.5 Integration test (isolated Fuseki): a well-formed `gs:Felling` and matched `gs:Observation` conform; a felling missing `gs:felledTree`/`gs:felledOn` and an Observation missing `gs:includesFelling` are each rejected.
 
 ## 2. Bomen → graph projection
 
