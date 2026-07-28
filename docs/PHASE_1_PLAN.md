@@ -238,7 +238,7 @@ projection loaded **8,195 `gs:Felling`** and **8,193 `gs:Tree`** nodes, all with
 IRIs (a load-time `json.Number` fix ensures `data:felling/<id>` carries the exact integer, e.g.
 `felling/4301189`, never scientific notation).
 
-## P15 · End-to-end thread on the real Noord corpus — the acceptance gate
+## P15 · End-to-end thread on the real Noord corpus — the acceptance gate · **DONE**
 
 - **Goal:** Prove the deterministic backbone runs end to end and produces the intended "working
   audit from structure alone, with confidences."
@@ -252,6 +252,76 @@ IRIs (a load-time `json.Number` fix ensures `data:felling/<id>` carries the exac
   (SPARQL over the graph + SQL over PostGIS) and matches Spike B rates; the thread is written up as a
   short Noord counterpart to `DATA_THREAD_TREES.md`.
 - **Depends on:** P11–P14.
+
+### Results — acceptance-gate run on the real Noord corpus
+
+A full `ingest koop → load koop → derive` pass over the real Noord corpus — **659 permit anchors**
+(besluiten, publication 2021-09→2026-07; felling registry data 2021-01→2026-07, so the registry fully
+spans the permit window and there is no pre-registry-era permit to worry about) — runs clean end to
+end and reproduces `DATA_THREAD_TREES.md`'s single-permit mechanics at corpus scale: permit → resolved
+place → candidate fellings → exclusive match or provenanced no-source finding. The bomen registry
+projection loaded **8,195 `gs:Felling`** and **8,193 `gs:Tree`** nodes, all canonical integer IRIs. A
+worked single-permit walk-through lives in the companion `docs/DATA_THREAD_NOORD.md`; this section
+reports the aggregate numbers and the two findings worth carrying forward.
+
+**Coverage is a three-metric picture — report all three, not just one headline:**
+
+| Metric | Count | Rate | What it measures |
+|---|---|---|---|
+| Candidate existence | 608/659 | 92.3% | ≥1 candidate felling in the permit's buurt-∪-200m + `[publication,+3yr]` window, before exclusive assignment |
+| Exclusive match (production) | 281/659 | 42.6% | Matched after the D6(2) exclusive per-felling assignment — the number that lands in `audit_metrics` and backs the `AuditLink` |
+| Genuine no-source | 51/659 | 7.7% | Zero candidate fellings at all — no felling in scope for this permit, at any confidence |
+
+The remaining **327/659 (49.6%)** had at least one candidate felling but lost every one of them to a
+competing permit under exclusive assignment — those are not "no source," they are "outcompeted."
+(51 genuine-no-source + 327 outcompeted = 378, which reconciles exactly with the 378 no-source rows
+already confirmed against `audit_metrics` in the P14 "Verified coverage numbers" run above — this is
+the same 281/378 split, decomposed into *why* the 378 didn't match.)
+
+Candidate existence (92.3%) reproduces Spike B's headline **~90%** — but the two are different
+denominators, not the same measurement repeated: Spike B measured candidate existence, non-exclusively,
+over 147 *2022-only* besluiten, a narrower slice than this run's full 2021–2026 Noord corpus. The drop
+from 92.3% candidate existence to 42.6% exclusive match is **entirely the exclusive-assignment design**
+(D6(2): each felling goes to its single best-scoring permit, not to every permit whose window it falls
+in) — intended behaviour, not a regression, but it means the honest **production coverage rate is
+42.6%**, and it is not directly comparable to Spike B's non-exclusive ~90%. Future references to
+"coverage" for this corpus should cite candidate-existence and exclusive-match together, never lead
+with 92.3% alone as "the" rate.
+
+**Confidence distribution (matched periods):** of the 281 matched periods, **31 sit below τ=0.60**
+(carrying `gs:caveat gs:weakLink`, ~11% of matches), **178 fall in [0.60, 0.80)**, **70 in [0.80,
+1.0)**, and **2 sit at the ceiling 1.0**. The bulk of matches cluster in the "plausible but not
+certain" 0.60–0.80 band — consistent with Spike B's expectation that proximity + time narrows well
+but rarely to one unambiguous felling.
+
+**Match rate by permit resolution tier** (`koop_publications.resolved_tier`):
+
+| Tier | Matched/Total | Rate |
+|---|---|---|
+| `address` | 270/463 | 58.3% |
+| `postcode` | 2/145 | 1.4% |
+| `buurt` | 9/51 | 17.6% |
+
+Postcode-tier permits are near-completely starved of matches. Two contributing effects are visible in
+this run but not yet validated as the definitive cause — noted here as design follow-ups, not as
+defects to fix under this gate: (1) `score.go`'s placeTerm caps postcode-tier proximity at 0.70 and
+floors it at 0.50, so a postcode-resolved permit can never out-score a nearby address-tier permit for
+a felling both could plausibly claim; (2) the registry-count axis is currently **inert in
+production** — `coverage.go` passes `PermitCount: nil` — so the scorer here is weaker than the fully
+calibrated Spike B model, which used the count term to help break exactly these ties. Both are
+candidates for a follow-up change, not blockers for this gate.
+
+**Idempotency — verified, with a caveat found and fixed along the way.** `derive` itself is
+idempotent: re-running it against unchanged inputs is a true byte-identical no-op — same
+content-keyed period IRIs, no new run graph, no change to `audit_metrics` — confirmed empirically by
+running `derive` twice in succession and diffing the resulting open-period sets (identical). Getting
+to that confirmation surfaced a real non-determinism, exactly the kind this gate exists to catch:
+several `LIMIT 1` BAG-resolution and buurt point-in-polygon queries in the location/koop resolver had
+no unique final `ORDER BY` tie-break, so re-running `load koop` could resolve a boundary/tie permit to
+a different point or buurt on different runs — which then cascaded, via the buurt join and the 200m
+distance window, into a handful of different `derive` outcomes downstream. Fixed by adding
+deterministic tie-breaks to the affected queries in `location/sql.go` and `load/koop/resolve.go`; the
+full `load → derive` chain is now verified idempotent end to end, not just `derive` in isolation.
 
 ## Explicitly deferred to Phase 2 (so Phase 1 stays honest)
 
