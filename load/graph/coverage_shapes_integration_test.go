@@ -73,7 +73,7 @@ var coverageAnchorOnly = coverageBaseTurtle
 // gs:Observation now requires >=1 gs:includesFelling to a felling-namespace IRI) so this fixture,
 // predating that shape, still conforms.
 var coverageMatchedPeriod = withCoverageBase(coverageFragmentPrefixes + `data:obs-cov a gs:Observation ;
-    gs:includesFelling data:felling/F-cov .
+    gs:includesFelling <http://gemetenstad.nl/id/felling/F-cov> .
 data:period-cov-matched a gs:CoveragePeriod ;
     gs:versionOf data:auditlink-cov ;
     gs:validFrom "2024-01-01"^^xsd:date ;
@@ -138,7 +138,7 @@ data:auditlink-outns a gs:AuditLink ;
 // gs:noSourceFound — satisfies neither xone branch (matched needs confidence too; no-source needs
 // noSourceFound), so sh:xone must reject it even though versionOf/validFrom/evidence are present.
 var coveragePeriodNeitherBranch = withCoverageBase(coverageFragmentPrefixes + `data:obs-neither a gs:Observation ;
-    gs:includesFelling data:felling/F-neither .
+    gs:includesFelling <http://gemetenstad.nl/id/felling/F-neither> .
 data:period-cov-neither a gs:CoveragePeriod ;
     gs:versionOf data:auditlink-cov ;
     gs:validFrom "2024-01-01"^^xsd:date ;
@@ -148,7 +148,7 @@ data:period-cov-neither a gs:CoveragePeriod ;
 
 // coveragePeriodConfidenceOutOfRange: a matched period with gs:confidence outside [0,1].
 var coveragePeriodConfidenceOutOfRange = withCoverageBase(coverageFragmentPrefixes + `data:obs-oor a gs:Observation ;
-    gs:includesFelling data:felling/F-oor .
+    gs:includesFelling <http://gemetenstad.nl/id/felling/F-oor> .
 data:period-cov-oor a gs:CoveragePeriod ;
     gs:versionOf data:auditlink-cov ;
     gs:validFrom "2024-01-01"^^xsd:date ;

@@ -28,13 +28,19 @@ import (
 
 // fellingWellFormed: a gs:Felling with gs:felledTree pointing at a tree-namespace IRI and
 // gs:felledOn a proper xsd:date — must conform.
+//
+// Instance IRIs are written as full angle-bracket IRIs, not prefixed names: a prefixed name's
+// local part cannot contain a raw "/" (PN_LOCAL), so `data:felling/F-well`-style tokens are not
+// valid Turtle at all — Fuseki rejects them with a parse error ("not a valid token ... slash")
+// before the candidate ever reaches the SHACL gate, which is not what these tests mean to
+// exercise. This mirrors how the real assemblers write instance IRIs (derive/coverage/assemble.go,
+// load/koop/graph.go, load/bomen/graph.go).
 const fellingWellFormed = `@prefix gs: <http://gemetenstad.nl/ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:felling/F-well a gs:Felling ;
-    gs:felledTree data:tree/T-well ;
+<http://gemetenstad.nl/id/felling/F-well> a gs:Felling ;
+    gs:felledTree <http://gemetenstad.nl/id/tree/T-well> ;
     gs:felledOn "2023-02-01"^^xsd:date .
-data:tree/T-well a gs:Tree .
+<http://gemetenstad.nl/id/tree/T-well> a gs:Tree .
 `
 
 func TestLoadFellingWellFormedConforms(t *testing.T) {
@@ -50,8 +56,7 @@ func TestLoadFellingWellFormedConforms(t *testing.T) {
 // fellingMissingFelledTree: no gs:felledTree at all.
 const fellingMissingFelledTree = `@prefix gs: <http://gemetenstad.nl/ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:felling/F-notree a gs:Felling ;
+<http://gemetenstad.nl/id/felling/F-notree> a gs:Felling ;
     gs:felledOn "2023-02-01"^^xsd:date .
 `
 
@@ -59,37 +64,33 @@ data:felling/F-notree a gs:Felling ;
 // must be rejected by the sh:pattern gate regardless of what that IRI is typed as (design.md D5).
 const fellingFelledTreeOutOfNamespace = `@prefix gs: <http://gemetenstad.nl/ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:felling/F-outns a gs:Felling ;
-    gs:felledTree data:place/OUT-1 ;
+<http://gemetenstad.nl/id/felling/F-outns> a gs:Felling ;
+    gs:felledTree <http://gemetenstad.nl/id/place/OUT-1> ;
     gs:felledOn "2023-02-01"^^xsd:date .
 `
 
 // fellingMissingFelledOn: gs:felledTree present, but no gs:felledOn at all.
 const fellingMissingFelledOn = `@prefix gs: <http://gemetenstad.nl/ns#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:felling/F-nodate a gs:Felling ;
-    gs:felledTree data:tree/T-nodate .
-data:tree/T-nodate a gs:Tree .
+<http://gemetenstad.nl/id/felling/F-nodate> a gs:Felling ;
+    gs:felledTree <http://gemetenstad.nl/id/tree/T-nodate> .
+<http://gemetenstad.nl/id/tree/T-nodate> a gs:Tree .
 `
 
 // fellingFelledOnNotDate: gs:felledOn is a plain string literal (no xsd:date datatype).
 const fellingFelledOnNotDate = `@prefix gs: <http://gemetenstad.nl/ns#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:felling/F-strdate a gs:Felling ;
-    gs:felledTree data:tree/T-strdate ;
+<http://gemetenstad.nl/id/felling/F-strdate> a gs:Felling ;
+    gs:felledTree <http://gemetenstad.nl/id/tree/T-strdate> ;
     gs:felledOn "2023-02-01" .
-data:tree/T-strdate a gs:Tree .
+<http://gemetenstad.nl/id/tree/T-strdate> a gs:Tree .
 `
 
 // fellingFelledOnWrongDatatype: gs:felledOn carries the wrong datatype (xsd:gYear, not xsd:date).
 const fellingFelledOnWrongDatatype = `@prefix gs: <http://gemetenstad.nl/ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:felling/F-gyear a gs:Felling ;
-    gs:felledTree data:tree/T-gyear ;
+<http://gemetenstad.nl/id/felling/F-gyear> a gs:Felling ;
+    gs:felledTree <http://gemetenstad.nl/id/tree/T-gyear> ;
     gs:felledOn "2023"^^xsd:gYear .
-data:tree/T-gyear a gs:Tree .
+<http://gemetenstad.nl/id/tree/T-gyear> a gs:Tree .
 `
 
 func TestLoadFellingRejectsMalformed(t *testing.T) {
@@ -127,9 +128,8 @@ func TestLoadFellingRejectsMalformed(t *testing.T) {
 // observationWithFelling: a gs:Observation carrying one gs:includesFelling pointing at a
 // felling-namespace IRI — must conform.
 const observationWithFelling = `@prefix gs: <http://gemetenstad.nl/ns#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:observation/obs-well a gs:Observation ;
-    gs:includesFelling data:felling/F-member .
+<http://gemetenstad.nl/id/observation/obs-well> a gs:Observation ;
+    gs:includesFelling <http://gemetenstad.nl/id/felling/F-member> .
 `
 
 func TestLoadObservationWithFellingConforms(t *testing.T) {
@@ -144,17 +144,15 @@ func TestLoadObservationWithFellingConforms(t *testing.T) {
 
 // observationNoFelling: no gs:includesFelling at all.
 const observationNoFelling = `@prefix gs: <http://gemetenstad.nl/ns#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:observation/obs-empty a gs:Observation .
+<http://gemetenstad.nl/id/observation/obs-empty> a gs:Observation .
 `
 
 // observationFellingOutOfNamespace: gs:includesFelling points outside the felling/ namespace (here,
 // tree/) — must be rejected by the sh:pattern gate (design.md D5), not merely the minCount-0 case
 // coveredWithFelling above already exercises.
 const observationFellingOutOfNamespace = `@prefix gs: <http://gemetenstad.nl/ns#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:observation/obs-outns a gs:Observation ;
-    gs:includesFelling data:tree/NOT-A-FELLING .
+<http://gemetenstad.nl/id/observation/obs-outns> a gs:Observation ;
+    gs:includesFelling <http://gemetenstad.nl/id/tree/NOT-A-FELLING> .
 `
 
 func TestLoadObservationRejectsMalformed(t *testing.T) {
@@ -190,8 +188,7 @@ func TestLoadObservationRejectsMalformed(t *testing.T) {
 // (graph-shapes spec.md: "gs:Tree is an identity node ... the shape imposes no required
 // properties").
 const treeBareConforms = `@prefix gs: <http://gemetenstad.nl/ns#> .
-@prefix data: <http://gemetenstad.nl/id/> .
-data:tree/T-bare a gs:Tree .
+<http://gemetenstad.nl/id/tree/T-bare> a gs:Tree .
 `
 
 func TestLoadBareTreeConforms(t *testing.T) {

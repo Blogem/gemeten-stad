@@ -307,7 +307,7 @@ func TestCoverageEndToEnd(t *testing.T) {
 		// gbdCrossB — the buurt-equals clause alone would never select it. It is 150m away, inside
 		// crossBoundaryRadiusM=200, so only the additive spatial clause makes it a candidate.
 		assert.NotEmpty(t, p.ObservationIRI, "a matched period must link an Observation")
-		assert.Equal(t, "http://gemetenstad.nl/id/observation/"+zCrossB, p.ObservationIRI)
+		assert.True(t, strings.HasPrefix(p.ObservationIRI, observationIRIPrefix(zCrossB)), "content-addressed Observation IRI")
 		assert.Equal(t, "http://gemetenstad.nl/ns#postcode", p.Granularity,
 			"150m is beyond addressRadiusM=50 but within postcodeRadiusM=200 -> postcode-tier place score")
 		assert.InDelta(t, 0.90, parseConfidence(t, p.Confidence), 1e-9,
