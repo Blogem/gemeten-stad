@@ -120,17 +120,29 @@ func (c *client) dropGraph(ctx context.Context, graphIRI string) error {
 	return c.update(ctx, "DROP SILENT GRAPH <"+graphIRI+">", "DROP GRAPH "+graphIRI)
 }
 
+// selectQuery executes a SPARQL SELECT via POST, body-carried, per the SPARQL 1.1 Protocol —
+// mirrors update's request construction (POST + application/x-www-form-urlencoded "query="+body)
+// but against /sparql rather than /update. Every SELECT in this package goes through here rather
+// than GET-in-URI: a GET request encodes the entire query (including any VALUES list of subject
+// IRIs) into the request URI, and Fuseki's default Jetty URI-length limit is easily overrun by a
+// VALUES list over a few hundred IRIs — a real production failure (a ~16k-subject felled-trees
+// load's series-close step 414'd). POST has no such limit tied to query size.
+func (c *client) selectQuery(ctx context.Context, query, action string) ([]byte, error) {
+	req, err := c.newRequest(ctx, http.MethodPost, "/sparql", strings.NewReader("query="+url.QueryEscape(query)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/sparql-results+json")
+	return c.do(req, action)
+}
+
 // selectColumn runs a SPARQL SELECT and returns every value bound to variable varName across all
 // solutions, in result order — a small generic reader shared by the signature extraction (2.2/2.3)
 // and the SCD2 open-version invariant check (write.go), which both consume the SPARQL 1.1 JSON
 // results format.
 func (c *client) selectColumn(ctx context.Context, query, varName string) ([]string, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, "/sparql?query="+url.QueryEscape(query), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/sparql-results+json")
-	body, err := c.do(req, "SPARQL SELECT")
+	body, err := c.selectQuery(ctx, query, "SPARQL SELECT")
 	if err != nil {
 		return nil, err
 	}
@@ -183,12 +195,7 @@ type graphListResult struct {
 // tracking run IDs across process runs.
 func (c *client) graphsWithPrefix(ctx context.Context, prefix string) ([]string, error) {
 	const query = `SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }`
-	req, err := c.newRequest(ctx, http.MethodGet, "/sparql?query="+url.QueryEscape(query), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/sparql-results+json")
-	body, err := c.do(req, "list named graphs")
+	body, err := c.selectQuery(ctx, query, "list named graphs")
 	if err != nil {
 		return nil, err
 	}

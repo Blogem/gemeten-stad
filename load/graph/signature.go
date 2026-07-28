@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -167,12 +165,7 @@ func (c *client) selectSignatures(ctx context.Context, graphIRIs []string) (map[
 	}
 
 	query := signatureQuery(graphIRIs)
-	req, err := c.newRequest(ctx, http.MethodGet, "/sparql?query="+url.QueryEscape(query), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/sparql-results+json")
-	body, err := c.do(req, "extract entity signatures")
+	body, err := c.selectQuery(ctx, query, "extract entity signatures")
 	if err != nil {
 		return nil, err
 	}
@@ -244,12 +237,7 @@ SELECT ?s ?vf WHERE {
 }
 `, gsNS, iriValuesList(changed), stageGraphFor(runID))
 
-	req, err := c.newRequest(ctx, http.MethodGet, "/sparql?query="+url.QueryEscape(query), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/sparql-results+json")
-	body, err := c.do(req, "read staging gs:validFrom")
+	body, err := c.selectQuery(ctx, query, "read staging gs:validFrom")
 	if err != nil {
 		return nil, err
 	}
@@ -315,12 +303,7 @@ SELECT ?s ?a ?vf WHERE {
 }
 `, gsNS, iriValuesList(ids), stageGraphFor(runID))
 
-	req, err := c.newRequest(ctx, http.MethodGet, "/sparql?query="+url.QueryEscape(query), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/sparql-results+json")
-	body, err := c.do(req, "read staging period anchors")
+	body, err := c.selectQuery(ctx, query, "read staging period anchors")
 	if err != nil {
 		return nil, err
 	}

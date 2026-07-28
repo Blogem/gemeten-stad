@@ -7,8 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -361,10 +359,7 @@ func dropRunGraphs(t *testing.T, c *client) {
 // ask runs a SPARQL ASK against the whole dataset and returns the boolean result.
 func (c *client) ask(t *testing.T, query string) bool {
 	t.Helper()
-	req, err := c.newRequest(context.Background(), http.MethodGet, "/sparql?query="+url.QueryEscape(query), nil)
-	require.NoError(t, err)
-	req.Header.Set("Accept", "application/sparql-results+json")
-	body, err := c.do(req, "ASK")
+	body, err := c.selectQuery(context.Background(), query, "ASK")
 	require.NoError(t, err)
 	var res struct {
 		Boolean bool `json:"boolean"`
@@ -377,10 +372,7 @@ func (c *client) ask(t *testing.T, query string) bool {
 // it as an int — the shared engine behind countOpenLocatedAt/countProvActivities/countRunTriples.
 func (c *client) count(t *testing.T, query string) int {
 	t.Helper()
-	req, err := c.newRequest(context.Background(), http.MethodGet, "/sparql?query="+url.QueryEscape(query), nil)
-	require.NoError(t, err)
-	req.Header.Set("Accept", "application/sparql-results+json")
-	body, err := c.do(req, "COUNT")
+	body, err := c.selectQuery(context.Background(), query, "COUNT")
 	require.NoError(t, err)
 	var res struct {
 		Results struct {
