@@ -8,7 +8,7 @@ import (
 
 // buurtRow is a single gebieden_buurten row (all rows are projected — live and soft-deleted, no
 // source_deleted_at filter). naam is itself a nullable column (gebieden_buurten.naam has no NOT
-// NULL constraint); read.go projects it through COALESCE(naam, '') so this field always holds a
+// NULL constraint); read.go coalesces naam to the empty string so this field always holds a
 // non-null string — an unnamed row simply yields an empty label rather than a scan error.
 // ligtInWijkID and sourceDeletedAt are nullable columns too, but kept as pointers since their
 // nil-ness is itself meaningful (unresolved containment / not soft-deleted).
@@ -20,7 +20,7 @@ type buurtRow struct {
 }
 
 // wijkRow is a single gebieden_wijken row (all rows are projected — live and soft-deleted). naam
-// is projected through COALESCE(naam, '') for the same reason as buurtRow.naam.
+// is coalesced to the empty string for the same reason as buurtRow.naam.
 type wijkRow struct {
 	identificatie   string
 	naam            string

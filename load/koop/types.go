@@ -5,6 +5,7 @@ import "github.com/Blogem/gemeten-stad/location"
 // Kind is the publication kind, from the dcterms:title prefix.
 type Kind string
 
+// Publication kinds, matched from the dcterms:title prefix.
 const (
 	KindAanvraag       Kind = "aanvraag"
 	KindBesluit        Kind = "besluit"
