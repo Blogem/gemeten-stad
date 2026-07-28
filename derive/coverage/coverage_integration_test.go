@@ -27,6 +27,16 @@
 //   - Z-NOSOURCE-001 (buurt BUURT-NOSOURCE): zero kapenherplant rows in its buurt at Run #1 ->
 //     no-source period; a qualifying felling is inserted afterward and Run #3 (below) asserts it
 //     opens a new matched period and closes the prior no-source one.
+//   - Z-CROSSBOUNDARY-001 (buurt BUURT-CROSSB) / F-CROSSBOUNDARY-01 (buurt BUURT-CROSSB-FAR, a
+//     DIFFERENT gbdBuurtId): design.md D6's additive spatial clause -- the felling sits 150m from
+//     the permit's point (a 90/120/150 triangle), inside crossBoundaryRadiusM=200 but in a buurt the
+//     buurt-equals clause would never match. Uncontested, so it is assigned outright: place
+//     (postcode-tier proximity, 0.70) + count unknown (+0) + time (151-day lag, +0.15) + ambiguity
+//     (sole, +0.05) = 0.90 >= tau, granularity postcode.
+//   - F-MULTI-04-FAR: a fourth felling added to BUURT-MULTI/Z-MULTI-001, 250m from its point --
+//     beyond crossBoundaryRadiusM, so only the buurt clause (not the spatial one) keeps it a
+//     candidate, pinning the union's "far same-buurt fellings are never dropped" fragmentation-safety
+//     property (D6).
 package coverage
 
 import (
@@ -55,17 +65,21 @@ import (
 // scenario below would see zero candidate fellings and the suite would fail loudly.
 
 const (
-	buurtStrong   = "BUURT-STRONG"
-	buurtContend  = "BUURT-CONTEND"
-	buurtContest  = "BUURT-CONTEST"
-	buurtMulti    = "BUURT-MULTI"
-	buurtNoSource = "BUURT-NOSOURCE"
+	buurtStrong    = "BUURT-STRONG"
+	buurtContend   = "BUURT-CONTEND"
+	buurtContest   = "BUURT-CONTEST"
+	buurtMulti     = "BUURT-MULTI"
+	buurtNoSource  = "BUURT-NOSOURCE"
+	buurtCrossB    = "BUURT-CROSSB"     // the cross-boundary-catch permit's OWN buurt
+	buurtCrossBFar = "BUURT-CROSSB-FAR" // the felling's DIFFERENT buurt, deliberately never a permit's buurt
 
-	gbdStrong   = "03630000000001"
-	gbdContend  = "03630000000002"
-	gbdContest  = "03630000000003"
-	gbdMulti    = "03630000000004"
-	gbdNoSource = "03630000000005"
+	gbdStrong    = "03630000000001"
+	gbdContend   = "03630000000002"
+	gbdContest   = "03630000000003"
+	gbdMulti     = "03630000000004"
+	gbdNoSource  = "03630000000005"
+	gbdCrossB    = "03630000000006"
+	gbdCrossBFar = "03630000000007"
 
 	zStrong   = "Z-STRONG-001"
 	zWeak1    = "Z-CONTEND-1-WEAK"
@@ -74,6 +88,7 @@ const (
 	zContestB = "Z-CONTEST-B"
 	zMulti    = "Z-MULTI-001"
 	zNoSource = "Z-NOSOURCE-001"
+	zCrossB   = "Z-CROSSBOUNDARY-001"
 
 	fStrong    = "F-STRONG-01"
 	fWeak      = "F-WEAK-A"
@@ -81,7 +96,9 @@ const (
 	fMulti1    = "F-MULTI-01"
 	fMulti2    = "F-MULTI-02"
 	fMulti3    = "F-MULTI-03"
+	fMulti4Far = "F-MULTI-04-FAR" // same buurt as F-MULTI-01..03, but beyond crossBoundaryRadiusM
 	fNewNoSrc  = "F-NOSOURCE-NEW-01"
+	fCrossB    = "F-CROSSBOUNDARY-01" // different gbdBuurtId than Z-CROSSBOUNDARY-001, within 200m of its point
 )
 
 // interventionIRIFor / anchorIRIFor mirror candidates.go's interventionPrefix and
@@ -230,18 +247,53 @@ func TestCoverageEndToEnd(t *testing.T) {
 		assert.Empty(t, periodsB[0].ObservationIRI)
 	})
 
-	t.Run("multi-tree permit is assigned its whole matched set", func(t *testing.T) {
+	t.Run("multi-tree permit is assigned its whole matched set, including a far same-buurt felling", func(t *testing.T) {
 		m, found := queryMetric(t, ctx, pool, zMulti)
 		require.True(t, found)
 		assert.True(t, m.Matched)
-		assert.ElementsMatch(t, []string{fMulti1, fMulti2, fMulti3}, m.AssignedFellingIDs)
-		assert.Equal(t, 3, m.AssignedFellingCount)
-		assert.Equal(t, 3, m.CandidateCount)
+		// F-MULTI-04-FAR sits 250m from the permit's point (beyond crossBoundaryRadiusM=200) but in
+		// the SAME buurt as F-MULTI-01..03: the union's buurt clause must still catch it (D6
+		// fragmentation-safety) — the spatial radius does not shrink the buurt net.
+		assert.ElementsMatch(t, []string{fMulti1, fMulti2, fMulti3, fMulti4Far}, m.AssignedFellingIDs)
+		assert.Equal(t, 4, m.AssignedFellingCount)
+		assert.Equal(t, 4, m.CandidateCount)
 
 		anchor := anchorIRIFor(zMulti)
 		periods := openPeriodsFor(t, ctx, fusekiURL, anchor)
 		require.Len(t, periods, 1)
 		assert.NotEmpty(t, periods[0].ObservationIRI)
+	})
+
+	t.Run("cross-boundary felling: caught only by the 200m spatial clause, not the buurt clause", func(t *testing.T) {
+		anchor := anchorIRIFor(zCrossB)
+		require.True(t, anchorExists(t, ctx, fusekiURL, anchor, interventionIRIFor(zCrossB)))
+
+		periods := openPeriodsFor(t, ctx, fusekiURL, anchor)
+		require.Len(t, periods, 1, "exactly one open period for the cross-boundary permit's anchor")
+		p := periods[0]
+
+		// F-CROSSBOUNDARY-01 carries gbdBuurtId=gbdCrossBFar, DIFFERENT from this permit's own
+		// gbdCrossB — the buurt-equals clause alone would never select it. It is 150m away, inside
+		// crossBoundaryRadiusM=200, so only the additive spatial clause makes it a candidate.
+		assert.NotEmpty(t, p.ObservationIRI, "a matched period must link an Observation")
+		assert.Equal(t, "http://gemetenstad.nl/id/observation/"+zCrossB, p.ObservationIRI)
+		assert.Equal(t, "http://gemetenstad.nl/ns#postcode", p.Granularity,
+			"150m is beyond addressRadiusM=50 but within postcodeRadiusM=200 -> postcode-tier place score")
+		assert.InDelta(t, 0.90, parseConfidence(t, p.Confidence), 1e-9,
+			"0.70 place (postcode) + 0 count-unknown + 0.15 (<=2yr lag) + 0.05 (sole, uncontested) = 0.90")
+		assert.False(t, p.IsNoSource)
+
+		m, found := queryMetric(t, ctx, pool, zCrossB)
+		require.True(t, found)
+		assert.True(t, m.Matched)
+		assert.Equal(t, []string{fCrossB}, m.AssignedFellingIDs,
+			"the cross-boundary felling is assigned to this permit even though it lies in a different buurt")
+		assert.Equal(t, 1, m.CandidateCount,
+			"F-CROSSBOUNDARY-01 is the only candidate: it would NOT be found by the buurt clause alone")
+		require.NotNil(t, m.NearestDistM)
+		assert.InDelta(t, 150.0, *m.NearestDistM, 1.0,
+			"the felling is stored at a KNOWN 90/120/150 metre offset; nearest_dist_m must reflect the "+
+				"SRID-aligned metric distance even though the felling crosses a buurt boundary")
 	})
 
 	t.Run("no-source permit: noSourceFound period, no Observation, zero-count metrics", func(t *testing.T) {
@@ -383,6 +435,11 @@ func seedPublications(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		// kapenherplant rows (seedFellings inserts none for gbdNoSource up front).
 		fmt.Sprintf(`('%s','2022-01-01','%s','%s',%s,'address',false)`,
 			zNoSource, buurtNoSource, gbdNoSource, rdPoint(108000, 500000)),
+		// Z-CROSSBOUNDARY-001: address-tier, resolved point at (160000,495000). Its only candidate
+		// felling (F-CROSSBOUNDARY-01, seeded below) carries a DIFFERENT gbdBuurtId — this permit is
+		// matched ONLY via the spatial clause (D6's cross-boundary catch), never the buurt clause.
+		fmt.Sprintf(`('%s','2022-01-01','%s','%s',%s,'address',false)`,
+			zCrossB, buurtCrossB, gbdCrossB, rdPoint(160000, 495000)),
 	}
 
 	stmt := "INSERT INTO koop_publications (zaaknummer, available, resolved_buurt_code, resolved_identificatie, resolved_geom, resolved_tier, unresolved) VALUES\n" +
@@ -429,6 +486,21 @@ func seedFellings(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 			fMulti2, gbdMulti, fellingPointFromRDOffset(150000, 490000, 10, -5)),
 		fmt.Sprintf(`('%s','BOOM-MULTI-03','%s','2022-08-01T00:00:00Z',%s,NULL)`,
 			fMulti3, gbdMulti, fellingPointFromRDOffset(150000, 490000, -8, 12)),
+
+		// F-MULTI-04-FAR: SAME buurt (gbdMulti) as F-MULTI-01..03, but offset (200,150) = exactly
+		// 250.0m from Z-MULTI-001's point (a scaled 4-3-5 triangle) -- beyond crossBoundaryRadiusM=200,
+		// so only the buurt clause keeps it a candidate. Pins D6's fragmentation-safety property: the
+		// spatial radius must never shrink the buurt net for a spread-out same-buurt project.
+		fmt.Sprintf(`('%s','BOOM-MULTI-04-FAR','%s','2022-09-01T00:00:00Z',%s,NULL)`,
+			fMulti4Far, gbdMulti, fellingPointFromRDOffset(150000, 490000, 200, 150)),
+
+		// F-CROSSBOUNDARY-01: a DIFFERENT gbdBuurtId (gbdCrossBFar) than Z-CROSSBOUNDARY-001's own
+		// buurt (gbdCrossB), so the buurt clause alone would exclude it. Offset (90,120) = exactly
+		// 150.0m from the permit's point (a scaled 3-4-5 triangle) -- within crossBoundaryRadiusM=200,
+		// so the spatial clause alone makes it a candidate (D6's additive cross-boundary catch).
+		// Felled 2022-06-01: a 151-day lag from the permit's 2022-01-01 publication (<=2yr bucket).
+		fmt.Sprintf(`('%s','BOOM-CROSSBOUNDARY-01','%s','2022-06-01T00:00:00Z',%s,NULL)`,
+			fCrossB, gbdCrossBFar, fellingPointFromRDOffset(160000, 495000, 90, 120)),
 	}
 
 	stmt := `INSERT INTO kapenherplant (id, "boomId", "gbdBuurtId", "kapmaatregelDatumUitgevoerd", "resolvedGeom", source_deleted_at) VALUES
@@ -479,6 +551,7 @@ func seedInterventions(t *testing.T, ctx context.Context, fusekiURL string) {
 		{zContestB, buurtContest, "2022-01-01"},
 		{zMulti, buurtMulti, "2022-01-01"},
 		{zNoSource, buurtNoSource, "2022-01-01"},
+		{zCrossB, buurtCrossB, "2022-01-01"},
 	}
 
 	var turtle string
