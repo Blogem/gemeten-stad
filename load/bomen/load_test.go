@@ -1,6 +1,8 @@
 package bomen
 
 import (
+	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -244,4 +246,164 @@ func TestGeoJSONText_NullGeometry(t *testing.T) {
 			}
 		})
 	}
+}
+
+// -- 7. rowString numeric-id regression -----------------------------------------
+//
+// Regression: a landed source `id`/`boomId` field is a JSON *number*
+// (docs/DATA_SOURCES.md §2a — the Datapunt bomen DSO API emits these unquoted), so
+// readLandedRows's json.Decoder must decode it as json.Number (exact decimal text), never the
+// default float64 — a large tree id like 4301189 loses precision-formatting through float64 and
+// fmt.Sprintf("%v", ...) renders it as "4.301428e+06" instead of the exact integer string
+// "4301189". rowString is the last step before that value binds to a text staging column, so it
+// is the sharpest place to pin the fix.
+
+// TestRowString covers rowString's full contract per field-type: a json.Number renders as its
+// exact decimal text (never scientific notation), an empty json.Number is SQL NULL (same as an
+// empty string), a plain string passes through verbatim, and a missing/nil key is SQL NULL.
+func TestRowString(t *testing.T) {
+	tests := []struct {
+		name string
+		row  map[string]any
+		key  string
+		want any
+	}{
+		{
+			name: "json.Number large integer renders exact, never scientific notation",
+			row:  map[string]any{"id": json.Number("4301189")},
+			key:  "id",
+			want: "4301189",
+		},
+		{
+			name: "json.Number another large integer (boomId) renders exact",
+			row:  map[string]any{"boomId": json.Number("1014499")},
+			key:  "boomId",
+			want: "1014499",
+		},
+		{
+			name: "json.Number small integer renders exact",
+			row:  map[string]any{"boomNieuwId": json.Number("2041042")},
+			key:  "boomNieuwId",
+			want: "2041042",
+		},
+		{
+			name: "empty json.Number is SQL NULL, same as an empty string",
+			row:  map[string]any{"id": json.Number("")},
+			key:  "id",
+			want: nil,
+		},
+		{
+			name: "plain string field passes through verbatim",
+			row:  map[string]any{"soortnaam": "Tilia"},
+			key:  "soortnaam",
+			want: "Tilia",
+		},
+		{
+			name: "empty string field is SQL NULL",
+			row:  map[string]any{"soortnaam": ""},
+			key:  "soortnaam",
+			want: nil,
+		},
+		{
+			name: "missing key is SQL NULL",
+			row:  map[string]any{"other": "x"},
+			key:  "id",
+			want: nil,
+		},
+		{
+			name: "nil value is SQL NULL",
+			row:  map[string]any{"id": nil},
+			key:  "id",
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rowString(tt.row, tt.key)
+			assert.Equal(t, tt.want, got)
+			if s, ok := got.(string); ok {
+				assert.NotContains(t, s, "e+", "a staged text value must never render in scientific notation")
+			}
+		})
+	}
+}
+
+// TestRowString_NeverScientificNotation is a dedicated guard, pinned directly to the reported
+// live bug (a landed id rendered as "4.301428e+06"): feed rowString several json.Number values in
+// the magnitude range that triggers Go's default float64 %v scientific-notation formatting, and
+// assert every result is a plain, all-digit string.
+func TestRowString_NeverScientificNotation(t *testing.T) {
+	plainInteger := regexp.MustCompile(`^[0-9]+$`)
+	ids := []json.Number{"4301189", "2041042", "1014499", "35202", "323728", "10000000"}
+
+	for _, id := range ids {
+		row := map[string]any{"id": id}
+		got := rowString(row, "id")
+		s, ok := got.(string)
+		require.Truef(t, ok, "rowString must return a string for non-empty json.Number %v, got %T", id, got)
+		assert.Regexpf(t, plainInteger, s, "id %v must stage as a plain integer string, got %q", id, s)
+		assert.NotContains(t, s, "e+", "id %v must never render in scientific notation", id)
+		assert.Equal(t, string(id), s, "rowString must preserve the source's exact decimal text")
+	}
+}
+
+// -- 8. readLandedRows numeric-id decode regression -----------------------------
+//
+// numericString asserts v is either a json.Number or a string carrying the exact decimal text
+// want, and fails loudly if it decoded as a float64 instead — the live bug this whole regression
+// guards against (a JSON number id silently coerced to float64 during landed-row decode, which
+// then loses exact-integer formatting downstream in rowString).
+func numericString(t *testing.T, v any, want string) {
+	t.Helper()
+	switch n := v.(type) {
+	case json.Number:
+		assert.Equal(t, want, n.String(), "json.Number must carry the exact decimal text")
+	case string:
+		assert.Equal(t, want, n, "string-decoded id must carry the exact decimal text")
+	case float64:
+		t.Fatalf("landed id/boomId decoded as float64 (%v) instead of json.Number/string — this is exactly the scientific-notation bug (want %q)", n, want)
+	default:
+		t.Fatalf("landed id/boomId has unexpected type %T: %v (want %q)", v, v, want)
+	}
+}
+
+// TestReadLandedRows_KapenherplantNumericIDsDecodeExact covers the HAL _embedded page path
+// (kapenherplant): a landed page whose id/boomId/boomNieuwId are JSON *numbers* (not quoted
+// strings) — exactly the Datapunt bomen DSO API's own shape — must decode into rows whose
+// id/boomId/boomNieuwId carry the exact decimal text, never a float64-coerced value that would
+// later render as scientific notation.
+func TestReadLandedRows_KapenherplantNumericIDsDecodeExact(t *testing.T) {
+	store := shared.NewRawStore(t.TempDir())
+
+	body := `{"_embedded":{"kapenherplant":[{"id":4301189,"boomId":1014499,"boomNieuwId":2041042}]}}` + "\n"
+	_, err := store.LandVersion(artifactKapenherplant, strings.NewReader(body), "https://example.com/kapenherplant", time.Now())
+	require.NoError(t, err)
+
+	rows, err := readLandedRows(store, artifactKapenherplant, embedKeyKapenherplant)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+
+	numericString(t, rows[0]["id"], "4301189")
+	numericString(t, rows[0]["boomId"], "1014499")
+	numericString(t, rows[0]["boomNieuwId"], "2041042")
+}
+
+// TestReadLandedRows_StamgegevensGeoJSONNumericID mirrors the kapenherplant case for the GeoJSON
+// FeatureCollection path (stamgegevens): a feature whose properties.id is a JSON number must
+// decode into a row whose "id" carries the exact decimal text.
+func TestReadLandedRows_StamgegevensGeoJSONNumericID(t *testing.T) {
+	store := shared.NewRawStore(t.TempDir())
+
+	fc := `{"type":"FeatureCollection","features":[` +
+		`{"type":"Feature","id":4301189,"geometry":{"type":"Point","coordinates":[4.895,52.370]},"properties":{"id":4301189,"gbdBuurtId":"A01","soortnaam":"Tilia"}}` +
+		`]}` + "\n"
+	_, err := store.LandVersion(testStamgegevensArtifact, strings.NewReader(fc), "https://example.com/stamgegevens?_format=geojson", time.Now())
+	require.NoError(t, err)
+
+	rows, err := readLandedRows(store, testStamgegevensArtifact, "stamgegevens")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+
+	numericString(t, rows[0]["id"], "4301189")
 }
