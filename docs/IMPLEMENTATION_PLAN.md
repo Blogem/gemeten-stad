@@ -54,7 +54,7 @@ that decide whether the audit is sound before build-out.
     │ ├ partOfProject→ Project (OPTIONAL)    BAG addresses/buildings (preloaded)
     │ └ claims→ Claim                        gebieden + CBS polygons (preloaded)
     ▼                                        all geometry (PostGIS)
- Claim ─testedAgainst→ Observation ─locator→ SQL query
+ Claim ─testedAgainst→ Observation ─includesFelling→ Felling ─felledTree→ Tree (identity only)
  DERIVED: AuditLink (Permit↔trees) + computed progress  ─── stored, not on-the-fly
  RDF-star on the fuzzy edges: << Intervention locatedAt Place >> confidence 0.7 ; evidence …
  PROV on every asserted triple: ← document span OR connector query OR derivation
@@ -78,6 +78,22 @@ that decide whether the audit is sound before build-out.
   SKOS vocab concepts — a Place is recognized by geometry, not by name, so it needs no NER/grounding
   entry; the analytics agent additionally gets direct value-store (PostGIS) access for spatial
   questions the graph should not answer.
+- **Felled trees + fellings are first-class graph entities; the coverage `Observation` is
+  content-addressed by its felling set.** `gs:Tree` (`data:tree/<boomId>`) is identity only —
+  geometry stays in PostGIS — and `gs:Felling` (`data:felling/<kapenherplant record id>`) is the
+  felling *event*: `gs:felledTree` → the tree, `gs:felledOn` (`xsd:date`). The bomen → graph
+  projection loads **felled rows only** (trees never felled stay PostGIS-only) through the SHACL
+  gate, ahead of `derive`. The coverage `gs:Observation` is minted at
+  `data:observation/<zaaknummer>/<felling-set-key>` — a hash of the sorted assigned `gs:Felling`
+  IRIs — carrying `gs:includesFelling` → each member; it is immutable and content-addressed, not
+  one mutable node per permit. Because the `gs:CoveragePeriod` content-key already hashes the
+  Observation IRI, this makes periods version correctly (a changed felling set → a new
+  Observation → a new period; an identical set → a true no-op) and dissolves the earlier
+  duplicate-open-period bug at the root. **Deferred to Phase 2, as one unit:** the replant layer —
+  `gs:Replanting`/`gs:plantedTree`/`gs:plantedOn`, the felled→replacement tree lineage via
+  `dct:isReplacedBy` (tree-level, reuse-first — not a minted term, not event-to-event), and the
+  herplantplicht fulfilment `Assessment`; the replant data stays in PostGIS until then. See
+  `openspec/changes/model-felled-trees/design.md`.
 - **Uncertainty is first-class (RDF-star).** The location-resolution edge and the
   permit↔trees audit edge carry a confidence + the evidence they rest on, so the UI can show
   *where we are not sure and how sure we are*. This is a requirement, not a nicety.
@@ -276,8 +292,12 @@ project when extracted), the registry's own felled count, and time; each **indiv
 then assigned to its single best-scoring permit, exclusively (a felling covers at most one
 permit). The outcome is recorded as a stable per-permit `gs:AuditLink` **anchor**
 (`gs:coversIntervention`) plus versioned `gs:CoveragePeriod` nodes carrying the granularity used
-and a confidence (matched), or `gs:noSourceFound` (no match) — see
-`openspec/changes/derive-coverage-audit/design.md`. Reference addresses that don't exist in BAG
+and a confidence (matched), or `gs:noSourceFound` (no match). A matched period links a
+content-addressed `gs:Observation` (`data:observation/<zaaknummer>/<felling-set-key>`, keyed on the
+sorted assigned `gs:Felling` IRIs) carrying `gs:includesFelling` → each assigned felling — see
+`openspec/changes/derive-coverage-audit/design.md` for the join/scoring model and
+`openspec/changes/model-felled-trees/design.md` for the tree/felling entities and the
+content-addressed Observation. Reference addresses that don't exist in BAG
 (demolished in renewal areas) are **resolved during load** and written with an explicit
 `unresolvedLocation` marker + confidence — never written as if they were exact. No half-broken
 data enters the graph.
@@ -462,9 +482,11 @@ by publication id, Go SRU harvest) + `load koop` (dedup by zaaknummer, resolve l
 `Intervention`/`Claim` to graph via the SHACL-gated `load/graph` writer, values to PostGIS) +
 `derive` **coverage only** (permit→registry entry? — the Spike-B τ=0.60 place-led `AuditLink` with
 confidence, and "no source found" as a first-class provenanced finding). A working **coverage** audit
-from structure alone, with confidences. **`load bomen` is not a Phase-1 item** — the registry is
-value-store data already loaded in Phase 0 (P7) and never becomes graph entities (§3); `derive` only
-reads it. **Fulfilment (progress) and the permit-count cross-check are deferred to Phase 2**, where
+from structure alone, with confidences. **`load bomen` gained a graph projection within Phase 1** —
+the registry is value-store data already loaded in Phase 0 (P7); `load bomen` additionally projects
+**felled** rows only into the graph as `gs:Tree`/`gs:Felling` (§3), through the SHACL gate, ahead of
+`derive` — trees never felled stay PostGIS-only, and `derive` links the coverage `gs:Observation` to
+these fellings. **Fulfilment (progress) and the permit-count cross-check are deferred to Phase 2**, where
 extraction lands — a fulfilment fraction is only meaningful against an extracted obligation count.
 Decomposed into work items in `PHASE_1_PLAN.md` (P11–P15); prerequisite: **P8 closes in Phase 0**.
 
