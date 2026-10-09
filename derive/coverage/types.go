@@ -6,6 +6,8 @@ package coverage
 // Tier is the place-resolution granularity used by a coverage score.
 type Tier string
 
+// Tier values rank place resolution by precision: an exact address is the
+// strongest signal, a whole buurt the weakest.
 const (
 	TierAddress  Tier = "address"
 	TierPostcode Tier = "postcode"
