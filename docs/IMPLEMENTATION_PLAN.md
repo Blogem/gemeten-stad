@@ -490,7 +490,8 @@ these fellings. **Fulfilment (progress) and the permit-count cross-check are def
 extraction lands — a fulfilment fraction is only meaningful against an extracted obligation count.
 Decomposed into work items in `PHASE_1_PLAN.md` (P11–P15); prerequisite: **P8 closes in Phase 0**.
 
-**Phase 2 — extraction.** A **three-tier extractor mirroring `msr-graph`** (Spike C, `spikes/spike-c/`),
+**Phase 2 — extraction, fulfilment & campaign-level matching.** Decomposed into work items in
+`PHASE_2_PLAN.md` (P16–P26). A **three-tier extractor mirroring `msr-graph`** (Spike C, `spikes/spike-c/`),
 scaled so the audit works without the fancy parts but count recovery is near-complete with them:
 1. **Deterministic floor (Go, no dependency)** — the abstract parser: **per-activity counts**
    (kappen/vellen/rooien/**verplanten** split then summed; spelled-out-aware; herplant kept on the replant

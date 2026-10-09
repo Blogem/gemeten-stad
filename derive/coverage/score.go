@@ -43,10 +43,9 @@ func Score(in ScoreInput) ScoreResult {
 	place, granularity := placeTerm(in.Tier, in.NearestDistM)
 
 	score := place
+	// An unknown permit count contributes +0 and is recorded as a caveat below.
 	countUnknown := in.PermitCount == nil
-	if countUnknown {
-		// +0, caveat below.
-	} else {
+	if !countUnknown {
 		c := *in.PermitCount
 		switch {
 		case in.RegistryCount == c:

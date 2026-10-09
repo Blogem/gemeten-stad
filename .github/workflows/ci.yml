@@ -37,6 +37,9 @@ jobs:
       # only starts db + fuseki, so the path is never read, but compose interpolates the
       # whole file up front and fails fast if it's unset.
       GS_RAW_DATA_PATH: /tmp/gs-raw-data
+      # Read only by the Docker Hub login's step condition below, so the login stays a
+      # no-op until the secrets exist instead of failing the job outright.
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -55,6 +58,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-18
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+      # db (imresamu/postgis) and fuseki both come from Docker Hub, whose anonymous pulls
+      # are rate-limited per runner IP; GitHub-hosted runners share IPs, so this job dies
+      # with "toomanyrequests" before a single test runs.
+      # continue-on-error: auth.docker.io has been observed timing out on its own
+      # ("context deadline exceeded"), and a failed login should degrade to the
+      # previous anonymous behaviour rather than hard-fail the job before the
+      # tests start. It is an optimisation, not a requirement.
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        continue-on-error: true
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - run: docker compose -f deploy/compose/compose.yaml up -d --wait db fuseki
       # -p 1: run one package binary at a time. load/graph and load/koop both target the
       # single shared gs-test Fuseki dataset (no per-package isolation); resetFusekiRunGraphs

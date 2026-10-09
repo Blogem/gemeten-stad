@@ -12,6 +12,8 @@ stadsdeel Noord.
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) — source catalog, working queries, data quirks.
 - [`docs/DATA_THREAD_TREES.md`](docs/DATA_THREAD_TREES.md) — a live, worked end-to-end example.
 - [`docs/PHASE_0_PLAN.md`](docs/PHASE_0_PLAN.md) — Phase 0 work items (foundations & modeling).
+- [`docs/PHASE_1_PLAN.md`](docs/PHASE_1_PLAN.md) — Phase 1 work items (the deterministic backbone).
+- [`docs/PHASE_2_PLAN.md`](docs/PHASE_2_PLAN.md) — Phase 2 work items (extraction, fulfilment, campaign matching).
 
 ## Layout
 

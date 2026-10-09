@@ -325,6 +325,8 @@ full `load → derive` chain is now verified idempotent end to end, not just `de
 
 ## Explicitly deferred to Phase 2 (so Phase 1 stays honest)
 
+Each item below is decomposed into work items in `PHASE_2_PLAN.md` (P16–P26).
+
 - **Permit-text count extraction** (the three-tier `msr-graph` extractor) — the obligation count.
 - **Fulfilment estimate** (`none`/`partial(fraction)`/`fulfilled`) and the registry-vs-permit
   cross-check — needs the count above to be meaningful.
